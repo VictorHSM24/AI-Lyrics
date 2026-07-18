@@ -1,0 +1,68 @@
+holyrics:
+  base_url: "http://127.0.0.1:8091/api"
+  token: "JCpH5Wn4Q4zi7og0"
+  timeout_ms: 2000
+
+stt:
+  backend: "faster-whisper"
+  model: "large-v3-turbo"
+  device: "cuda"
+  compute_type: "float16"
+  language: "pt"
+  beam_size: 1
+  vad_filter: false
+  chunk_length_s: 30
+  vad:
+    mode: "silero"
+    min_speech_ms: 250
+    pause_threshold_ms: 600
+
+llm:
+  base_url: "http://127.0.0.1:11434"
+  model: "qwen3:8b-q4_k_m"
+  lazy_load: true
+  timeout_ms: 15000
+  max_tokens: 200
+
+search:
+  fts5_db: "data/bible.pt-br.sqlite"
+  embeddings_path: "data/bible.embeddings.npy"
+  embedding_model: "intfloat/multilingual-e5-small"
+  embedding_device: "cpu"
+  rrf_k: 60
+  top_k: 20
+  search_gap: 0.15
+
+state:
+  default_version: "ACF"
+  persist_path: "data/state.json"
+
+cache:
+  recent_capacity: 50
+  embedding_capacity: 200
+  holyrics_ttl_s: 5
+  current_verse_ttl_s: 60
+
+confidence:
+  min_execute: 0.30
+  min_confirm: 0.20
+  stt_min: 0.10
+  parser_high: 0.90
+  parser_compact: 0.85
+
+mode: "auto"
+
+audio:
+  input_device: "CODEC USB"
+  sample_rate: 16000
+  channels: 1
+  chunk_ms: 30
+  vad_enabled: true
+  min_speech_ms: 600
+  max_silence_ms: 800
+  vad_mode: 3
+  max_segment_ms: 30000
+
+log:
+  path: "logs/pipeline.jsonl"
+  level: "INFO"

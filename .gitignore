@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Artefatos de build (não versionar binários)
+data/bible.pt-br.sqlite
+data/bible.embeddings.npy
+data/state.json
+data/frequentes.json
+
+# Logs (runtime)
+logs/*.jsonl
+
+# Ambiente
+.env
+.venv/
+venv/

@@ -1,0 +1,7 @@
+text=vale da sombra da morte
+norm=vale da sombra da morte
+book=Daniel id=27 conf=1.0
+start=5 end=7
+matched="da"
+prefix="vale "
+suffix=" sombra da morte"

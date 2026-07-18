@@ -1,0 +1,23 @@
+[
+  {"book":"Gênesis","book_id":1,"chapter":1,"verse":1,"text":"No princípio criou Deus os céus e a terra.","version":"ACF"},
+  {"book":"Gênesis","book_id":1,"chapter":1,"verse":2,"text":"E a terra era sem forma e vazia; e havia trevas sobre a face do abismo; e o Espírito de Deus se movia sobre a face das águas.","version":"ACF"},
+  {"book":"Gênesis","book_id":1,"chapter":1,"verse":3,"text":"E disse Deus: Haja luz; e houve luz.","version":"ACF"},
+  {"book":"Salmos","book_id":19,"chapter":23,"verse":1,"text":"O Senhor é o meu pastor, nada me faltará.","version":"ACF"},
+  {"book":"Salmos","book_id":19,"chapter":23,"verse":2,"text":"Deitar-me faz em verdes pastos, guia-me mansamente a águas tranqüilas.","version":"ACF"},
+  {"book":"Salmos","book_id":19,"chapter":23,"verse":3,"text":"Refrigera a minha alma; guia-me pelas veredas da justiça, por amor do seu nome.","version":"ACF"},
+  {"book":"Salmos","book_id":19,"chapter":23,"verse":4,"text":"Ainda que eu andasse pelo vale da sombra da morte, não temeria mal algum, porque tu estás comigo; a tua vara e o teu cajado me consolam.","version":"ACF"},
+  {"book":"Mateus","book_id":40,"chapter":5,"verse":13,"text":"Vós sois o sal da terra; mas se o sal se desviar de seu sabor, com que se há de salgar? Para nada mais presta senão para se lançar fora, e ser pisado pelos homens.","version":"ACF"},
+  {"book":"Mateus","book_id":40,"chapter":4,"verse":7,"text":"Disse-lhe Jesus: Vai-te, Satanás, porque está escrito: Ao Senhor teu Deus adorarás, e só a ele servirás.","version":"ACF"},
+  {"book":"João","book_id":43,"chapter":3,"verse":16,"text":"Porque Deus amou o mundo de tal maneira que deu o seu Filho unigênito, para que todo aquele que nele crê não pereça, mas tenha a vida eterna.","version":"ACF"},
+  {"book":"João","book_id":43,"chapter":3,"verse":17,"text":"Porque Deus enviou o seu Filho ao mundo, não para que condenasse o mundo, mas para que o mundo fosse salvo por ele.","version":"ACF"},
+  {"book":"Romanos","book_id":45,"chapter":8,"verse":28,"text":"E sabemos que todas as coisas cooperam para o bem daqueles que amam a Deus, daqueles que são chamados segundo o seu propósito.","version":"ACF"},
+  {"book":"Romanos","book_id":45,"chapter":12,"verse":2,"text":"E não vos conformeis com este mundo, mas transformai-vos pela renovação do vosso entendimento, para que experimenteis qual seja a boa, agradável, e perfeita vontade de Deus.","version":"ACF"},
+  {"book":"1 Coríntios","book_id":46,"chapter":13,"verse":1,"text":"Ainda que eu falasse as línguas dos homens e dos anjos, e não tivesse amor, seria como o metal que soa ou como o sino que tine.","version":"ACF"},
+  {"book":"1 Coríntios","book_id":46,"chapter":13,"verse":13,"text":"Agora, pois, permanecem a fé, a esperança e o amor, estes três, mas o maior destes é o amor.","version":"ACF"},
+  {"book":"Hebreus","book_id":58,"chapter":11,"verse":1,"text":"Ora, a fé é o firme fundamento das coisas que se esperam, e a prova das coisas que se não vêem.","version":"ACF"},
+  {"book":"Hebreus","book_id":58,"chapter":11,"verse":6,"text":"Ora, sem fé é impossível agradar-lhe; porque é necessário que aquele que se aproxima de Deus creia que ele existe, e que é galardoador dos que o buscam.","version":"ACF"},
+  {"book":"Apocalipse","book_id":66,"chapter":1,"verse":1,"text":"Revelação de Jesus Cristo, a qual Deus lhe deu, para mostrar aos seus servos as coisas que brevemente devem acontecer; e pelo seu anjo as enviou, e as notificou a João seu servo.","version":"ACF"},
+  {"book":"Gênesis","book_id":1,"chapter":1,"verse":1,"text":"No princípio, Deus criou os céus e a terra.","version":"NVI"},
+  {"book":"João","book_id":43,"chapter":3,"verse":16,"text":"Porque Deus amou o mundo de tal maneira que deu o seu Filho unigênito, para que todo aquele que nele crê não pereça, mas tenha a vida eterna.","version":"NVI"},
+  {"book":"Romanos","book_id":45,"chapter":8,"verse":28,"text":"E sabemos que Deus age em todas as coisas para o bem daqueles que o amam, dos que foram chamados de acordo com o seu propósito.","version":"NVI"}
+]

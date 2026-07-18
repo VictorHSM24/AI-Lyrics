@@ -1,0 +1,2183 @@
+{
+  "version": "2.0",
+  "description": "Grafo de conhecimento bíblico — entidades com tipo, relacionamentos e referências estruturadas. Evolução da Knowledge Base v1.0.",
+  "concepts": [
+    {
+      "id": "filho_prodigo",
+      "name": "filho pródigo",
+      "type": "PARABLE",
+      "aliases": [
+        "filho pródigo",
+        "filho perdido",
+        "parábola do filho",
+        "parábola do filho pródigo",
+        "pai misericordioso",
+        "parábola do pai misericordioso",
+        "parabola do filho prodigo"
+      ],
+      "books": [
+        "Lucas"
+      ],
+      "chapters": [
+        15
+      ],
+      "characters": [
+        "pai",
+        "filho",
+        "irmão"
+      ],
+      "places": [],
+      "events": [
+        "parábola do filho pródigo"
+      ],
+      "themes": [
+        "arrependimento",
+        "perdão",
+        "misericórdia"
+      ],
+      "keywords": [
+        "filho",
+        "perdido",
+        "pai",
+        "irmão",
+        "arrepender",
+        "voltou",
+        "vestir",
+        "anel",
+        "bezerro",
+        "festa"
+      ],
+      "boost_terms": [
+        "pródigo",
+        "perdido",
+        "misericordioso",
+        "desperdiçou",
+        "fome",
+        "chiqueiro"
+      ],
+      "related": [
+        "bom_pastor",
+        "bom_samaritano",
+        "dracma_perdida"
+      ],
+      "references": [
+        "Lucas 15:11-32"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "bom_pastor",
+      "name": "bom pastor",
+      "type": "METAPHOR",
+      "aliases": [
+        "o bom pastor",
+        "pastor",
+        "parábola do pastor",
+        "parabola do bom pastor",
+        "ovelhas do pastor"
+      ],
+      "books": [
+        "João"
+      ],
+      "chapters": [
+        10
+      ],
+      "characters": [
+        "Jesus",
+        "pastor",
+        "ladrão",
+        "lobo"
+      ],
+      "places": [],
+      "events": [
+        "parábola do bom pastor"
+      ],
+      "themes": [
+        "Jesus",
+        "ovelhas",
+        "proteção",
+        "sacrifício"
+      ],
+      "keywords": [
+        "pastor",
+        "ovelhas",
+        "porta",
+        "lobo",
+        "ladrão",
+        "conhece",
+        "vida",
+        "abundante"
+      ],
+      "boost_terms": [
+        "bom pastor",
+        "dá a vida",
+        "ovelhas ouvem"
+      ],
+      "related": [
+        "filho_prodigo",
+        "videira_verdadeira",
+        "pedra_angular"
+      ],
+      "references": [
+        "João 10:1-18"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "mulher_samaritana",
+      "name": "mulher samaritana",
+      "type": "EVENT",
+      "aliases": [
+        "samaritana",
+        "mulher do poço",
+        "poço de Jacó",
+        "água viva",
+        "parábola da samaritana"
+      ],
+      "books": [
+        "João"
+      ],
+      "chapters": [
+        4
+      ],
+      "characters": [
+        "Jesus",
+        "samaritana"
+      ],
+      "places": [
+        "Sicar",
+        "Samaria",
+        "monte Gerizim"
+      ],
+      "events": [
+        "encontro com a samaritana"
+      ],
+      "themes": [
+        "água viva",
+        "salvação",
+        "adoração",
+        "Samaría"
+      ],
+      "keywords": [
+        "samaritana",
+        "poço",
+        "água",
+        "viva",
+        "sede",
+        "adoração",
+        "espírito",
+        "verdade"
+      ],
+      "boost_terms": [
+        "água viva",
+        "poço de Jacó",
+        "Sicar",
+        "monte Gerizim"
+      ],
+      "related": [
+        "nicodemos",
+        "videira_verdadeira"
+      ],
+      "references": [
+        "João 4:1-42"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "jovem_rico",
+      "name": "jovem rico",
+      "type": "EVENT",
+      "aliases": [
+        "o jovem rico",
+        "rapaz rico",
+        "jovem abastado",
+        "jovem governador",
+        "parábola do jovem rico"
+      ],
+      "books": [
+        "Mateus",
+        "Marcos",
+        "Lucas"
+      ],
+      "chapters": [
+        19,
+        10,
+        18
+      ],
+      "characters": [
+        "Jesus",
+        "jovem",
+        "rico"
+      ],
+      "places": [],
+      "events": [
+        "encontro com o jovem rico"
+      ],
+      "themes": [
+        "riqueza",
+        "discipulado",
+        "reino dos céus",
+        "mandamentos"
+      ],
+      "keywords": [
+        "jovem",
+        "rico",
+        "mandamentos",
+        "vender",
+        "dar",
+        "pobres",
+        "seguir",
+        "tesouro",
+        "camelo",
+        "agulha"
+      ],
+      "boost_terms": [
+        "jovem rico",
+        "camelo agulha",
+        "vende tudo",
+        "tesouro nos céus"
+      ],
+      "related": [
+        "zacau",
+        "sermao_do_monte"
+      ],
+      "references": [
+        "Mateus 19:16-22",
+        "Marcos 10:17-22",
+        "Lucas 18:18-23"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "escada_de_jaco",
+      "name": "escada de jacó",
+      "type": "EVENT",
+      "aliases": [
+        "escada",
+        "sonho de Jacó",
+        "visão de Jacó",
+        "escada dos anjos",
+        "Betel"
+      ],
+      "books": [
+        "Gênesis"
+      ],
+      "chapters": [
+        28
+      ],
+      "characters": [
+        "Jacó",
+        "anjos"
+      ],
+      "places": [
+        "Betel"
+      ],
+      "events": [
+        "sonho de Jacó"
+      ],
+      "themes": [
+        "sonho",
+        "anjos",
+        "promessa",
+        "Betel"
+      ],
+      "keywords": [
+        "escada",
+        "anjos",
+        "subindo",
+        "descendo",
+        "sonho",
+        "Betel",
+        "promessa",
+        "terra"
+      ],
+      "boost_terms": [
+        "escada de Jacó",
+        "casa de Deus",
+        "porta dos céus"
+      ],
+      "related": [
+        "sarca_ardente",
+        "arca_de_noe",
+        "torre_de_babel"
+      ],
+      "references": [
+        "Gênesis 28:10-22"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "sarca_ardente",
+      "name": "sarça ardente",
+      "type": "EVENT",
+      "aliases": [
+        "sarça",
+        "moisés e a sarça",
+        "fogo da sarça",
+        "bush ardente",
+        "chama no monte"
+      ],
+      "books": [
+        "Êxodo"
+      ],
+      "chapters": [
+        3
+      ],
+      "characters": [
+        "Moisés",
+        "Deus"
+      ],
+      "places": [
+        "Horebe",
+        "monte Sinai"
+      ],
+      "events": [
+        "chamado de Moisés"
+      ],
+      "themes": [
+        "chamado",
+        "santidade",
+        "fogo",
+        "libertação"
+      ],
+      "keywords": [
+        "sarça",
+        "ardente",
+        "fogo",
+        "Moisés",
+        "monte",
+        "Horebe",
+        "santidade",
+        "calçado",
+        "Eu Sou"
+      ],
+      "boost_terms": [
+        "sarça ardente",
+        "Eu Sou o que Sou",
+        "tire as sandálias",
+        "terra santa"
+      ],
+      "related": [
+        "exodo",
+        "monte_sinai",
+        "mar_vermelho"
+      ],
+      "references": [
+        "Êxodo 3:1-15"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "vale_ossos_secos",
+      "name": "vale de ossos secos",
+      "type": "PROPHECY",
+      "aliases": [
+        "ossos secos",
+        "vale dos ossos",
+        "visão dos ossos",
+        "Ezequiel ossos secos",
+        "ressurreição dos ossos"
+      ],
+      "books": [
+        "Ezequiel"
+      ],
+      "chapters": [
+        37
+      ],
+      "characters": [
+        "Ezequiel"
+      ],
+      "places": [],
+      "events": [
+        "visão do vale de ossos secos"
+      ],
+      "themes": [
+        "ressurreição",
+        "restauração",
+        "espírito",
+        "Israel"
+      ],
+      "keywords": [
+        "ossos",
+        "secos",
+        "vale",
+        "espírito",
+        "respirar",
+        "carne",
+        "tendões",
+        "vida",
+        "Israel"
+      ],
+      "boost_terms": [
+        "ossos secos",
+        "vale de ossos",
+        "profetiza",
+        "fôlego de vida"
+      ],
+      "related": [
+        "lazaro",
+        "pentecostes"
+      ],
+      "references": [
+        "Ezequiel 37:1-14"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "pesca_milagrosa",
+      "name": "pesca milagrosa",
+      "type": "MIRACLE",
+      "aliases": [
+        "pesca",
+        "lance a rede",
+        "rede à direita",
+        "peixes",
+        "pesca abundante",
+        "Jesus e a pesca"
+      ],
+      "books": [
+        "Lucas",
+        "João"
+      ],
+      "chapters": [
+        5,
+        21
+      ],
+      "characters": [
+        "Jesus",
+        "Pedro",
+        "Tiago",
+        "João"
+      ],
+      "places": [
+        "mar da Galileia"
+      ],
+      "events": [
+        "pesca milagrosa"
+      ],
+      "themes": [
+        "milagre",
+        "obediência",
+        "chamado",
+        "discipulado"
+      ],
+      "keywords": [
+        "rede",
+        "peixes",
+        "barco",
+        "lançar",
+        "profundidade",
+        "seguir",
+        "pescadores",
+        "homens"
+      ],
+      "boost_terms": [
+        "pesca milagrosa",
+        "lance a rede",
+        "mestre",
+        "pecador",
+        "isca"
+      ],
+      "related": [
+        "pedro_anda_sobre_aguas",
+        "multiplicacao_paes"
+      ],
+      "references": [
+        "Lucas 5:1-11",
+        "João 21:1-14"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "pedro_anda_sobre_aguas",
+      "name": "pedro anda sobre as águas",
+      "type": "MIRACLE",
+      "aliases": [
+        "andar sobre as águas",
+        "Jesus sobre as águas",
+        "Pedro na água",
+        "caminhar sobre o mar",
+        "tempestade no mar",
+        "Pedro andando sobre as águas",
+        "andando sobre as águas",
+        "Pedro andou sobre as águas"
+      ],
+      "books": [
+        "Mateus",
+        "Marcos",
+        "João"
+      ],
+      "chapters": [
+        14,
+        6,
+        6
+      ],
+      "characters": [
+        "Jesus",
+        "Pedro"
+      ],
+      "places": [
+        "mar da Galileia"
+      ],
+      "events": [
+        "Jesus anda sobre as águas"
+      ],
+      "themes": [
+        "fé",
+        "medo",
+        "tempestade",
+        "milagre"
+      ],
+      "keywords": [
+        "Pedro",
+        "água",
+        "andar",
+        "tempestade",
+        "vento",
+        "mar",
+        "fé",
+        "afundar",
+        "mão",
+        "salvar"
+      ],
+      "boost_terms": [
+        "anda sobre as águas",
+        "por que duvidaste",
+        "tempestade",
+        "quarta vigília"
+      ],
+      "related": [
+        "pesca_milagrosa",
+        "transfiguracao"
+      ],
+      "references": [
+        "Mateus 14:22-33",
+        "Marcos 6:45-52",
+        "João 6:16-21"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "torre_de_babel",
+      "name": "torre de babel",
+      "type": "EVENT",
+      "aliases": [
+        "Babel",
+        "torre",
+        "confusão de línguas",
+        "construção da torre"
+      ],
+      "books": [
+        "Gênesis"
+      ],
+      "chapters": [
+        11
+      ],
+      "characters": [
+        "Ninrode"
+      ],
+      "places": [
+        "Babel",
+        "Sinar"
+      ],
+      "events": [
+        "construção da torre de Babel"
+      ],
+      "themes": [
+        "orgulho",
+        "confusão",
+        "línguas",
+        "dispersão"
+      ],
+      "keywords": [
+        "torre",
+        "Babel",
+        "céu",
+        "línguas",
+        "confusão",
+        "dispersão",
+        "tijolo",
+        "altura"
+      ],
+      "boost_terms": [
+        "torre de Babel",
+        "confundiu as línguas",
+        "alcancem os céus"
+      ],
+      "related": [
+        "escada_de_jaco",
+        "arca_de_noe",
+        "pentecostes"
+      ],
+      "references": [
+        "Gênesis 11:1-9"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "arca_de_noe",
+      "name": "arca de noé",
+      "type": "OBJECT",
+      "aliases": [
+        "Noé",
+        "arca",
+        "dilúvio de Noé",
+        "barco de Noé",
+        "Noe"
+      ],
+      "books": [
+        "Gênesis"
+      ],
+      "chapters": [
+        6,
+        7,
+        8,
+        9
+      ],
+      "characters": [
+        "Noé",
+        "filhos de Noé"
+      ],
+      "places": [
+        "monte Ararat"
+      ],
+      "events": [
+        "dilúvio",
+        "construção da arca"
+      ],
+      "themes": [
+        "juízo",
+        "salvação",
+        "aliança",
+        "obediência"
+      ],
+      "keywords": [
+        "arca",
+        "Noé",
+        "dilúvio",
+        "água",
+        "animais",
+        "dois a dois",
+        "aliança",
+        "arco",
+        "madeira"
+      ],
+      "boost_terms": [
+        "arca de Noé",
+        "madeira impermeável",
+        "quarenta dias",
+        "pomba",
+        "oliveira"
+      ],
+      "related": [
+        "diluvio",
+        "torre_de_babel",
+        "escada_de_jaco"
+      ],
+      "references": [
+        "Gênesis 6:9-9:17"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "diluvio",
+      "name": "dilúvio",
+      "type": "EVENT",
+      "aliases": [
+        "diluvio",
+        "grande enchente",
+        "enchente",
+        "água cobriu a terra",
+        "destruição pela água"
+      ],
+      "books": [
+        "Gênesis"
+      ],
+      "chapters": [
+        6,
+        7,
+        8
+      ],
+      "characters": [
+        "Noé"
+      ],
+      "places": [],
+      "events": [
+        "dilúvio universal"
+      ],
+      "themes": [
+        "juízo",
+        "água",
+        "destruição",
+        "preservação"
+      ],
+      "keywords": [
+        "dilúvio",
+        "água",
+        "chuva",
+        "quarenta",
+        "terra",
+        "montanhas",
+        "cobriu",
+        "povo",
+        "ímpio"
+      ],
+      "boost_terms": [
+        "dilúvio",
+        "águas cobriram",
+        "quarenta dias",
+        "fontes do abismo"
+      ],
+      "related": [
+        "arca_de_noe",
+        "mar_vermelho"
+      ],
+      "references": [
+        "Gênesis 7:1-24"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "id": "exodo",
+      "name": "êxodo",
+      "type": "EVENT",
+      "aliases": [
+        "exodo",
+        "saída do Egito",
+        "saída da escravidão",
+        "libertação do Egito",
+        "Moisés liberta o povo"
+      ],
+      "books": [
+        "Êxodo"
+      ],
+      "chapters": [
+        12,
+        13,
+        14
+      ],
+      "characters": [
+        "Moisés",
+        "Arão",
+        "Faraó"
+      ],
+      "places": [
+        "Egito",
+        "Mar Vermelho"
+      ],
+      "events": [
+        "êxodo do Egito"
+      ],
+      "themes": [
+        "libertação",
+        "aliança",
+        "Páscoa",
+        "lei"
+      ],
+      "keywords": [
+        "Egito",
+        "sair",
+        "Faraó",
+        "Moisés",
+        "pragas",
+        "Páscoa",
+        "cordeiro",
+        "sangue",
+        "libertação"
+      ],
+      "boost_terms": [
+        "saída do Egito",
+        "terra que mana leite",
+        "povo libertado"
+      ],
+      "related": [
+        "sarca_ardente",
+        "mar_vermelho",
+        "monte_sinai"
+      ],
+      "references": [
+        "Êxodo 12:37-42",
+        "Êxodo 13:17-22"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "id": "sermao_do_monte",
+      "name": "sermão do monte",
+      "type": "DOCTRINE",
+      "aliases": [
+        "sermão",
+        "bem-aventuranças",
+        "bem aventurancas",
+        "discurso do monte",
+        "ensino no monte"
+      ],
+      "books": [
+        "Mateus"
+      ],
+      "chapters": [
+        5,
+        6,
+        7
+      ],
+      "characters": [
+        "Jesus"
+      ],
+      "places": [
+        "monte"
+      ],
+      "events": [
+        "sermão do monte"
+      ],
+      "themes": [
+        "bem-aventurança",
+        "oração",
+        "justiça",
+        "reino"
+      ],
+      "keywords": [
+        "bem-aventurado",
+        "monte",
+        "sal",
+        "luz",
+        "oração",
+        "Pai Nosso",
+        "justiça",
+        "reino",
+        "pedra"
+      ],
+      "boost_terms": [
+        "bem-aventuranças",
+        "Pai Nosso",
+        "sal da terra",
+        "luz do mundo"
+      ],
+      "related": [
+        "jovem_rico",
+        "armadura_de_deus",
+        "fruto_do_espirito"
+      ],
+      "references": [
+        "Mateus 5:1-7:29"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "multiplicacao_paes",
+      "name": "multiplicação dos pães",
+      "type": "MIRACLE",
+      "aliases": [
+        "multiplicação",
+        "pães e peixes",
+        "cinco pães",
+        "alimentação dos cinco mil",
+        "pães para multidão"
+      ],
+      "books": [
+        "Mateus",
+        "Marcos",
+        "Lucas",
+        "João"
+      ],
+      "chapters": [
+        14,
+        6,
+        9,
+        6
+      ],
+      "characters": [
+        "Jesus",
+        "discípulos",
+        "menino"
+      ],
+      "places": [
+        "deserto",
+        "mar da Galileia"
+      ],
+      "events": [
+        "multiplicação dos pães e peixes"
+      ],
+      "themes": [
+        "milagre",
+        "provisão",
+        "comunhão",
+        "compaixão"
+      ],
+      "keywords": [
+        "pães",
+        "peixes",
+        "cinco",
+        "dois",
+        "multidão",
+        "comer",
+        "fartos",
+        "cestos",
+        "partir",
+        "abençoar"
+      ],
+      "boost_terms": [
+        "multiplicação dos pães",
+        "cinco pães dois peixes",
+        "cinco mil homens"
+      ],
+      "related": [
+        "pesca_milagrosa",
+        "pedro_anda_sobre_aguas"
+      ],
+      "references": [
+        "Mateus 14:13-21",
+        "Marcos 6:30-44",
+        "Lucas 9:10-17",
+        "João 6:1-15"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "lazaro",
+      "name": "ressurreição de lázaro",
+      "type": "MIRACLE",
+      "aliases": [
+        "Lázaro",
+        "ressurreição de Lázaro",
+        "Lázaro ressuscitado",
+        "Jesus ressuscita Lázaro",
+        "túmulo de Lázaro",
+        "amigo Lázaro"
+      ],
+      "books": [
+        "João"
+      ],
+      "chapters": [
+        11
+      ],
+      "characters": [
+        "Jesus",
+        "Lázaro",
+        "Marta",
+        "Maria"
+      ],
+      "places": [
+        "Betânia"
+      ],
+      "events": [
+        "ressurreição de Lázaro"
+      ],
+      "themes": [
+        "ressurreição",
+        "fé",
+        "vida",
+        "morte",
+        "glória"
+      ],
+      "keywords": [
+        "Lázaro",
+        "morte",
+        "túmulo",
+        "ressuscitar",
+        "Marta",
+        "Maria",
+        "Betânia",
+        "quatro dias",
+        "cheiro"
+      ],
+      "boost_terms": [
+        "ressurreição de Lázaro",
+        "Eu sou a ressurreição",
+        "tira a pedra",
+        "vem para fora"
+      ],
+      "related": [
+        "vale_ossos_secos",
+        "transfiguracao"
+      ],
+      "references": [
+        "João 11:1-44"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "bom_samaritano",
+      "name": "bom samaritano",
+      "type": "PARABLE",
+      "aliases": [
+        "samaritano",
+        "parábola do bom samaritano",
+        "parabola do samaritano",
+        "quem é meu próximo",
+        "homem descido de Jerusalém"
+      ],
+      "books": [
+        "Lucas"
+      ],
+      "chapters": [
+        10
+      ],
+      "characters": [
+        "samaritano",
+        "sacerdote",
+        "levita",
+        "homem ferido"
+      ],
+      "places": [
+        "Jericó",
+        "Jerusalém"
+      ],
+      "events": [
+        "parábola do bom samaritano"
+      ],
+      "themes": [
+        "amor ao próximo",
+        "misericórdia",
+        "compaixão"
+      ],
+      "keywords": [
+        "samaritano",
+        "ferido",
+        "sacerdote",
+        "levita",
+        "Jerico",
+        "Jerusalém",
+        "óleo",
+        "vinho",
+        "estalagem",
+        "misericórdia"
+      ],
+      "boost_terms": [
+        "bom samaritano",
+        "quem é o meu próximo",
+        "vai e faze o mesmo"
+      ],
+      "related": [
+        "filho_prodigo",
+        "mulher_samaritana"
+      ],
+      "references": [
+        "Lucas 10:25-37"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "zacau",
+      "name": "zaqueu",
+      "type": "EVENT",
+      "aliases": [
+        "Zaqueu",
+        "Zaqueu na árvore",
+        "Zaqueu na figueira",
+        "Zaqueu o publicano",
+        "Jesus e Zaqueu",
+        "pequeno Zaqueu"
+      ],
+      "books": [
+        "Lucas"
+      ],
+      "chapters": [
+        19
+      ],
+      "characters": [
+        "Jesus",
+        "Zaqueu"
+      ],
+      "places": [
+        "Jericó"
+      ],
+      "events": [
+        "encontro de Jesus com Zaqueu"
+      ],
+      "themes": [
+        "conversão",
+        "salvação",
+        "generosidade",
+        "publicano"
+      ],
+      "keywords": [
+        "Zaqueu",
+        "publicano",
+        "rico",
+        "árvore",
+        "sicômoro",
+        "pequeno",
+        "descer",
+        "casa",
+        "salvação",
+        "pobres"
+      ],
+      "boost_terms": [
+        "Zaqueu",
+        "desce depressa",
+        "filho de Abraão",
+        "árvore sicômoro"
+      ],
+      "related": [
+        "jovem_rico",
+        "bom_samaritano",
+        "nicodemos"
+      ],
+      "references": [
+        "Lucas 19:1-10"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "nicodemos",
+      "name": "nicodemos",
+      "type": "EVENT",
+      "aliases": [
+        "Nicodemos",
+        "Nicodemos à noite",
+        "Jesus e Nicodemos",
+        "nascer de novo",
+        "visita noturna",
+        "fariseu Nicodemos"
+      ],
+      "books": [
+        "João"
+      ],
+      "chapters": [
+        3
+      ],
+      "characters": [
+        "Jesus",
+        "Nicodemos"
+      ],
+      "places": [
+        "Jerusalém"
+      ],
+      "events": [
+        "encontro de Jesus com Nicodemos"
+      ],
+      "themes": [
+        "novo nascimento",
+        "salvação",
+        "espírito",
+        "fé"
+      ],
+      "keywords": [
+        "Nicodemos",
+        "nascer",
+        "novo",
+        "espírito",
+        "vento",
+        "reino",
+        "Deus",
+        "noite",
+        "fariseu",
+        "mestre"
+      ],
+      "boost_terms": [
+        "nascer de novo",
+        "Deus amou o mundo",
+        "não pereça",
+        "vida eterna"
+      ],
+      "related": [
+        "mulher_samaritana",
+        "zacau"
+      ],
+      "references": [
+        "João 3:1-21"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "rainha_de_saba",
+      "name": "rainha de sabá",
+      "type": "PERSON",
+      "aliases": [
+        "rainha de Sabah",
+        "rainha do Sul",
+        "Sabá",
+        "visita da rainha",
+        "Salomão e a rainha"
+      ],
+      "books": [
+        "1 Reis",
+        "2 Crônicas",
+        "Mateus",
+        "Lucas"
+      ],
+      "chapters": [
+        10,
+        9,
+        12,
+        11
+      ],
+      "characters": [
+        "Salomão",
+        "rainha de Sabá"
+      ],
+      "places": [
+        "Sabá",
+        "Jerusalém"
+      ],
+      "events": [
+        "visita da rainha de Sabá a Salomão"
+      ],
+      "themes": [
+        "sabedoria",
+        "riqueza",
+        "glória",
+        "gentios"
+      ],
+      "keywords": [
+        "rainha",
+        "Sabá",
+        "Salomão",
+        "sabedoria",
+        "ouro",
+        "especiarias",
+        "perguntas",
+        "sabedoria",
+        "glória"
+      ],
+      "boost_terms": [
+        "rainha de Sabá",
+        "sabedoria de Salomão",
+        "rainha do Sul"
+      ],
+      "related": [
+        "rei_davi"
+      ],
+      "references": [
+        "1 Reis 10:1-13",
+        "2 Crônicas 9:1-12"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "id": "transfiguracao",
+      "name": "transfiguração",
+      "type": "EVENT",
+      "aliases": [
+        "transfiguração",
+        "monte da transfiguração",
+        "Jesus transfigurado",
+        "Moisés e Elias no monte",
+        "rosto brilhante",
+        "tenda três"
+      ],
+      "books": [
+        "Mateus",
+        "Marcos",
+        "Lucas"
+      ],
+      "chapters": [
+        17,
+        9,
+        9
+      ],
+      "characters": [
+        "Jesus",
+        "Pedro",
+        "Tiago",
+        "João",
+        "Moisés",
+        "Elias"
+      ],
+      "places": [
+        "monte santo"
+      ],
+      "events": [
+        "transfiguração de Jesus"
+      ],
+      "themes": [
+        "glória",
+        "reino",
+        "lei",
+        "profetas"
+      ],
+      "keywords": [
+        "transfigurou",
+        "brilhante",
+        "monte",
+        "Moisés",
+        "Elias",
+        "nuvem",
+        "voz",
+        "Filho",
+        "amado",
+        "tenda"
+      ],
+      "boost_terms": [
+        "transfiguração",
+        "este é meu Filho amado",
+        "ouvi-o",
+        "monte santo"
+      ],
+      "related": [
+        "pedro_anda_sobre_aguas",
+        "lazaro",
+        "monte_sinai"
+      ],
+      "references": [
+        "Mateus 17:1-9",
+        "Marcos 9:2-10",
+        "Lucas 9:28-36"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "pentecostes",
+      "name": "pentecostes",
+      "type": "EVENT",
+      "aliases": [
+        "Pentecostes",
+        "dia de Pentecostes",
+        "Espírito Santo",
+        "descida do Espírito",
+        "línguas de fogo",
+        "derramamento do Espírito"
+      ],
+      "books": [
+        "Atos"
+      ],
+      "chapters": [
+        2
+      ],
+      "characters": [
+        "Pedro",
+        "discípulos",
+        "Espírito Santo"
+      ],
+      "places": [
+        "Jerusalém"
+      ],
+      "events": [
+        "derramamento do Espírito Santo"
+      ],
+      "themes": [
+        "Espírito Santo",
+        "poder",
+        "línguas",
+        "igreja",
+        "salvação"
+      ],
+      "keywords": [
+        "Pentecostes",
+        "Espírito",
+        "fogo",
+        "línguas",
+        "vento",
+        "casa",
+        "Pedro",
+        "pregar",
+        "mil",
+        "salvos"
+      ],
+      "boost_terms": [
+        "Pentecostes",
+        "línguas de fogo",
+        "cheios do Espírito",
+        "profetizarão"
+      ],
+      "related": [
+        "fruto_do_espirito",
+        "armadura_de_deus",
+        "torre_de_babel"
+      ],
+      "references": [
+        "Atos 2:1-41"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "fruto_do_espirito",
+      "name": "fruto do espírito",
+      "type": "DOCTRINE",
+      "aliases": [
+        "fruto do Espírito",
+        "frutos do Espírito",
+        "fruto do Espirito",
+        "fruto do espírito santo",
+        "amor alegria paz",
+        "Gálatas 5"
+      ],
+      "books": [
+        "Gálatas"
+      ],
+      "chapters": [
+        5
+      ],
+      "characters": [
+        "Paulo"
+      ],
+      "places": [],
+      "events": [],
+      "themes": [
+        "Espírito Santo",
+        "caráter",
+        "santificação",
+        "virtudes"
+      ],
+      "keywords": [
+        "fruto",
+        "Espírito",
+        "amor",
+        "alegria",
+        "paz",
+        "paciência",
+        "benignidade",
+        "bondade",
+        "fé",
+        "mansidão",
+        "temperança"
+      ],
+      "boost_terms": [
+        "fruto do Espírito",
+        "amor alegria paz",
+        "andai no Espírito"
+      ],
+      "related": [
+        "pentecostes",
+        "armadura_de_deus",
+        "sermao_do_monte"
+      ],
+      "references": [
+        "Gálatas 5:22-23"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "armadura_de_deus",
+      "name": "armadura de deus",
+      "type": "METAPHOR",
+      "aliases": [
+        "armadura",
+        "armadura do cristão",
+        "vestir a armadura",
+        "guerra espiritual",
+        "capacete da salvação",
+        "escudo da fé"
+      ],
+      "books": [
+        "Efésios"
+      ],
+      "chapters": [
+        6
+      ],
+      "characters": [
+        "Paulo"
+      ],
+      "places": [],
+      "events": [],
+      "themes": [
+        "guerra espiritual",
+        "proteção",
+        "fé",
+        "verdade",
+        "salvação"
+      ],
+      "keywords": [
+        "armadura",
+        "Deus",
+        "cinto",
+        "verdade",
+        "couraça",
+        "justiça",
+        "calçado",
+        "paz",
+        "escudo",
+        "fé",
+        "capacete",
+        "salvação",
+        "espada",
+        "Espírito",
+        "palavra"
+      ],
+      "boost_terms": [
+        "armadura de Deus",
+        "capacete da salvação",
+        "escudo da fé",
+        "espada do Espírito",
+        "luta não é contra carne"
+      ],
+      "related": [
+        "fruto_do_espirito",
+        "sermao_do_monte",
+        "pedra_angular"
+      ],
+      "references": [
+        "Efésios 6:10-18"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "ladrao_na_cruz",
+      "name": "ladrão na cruz",
+      "type": "EVENT",
+      "aliases": [
+        "ladrão na cruz",
+        "ladrão",
+        "bom ladrão",
+        "crucificação",
+        "dois ladrões",
+        "hoje estarás comigo no paraíso",
+        "ladrão arrependido"
+      ],
+      "books": [
+        "Lucas",
+        "Mateus",
+        "Marcos",
+        "João"
+      ],
+      "chapters": [
+        23,
+        27,
+        15,
+        19
+      ],
+      "characters": [
+        "Jesus",
+        "ladrão",
+        "criminoso"
+      ],
+      "places": [
+        "Gólgota",
+        "Calvário"
+      ],
+      "events": [
+        "crucificação de Jesus"
+      ],
+      "themes": [
+        "arrependimento",
+        "salvação",
+        "paraíso",
+        "cruz"
+      ],
+      "keywords": [
+        "ladrão",
+        "cruz",
+        "Jesus",
+        "crucificar",
+        "paraíso",
+        "hoje",
+        "lembra",
+        "reino",
+        "criminosos",
+        "dois"
+      ],
+      "boost_terms": [
+        "ladrão na cruz",
+        "hoje estarás comigo no paraíso",
+        "lembra de mim"
+      ],
+      "related": [
+        "transfiguracao",
+        "lazaro"
+      ],
+      "references": [
+        "Lucas 23:39-43"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "id": "dez_virgens",
+      "name": "parábola das dez virgens",
+      "type": "PARABLE",
+      "aliases": [
+        "parábola das dez virgens",
+        "dez virgens",
+        "virgens prudentes",
+        "virgens néscias",
+        "parábola das virgens",
+        "lâmpadas das virgens",
+        "parabola das dez virgens"
+      ],
+      "books": [
+        "Mateus"
+      ],
+      "chapters": [
+        25
+      ],
+      "characters": [
+        "virgens",
+        "noivo"
+      ],
+      "places": [],
+      "events": [
+        "parábola das dez virgens"
+      ],
+      "themes": [
+        "vigiar",
+        "prudência",
+        "reino",
+        "segunda vinda"
+      ],
+      "keywords": [
+        "virgens",
+        "dez",
+        "lâmpadas",
+        "óleo",
+        "noivo",
+        "núpcias",
+        "meia-noite",
+        "vigiar",
+        "prudentes",
+        "néscias",
+        "porta",
+        "fechada"
+      ],
+      "boost_terms": [
+        "dez virgens",
+        "lâmpadas acesas",
+        "vigiai",
+        "não sabeis o dia nem a hora"
+      ],
+      "related": [
+        "sermao_do_monte",
+        "transfiguracao"
+      ],
+      "references": [
+        "Mateus 25:1-13"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "pedra_angular",
+      "name": "pedra angular",
+      "type": "SYMBOL",
+      "aliases": [
+        "pedra angular",
+        "pedra fundamental",
+        "pedra principal",
+        "pedra rejeitada",
+        "cabeça da esquina",
+        "fundamento da igreja"
+      ],
+      "books": [
+        "Salmos",
+        "Isaías",
+        "Efésios",
+        "1 Pedro"
+      ],
+      "chapters": [
+        118,
+        28,
+        2,
+        2
+      ],
+      "characters": [
+        "Jesus",
+        "pedra"
+      ],
+      "places": [],
+      "events": [],
+      "themes": [
+        "fundamento",
+        "rejeição",
+        "glória",
+        "igreja",
+        "edifício"
+      ],
+      "keywords": [
+        "pedra",
+        "angular",
+        "rejeitada",
+        "fundamento",
+        "edifício",
+        "construtores",
+        "cabeça",
+        "esquina",
+        "preciosa",
+        "firme"
+      ],
+      "boost_terms": [
+        "pedra angular",
+        "pedra que rejeitaram",
+        "cabeça da esquina",
+        "edifício de Deus"
+      ],
+      "related": [
+        "bom_pastor",
+        "armadura_de_deus",
+        "videira_verdadeira"
+      ],
+      "references": [
+        "Salmos 118:22",
+        "Isaías 28:16",
+        "Efésios 2:20",
+        "1 Pedro 2:6"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "id": "videira_verdadeira",
+      "name": "videira verdadeira",
+      "type": "METAPHOR",
+      "aliases": [
+        "videira verdadeira",
+        "eu sou a videira",
+        "videira e os ramos",
+        "Jesus videira",
+        "permanecer na videira",
+        "parábola da videira"
+      ],
+      "books": [
+        "João"
+      ],
+      "chapters": [
+        15
+      ],
+      "characters": [
+        "Jesus",
+        "discípulos"
+      ],
+      "places": [],
+      "events": [],
+      "themes": [
+        "permanecer",
+        "fruto",
+        "amor",
+        "unidade",
+        "discipulado"
+      ],
+      "keywords": [
+        "videira",
+        "verdadeira",
+        "ramos",
+        "permanecer",
+        "fruto",
+        "pai",
+        "agricultor",
+        "podar",
+        "seco",
+        "fogo",
+        "amor"
+      ],
+      "boost_terms": [
+        "videira verdadeira",
+        "permanecer em mim",
+        "sem mim nada podeis",
+        "eu sou a videira"
+      ],
+      "related": [
+        "bom_pastor",
+        "pedra_angular",
+        "fruto_do_espirito"
+      ],
+      "references": [
+        "João 15:1-17"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "rei_davi",
+      "name": "rei davi",
+      "type": "PERSON",
+      "aliases": [
+        "rei Davi",
+        "Davi",
+        "Davi e Golias",
+        "Davi pastor",
+        "Davi e Saul",
+        "homem segundo o coração de Deus"
+      ],
+      "books": [
+        "1 Samuel",
+        "2 Samuel",
+        "Salmos"
+      ],
+      "chapters": [
+        16,
+        17,
+        1
+      ],
+      "characters": [
+        "Davi",
+        "Saul",
+        "Golias",
+        "Jônatas",
+        "Samuel"
+      ],
+      "places": [
+        "Belém",
+        "Jerusalém",
+        "Vale de Elá"
+      ],
+      "events": [
+        "unção de Davi",
+        "Davi e Golias",
+        "reino de Davi"
+      ],
+      "themes": [
+        "reino",
+        "coragem",
+        "fé",
+        "pastor",
+        "aliança"
+      ],
+      "keywords": [
+        "Davi",
+        "rei",
+        "Golias",
+        "funda",
+        "pedra",
+        "pastor",
+        "Saul",
+        "unção",
+        "Belém",
+        "gigante"
+      ],
+      "boost_terms": [
+        "rei Davi",
+        "homem segundo o coração",
+        "Davi e Golias",
+        "cinco pedras"
+      ],
+      "related": [
+        "rainha_de_saba",
+        "profeta_elias"
+      ],
+      "references": [
+        "1 Samuel 16:1-13",
+        "1 Samuel 17:38-51"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "id": "rainha_ester",
+      "name": "rainha ester",
+      "type": "PERSON",
+      "aliases": [
+        "rainha Ester",
+        "Ester",
+        "Ester e Mardoqueu",
+        "salvação dos judeus na Pérsia",
+        "paraíso de Ester"
+      ],
+      "books": [
+        "Ester"
+      ],
+      "chapters": [
+        4,
+        5,
+        7,
+        8
+      ],
+      "characters": [
+        "Ester",
+        "Mardoqueu",
+        "Assuero",
+        "Hamã"
+      ],
+      "places": [
+        "Susa",
+        "Pérsia"
+      ],
+      "events": [
+        "salvação dos judeus através de Ester"
+      ],
+      "themes": [
+        "coragem",
+        "providência",
+        "salvação",
+        "risco"
+      ],
+      "keywords": [
+        "Ester",
+        "rainha",
+        "Mardoqueu",
+        "Hamã",
+        "Assuero",
+        "judeus",
+        "Pérsia",
+        "banquete",
+        "forca",
+        "povo"
+      ],
+      "boost_terms": [
+        "rainha Ester",
+        "se perecer, pereço",
+        "para tal tempo como este"
+      ],
+      "related": [
+        "rei_davi",
+        "rainha_de_saba"
+      ],
+      "references": [
+        "Ester 4:1-17",
+        "Ester 7:1-10"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "id": "profeta_elias",
+      "name": "profeta elias",
+      "type": "PERSON",
+      "aliases": [
+        "profeta Elias",
+        "Elias",
+        "Elias no monte Carmelo",
+        "Elias e os profetas de Baal",
+        "Elias e a viúva",
+        "carro de fogo",
+        "arrebatamento de Elias"
+      ],
+      "books": [
+        "1 Reis",
+        "2 Reis"
+      ],
+      "chapters": [
+        17,
+        18,
+        19,
+        2
+      ],
+      "characters": [
+        "Elias",
+        "Acabe",
+        "Jezabel",
+        "Eliseu",
+        "viúva de Sarepta"
+      ],
+      "places": [
+        "Sarepta",
+        "monte Carmelo",
+        "Horebe"
+      ],
+      "events": [
+        "sacrifício no monte Carmelo",
+        "arrebatamento de Elias"
+      ],
+      "themes": [
+        "profecia",
+        "fogo",
+        "fé",
+        "seca",
+        "milagre"
+      ],
+      "keywords": [
+        "Elias",
+        "Carmelo",
+        "Baal",
+        "fogo",
+        "seca",
+        "chuva",
+        "viúva",
+        "Sarepta",
+        "azeite",
+        "farinha",
+        "carro",
+        "Eliseu"
+      ],
+      "boost_terms": [
+        "profeta Elias",
+        "monte Carmelo",
+        "responde-me ó Senhor",
+        "carro de fogo"
+      ],
+      "related": [
+        "monte_carmelo",
+        "monte_sinai",
+        "rei_davi"
+      ],
+      "references": [
+        "1 Reis 17:1-24",
+        "1 Reis 18:20-46",
+        "2 Reis 2:1-14"
+      ],
+      "confidence": 0.9
+    },
+    {
+      "id": "monte_carmelo",
+      "name": "monte carmelo",
+      "type": "EVENT",
+      "aliases": [
+        "Monte Carmelo",
+        "Carmelo",
+        "sacrifício no Carmelo",
+        "Elias no Carmelo",
+        "fogo no Carmelo",
+        "desafio no Carmelo"
+      ],
+      "books": [
+        "1 Reis"
+      ],
+      "chapters": [
+        18
+      ],
+      "characters": [
+        "Elias",
+        "Acabe",
+        "profetas de Baal"
+      ],
+      "places": [
+        "monte Carmelo"
+      ],
+      "events": [
+        "sacrifício no monte Carmelo"
+      ],
+      "themes": [
+        "fé",
+        "fogo",
+        "Deus verdadeiro",
+        "sacrifício"
+      ],
+      "keywords": [
+        "Carmelo",
+        "Elias",
+        "Baal",
+        "fogo",
+        "altar",
+        "sacrifício",
+        "bezerro",
+        "água",
+        "Deus",
+        "responde"
+      ],
+      "boost_terms": [
+        "monte Carmelo",
+        "responde-me Senhor",
+        "Deus é Deus",
+        "fogo do Senhor"
+      ],
+      "related": [
+        "profeta_elias",
+        "monte_sinai"
+      ],
+      "references": [
+        "1 Reis 18:20-40"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "monte_sinai",
+      "name": "monte sinai",
+      "type": "PLACE",
+      "aliases": [
+        "Monte Sinai",
+        "Sinai",
+        "monte de Deus",
+        "Horebe",
+        "entrega da lei",
+        "dez mandamentos no monte",
+        "Moisés no Sinai"
+      ],
+      "books": [
+        "Êxodo",
+        "Deuteronômio"
+      ],
+      "chapters": [
+        19,
+        20,
+        5
+      ],
+      "characters": [
+        "Moisés",
+        "Deus",
+        "povo de Israel"
+      ],
+      "places": [
+        "monte Sinai",
+        "Horebe"
+      ],
+      "events": [
+        "entrega dos dez mandamentos"
+      ],
+      "themes": [
+        "lei",
+        "aliança",
+        "santidade",
+        "mandamentos"
+      ],
+      "keywords": [
+        "Sinai",
+        "monte",
+        "Moisés",
+        "lei",
+        "mandamentos",
+        "dez",
+        "fumaça",
+        "trovão",
+        "relâmpago",
+        "tábuas",
+        "aliança"
+      ],
+      "boost_terms": [
+        "monte Sinai",
+        "dez mandamentos",
+        "não terás",
+        "tábuas da lei"
+      ],
+      "related": [
+        "sarca_ardente",
+        "exodo",
+        "profeta_elias",
+        "transfiguracao"
+      ],
+      "references": [
+        "Êxodo 19:1-25",
+        "Êxodo 20:1-17"
+      ],
+      "confidence": 0.95
+    },
+    {
+      "id": "mar_vermelho",
+      "name": "mar vermelho",
+      "type": "MIRACLE",
+      "aliases": [
+        "mar vermelho",
+        "Mar Vermelho",
+        "passagem do mar vermelho",
+        "divisão do mar",
+        "Moisés divide o mar",
+        "travessia do mar",
+        "mar de canas"
+      ],
+      "books": [
+        "Êxodo"
+      ],
+      "chapters": [
+        14
+      ],
+      "characters": [
+        "Moisés",
+        "povo de Israel",
+        "Faraó",
+        "exército egípcio"
+      ],
+      "places": [
+        "Mar Vermelho",
+        "Egito"
+      ],
+      "events": [
+        "divisão do mar vermelho"
+      ],
+      "themes": [
+        "libertação",
+        "milagre",
+        "passagem",
+        "juízo"
+      ],
+      "keywords": [
+        "mar",
+        "vermelho",
+        "dividir",
+        "Moisés",
+        "bastão",
+        "passar",
+        "seco",
+        "água",
+        "muro",
+        "exército",
+        "Faraó",
+        "afogar"
+      ],
+      "boost_terms": [
+        "mar vermelho",
+        "divide as águas",
+        "passa no seco",
+        "cavalos e carros"
+      ],
+      "related": [
+        "exodo",
+        "sarca_ardente",
+        "diluvio"
+      ],
+      "references": [
+        "Êxodo 14:1-31"
+      ],
+      "confidence": 0.95
+    }
+  ]
+}

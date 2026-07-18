@@ -1,0 +1,22 @@
+=== DEVE ser uncertain ===
+vale da sombra da morte | uncertain | 0.00 | OK
+todas as coisas cooperam para o bem daqueles que amam a Deus | uncertain | 0.00 | OK
+a fe e a certeza das coisas que se esperam | uncertain | 0.00 | OK
+tudo posso naquele que me fortalece | uncertain | 0.00 | OK
+deus amou o mundo de tal maneira | uncertain | 0.00 | OK
+
+=== DEVE ser none ===
+boa noite igreja | none | 0.00 | OK
+amen irmaos | none | 0.00 | OK
+paz do senhor | none | 0.00 | OK
+vamos cantar | none | 0.00 | OK
+podem sentar | none | 0.00 | OK
+vamos orar | none | 0.00 | OK
+
+=== DEVE continuar funcionando ===
+Joao 3:16 | show | 0.95 | book=João ch=3 v=16
+Hebreus 11:1 | show | 0.95 | book=Hebreus ch=11 v=1
+Romanos 8:28 | show | 0.95 | book=Romanos ch=8 v=28
+proximo | next | 0.99 | book=None ch=None v=None
+anterior | previous | 0.99 | book=None ch=None v=None
+mais dois | next | 0.97 | book=None ch=None v=None

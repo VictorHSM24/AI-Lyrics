@@ -1,0 +1,8 @@
+vale da sombra da morte|uncertain|0.00|parser|vale da sombra da morte|['NENHUM']
+todas as coisas cooperam para o bem daqueles que amam a Deus|none|0.00|parser|todas as coisas cooperam para o bem daqueles que amam a deus|['NENHUM']
+a fe e a certeza das coisas que se esperam|none|0.00|parser|a fe e a certeza das coisas que se esperam|['NENHUM']
+boa noite igreja|none|0.00|parser|boa noite igreja|['NENHUM']
+amen irmaos|none|0.00|parser|amen irmaos|['NENHUM']
+aquele texto que diz que todas as coisas cooperam para o bem|uncertain|0.00|parser|aquele texto que diz que todas as coisas cooperam para o bem|["ind={'texto', 'aquele'}"]
+o versiculo sobre a fe ser a certeza das coisas que se esperam|uncertain|0.00|parser|o versiculo sobre a fe ser a certeza das coisas que se esperam|["ind={'versiculo'}"]
+tudo posso naquele que me fortalece|none|0.00|parser|tudo posso naquele que me fortalece|['NENHUM']

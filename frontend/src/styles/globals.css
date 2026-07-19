@@ -1,0 +1,115 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   CSS Variables — Semantic color tokens
+   ============================================================ */
+
+:root {
+  /* Surface */
+  --color-surface: 255 255 255;
+  --color-surface-hover: 248 250 252;
+  --color-surface-raised: 241 245 249;
+
+  /* Border */
+  --color-border: 226 232 240;
+  --color-border-strong: 203 213 225;
+
+  /* Text */
+  --color-text: 15 23 42;
+  --color-text-muted: 71 85 105;
+  --color-text-subtle: 148 163 184;
+
+  /* Accent */
+  --color-accent: 59 130 246;
+  --color-accent-hover: 37 99 235;
+  --color-accent-muted: 219 234 254;
+
+  /* Status colors */
+  --color-status-healthy: 34 197 94;
+  --color-status-warning: 234 179 8;
+  --color-status-error: 239 68 68;
+  --color-status-offline: 107 114 128;
+  --color-status-unknown: 148 163 184;
+  --color-status-processing: 168 85 247;
+  --color-status-paused: 245 158 11;
+  --color-status-running: 34 197 94;
+  --color-status-success: 34 197 94;
+  --color-status-info: 59 130 246;
+}
+
+.dark {
+  /* Surface */
+  --color-surface: 15 23 42;
+  --color-surface-hover: 30 41 59;
+  --color-surface-raised: 51 65 85;
+
+  /* Border */
+  --color-border: 51 65 85;
+  --color-border-strong: 71 85 105;
+
+  /* Text */
+  --color-text: 241 245 249;
+  --color-text-muted: 148 163 184;
+  --color-text-subtle: 100 116 139;
+
+  /* Accent */
+  --color-accent: 96 165 250;
+  --color-accent-hover: 59 130 246;
+  --color-accent-muted: 30 58 138;
+
+  /* Status colors (slightly brighter for dark bg) */
+  --color-status-healthy: 74 222 128;
+  --color-status-warning: 250 204 21;
+  --color-status-error: 248 113 113;
+  --color-status-offline: 156 163 175;
+  --color-status-unknown: 148 163 184;
+  --color-status-processing: 192 132 252;
+  --color-status-paused: 251 191 36;
+  --color-status-running: 74 222 128;
+  --color-status-success: 74 222 128;
+  --color-status-info: 96 165 250;
+}
+
+/* ============================================================
+   Base styles
+   ============================================================ */
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-surface text-text antialiased;
+    font-feature-settings: "cv11", "ss01";
+    font-variation-settings: normal;
+  }
+
+  /* Focus visible for accessibility */
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-surface;
+  }
+}
+
+/* ============================================================
+   Scrollbar styling
+   ============================================================ */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-surface;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-border-strong rounded;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-text-subtle;
+}

@@ -1,0 +1,11 @@
+export { DashboardPage } from "./DashboardPage";
+export { ConsolePage } from "./ConsolePage";
+export { SessionsPage } from "./SessionsPage";
+export { ReplayPage } from "./ReplayPage";
+export { LogsPage } from "./LogsPage";
+export { ConfigurationPage } from "./ConfigurationPage";
+export { DiagnosticPage } from "./DiagnosticPage";
+export { AboutPage } from "./AboutPage";
+export { NotFoundPage } from "./NotFoundPage";
+export { ErrorPage } from "./ErrorPage";
+export { DevelopmentPage } from "./DevelopmentPage";

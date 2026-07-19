@@ -16,3 +16,28 @@ logs/*.jsonl
 .env
 .venv/
 venv/
+
+# Frontend — Node
+frontend/node_modules/
+frontend/dist/
+
+# Frontend — TypeScript incremental build
+*.tsbuildinfo
+
+# Frontend — arquivos gerados a partir de .ts
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
+# Arquivos temporários de teste/output (raiz e frontend)
+pytest_*.txt
+vitest_*.txt
+console_test*.txt
+console_err*.txt
+routing2.txt
+routing_err.txt
+vitest_out*.txt
+vitest_err*.txt
+vitest_arch*.txt
+vitest_final*.txt
+vitest_real*.txt
+vitest_console*.txt

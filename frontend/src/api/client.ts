@@ -39,9 +39,11 @@ export function createPresentationApi(): PresentationApi {
     },
     configuration: {
       getConfiguration: notImplemented,
+      updateConfiguration: notImplemented,
     },
     health: {
       getHealth: notImplemented,
+      testHolyrics: notImplemented,
     },
     diagnostics: {
       getDiagnostics: notImplemented,
@@ -56,6 +58,20 @@ export function createPresentationApi(): PresentationApi {
       getReplayEvents: notImplemented,
       getReplaySessions: notImplemented,
       getReplayCorrelations: notImplemented,
+    },
+    audio: {
+      getDevices: notImplemented,
+      getCurrentDevice: notImplemented,
+      getLevels: notImplemented,
+      startCapture: notImplemented,
+      stopCapture: notImplemented,
+      selectDevice: notImplemented,
+    },
+    system: {
+      getSystemInfo: notImplemented,
+    },
+    info: {
+      getInfo: notImplemented,
     },
   };
 }

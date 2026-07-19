@@ -283,3 +283,67 @@ export interface EventSnapshot {
   event_types: string[];
   correlation_id: string;
 }
+
+// ============================================================
+// Sprint 14 — System, Audio, Info
+// ============================================================
+
+export interface AudioDeviceDTO {
+  index: number;
+  name: string;
+  channels: number;
+  sample_rate: number;
+  is_default: boolean;
+  available: boolean;
+}
+
+export interface AudioDevicesResponse {
+  devices: AudioDeviceDTO[];
+  count: number;
+}
+
+export interface AudioLevelsDTO {
+  rms: number;
+  peak: number;
+  timestamp: number;
+}
+
+export interface SystemInfoDTO {
+  python_version: string;
+  os_name: string;
+  os_version: string;
+  architecture: string;
+  cpu_count: number;
+  cpu_percent: number;
+  memory_total_bytes: number;
+  memory_available_bytes: number;
+  disk_total_bytes: number;
+  disk_used_bytes: number;
+  log_dir: string;
+  cache_dir: string;
+  data_dir: string;
+  gpu_name: string;
+  gpu_memory_total_bytes: number;
+  gpu_memory_used_bytes: number;
+  torch_version: string;
+  faster_whisper_version: string;
+  sentence_transformers_version: string;
+  sounddevice_version: string;
+}
+
+export interface InfoDTO {
+  name: string;
+  version: string;
+  api_version: {
+    major: number;
+    minor: number;
+    patch: number;
+    pre: string | null;
+  };
+  server_time: number;
+  build_id: string;
+  commit: string;
+  build_date: string;
+  frontend_version: string;
+  sdk_compatibility: string;
+}

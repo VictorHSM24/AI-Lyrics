@@ -1,0 +1,221 @@
+# pyproject.toml — AI Lyrics
+#
+# Gerado por análise estática de todos os imports de terceiros
+# do projeto Python (Sprint 14).
+#
+# Dependências diretas: pacotes efetivamente importados no código.
+# Dependências opcionais: importadas em try/except (graceful fallback).
+# Dependências de teste: usadas apenas em tests/ e pelo pytest.
+#
+# As faixas de versão seguem o princípio de compatibilidade semântica:
+#   >=X.Y  : versão mínima com a qual o projeto foi testado
+#   <X.(Y+1) ou <(X+1).0 : limite superior para evitar breaking changes
+#
+# Para instalar apenas o necessário para produção:
+#   pip install -e .
+#
+# Para instalar com suporte a GPU (CUDA):
+#   pip install -e ".[gpu]"
+#
+# Para instalar com dependências de desenvolvimento:
+#   pip install -e ".[dev,test]"
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-lyrics"
+version = "0.1.0"
+description = "Sistema de reconhecimento de fala para versículos bíblicos"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [
+    { name = "AI Lyrics Team" },
+]
+keywords = ["speech-recognition", "whisper", "bible", "holyrics", "stt"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+# -------------------------------------------------------------------
+# Dependências diretas — efetivamente importadas no código fonte
+# -------------------------------------------------------------------
+dependencies = [
+    # --- Config ---
+    "PyYAML>=6.0,<7.0",              # config/loader.py — carrega config.yaml
+
+    # --- HTTP ---
+    "requests>=2.31,<3.0",           # integracao_holyrics/client.py, llm/, presentation/health_checks.py
+
+    # --- FastAPI / REST API ---
+    "fastapi>=0.104,<0.115",         # api/ — routers, app, dependencies
+    "pydantic>=2.5,<3.0",            # api/schemas/ — modelos Pydantic v2
+    "uvicorn[standard]>=0.24,<0.35", # api/app.py — servidor ASGI (inclui websockets + httptools)
+
+    # --- Áudio / Captura ---
+    "sounddevice>=0.4.6,<0.6.0",     # microfone/capture.py, presentation/services_system.py — PortAudio
+    "pysilero-vad>=3.4.0,<4.0.0",    # microfone/capture.py — VAD Silero v6
+    "numpy>=1.24,<3.0",              # busca/embedding_*, microfone/capture.py, transcricao/stt.py — arrays PCM
+
+    # --- STT (Speech-to-Text) ---
+    "faster-whisper>=1.1.0,<2.0.0",  # transcricao/stt.py — backend CTranslate2 Whisper
+
+    # --- Busca / Ranking ---
+    "rapidfuzz>=3.10,<4.0",          # busca/searcher.py — fuzzy matching FTS5
+
+    # --- Embeddings / Semantic Search ---
+    "sentence-transformers>=3.0,<6.0",  # busca/embedding_provider.py — SentenceTransformer
+
+    # --- GPU / Inferência ---
+    # torch é usado para:
+    #   - detecção de GPU (presentation/services_system.py, core/hardware.py)
+    #   - backend de embeddings (sentence-transformers requer torch)
+    #   - backend do faster-whisper (ctranslate2 não requer torch, mas ST com CUDA sim)
+    "torch>=2.1,<3.0",               # presentation/services_system.py, busca/embedding_provider.py
+
+    # --- Sistema / Diagnóstico ---
+    "psutil>=5.9,<7.0",              # core/hardware.py, presentation/services_system.py — CPU/memória/disco
+]
+
+# -------------------------------------------------------------------
+# Dependências opcionais — extras
+# -------------------------------------------------------------------
+[project.optional-dependencies]
+
+# VAD alternativo (fallback quando pysilero-vad não está disponível)
+# Nota: webrtcvad não suporta Python 3.14 ainda — usar apenas em 3.11–3.13.
+vad-fallback = [
+    "webrtcvad>=2.0.36,<3.0; python_version < '3.14'",
+]
+
+# Suporte a GPU com CUDA (instala torch com CUDA em vez de CPU-only)
+# Requer CUDA toolkit instalado no sistema.
+gpu = [
+    "torch>=2.1,<3.0",               # substitui a dep principal se CUDA for necessário
+]
+
+# Aceleração CTranslate2 com CUDA (para faster-whisper)
+gpu-ct2 = [
+    "nvidia-cuda-runtime-cu12; platform_system != 'Darwin'",
+]
+
+# Dependências de teste
+test = [
+    "pytest>=8.0,<10.0",             # tests/ — framework de testes
+    "httpx>=0.24,<1.0",              # fastapi.testclient.TestClient — cliente HTTP para testes de API
+]
+
+# Dependências de desenvolvimento (linting, formatação, type checking)
+dev = [
+    "ruff>=0.4,<1.0",                # linter + formatter
+    "mypy>=1.10,<2.0",               # type checker
+]
+
+# Instala tudo (desenvolvimento completo)
+all = [
+    "ai-lyrics[test,dev,vad-fallback]",
+]
+
+# -------------------------------------------------------------------
+# URLs
+# -------------------------------------------------------------------
+[project.urls]
+Homepage = "https://github.com/ai-lyrics/ai-lyrics"
+Documentation = "https://github.com/ai-lyrics/ai-lyrics/docs"
+Repository = "https://github.com/ai-lyrics/ai-lyrics"
+
+# -------------------------------------------------------------------
+# Configuração do setuptools — pacotes do projeto
+# -------------------------------------------------------------------
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "api*",
+    "busca*",
+    "config*",
+    "context*",
+    "core*",
+    "estado*",
+    "evaluation*",
+    "examples*",
+    "feedback*",
+    "integracao_holyrics*",
+    "intelligence*",
+    "llm*",
+    "microfone*",
+    "parser*",
+    "pipeline*",
+    "presentation*",
+    "transcricao*",
+]
+exclude = [
+    "tests*",
+    "tools*",
+    "frontend*",
+    "_*",
+]
+
+# -------------------------------------------------------------------
+# Configuração do pytest
+# -------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+addopts = [
+    "-ra",
+    "--tb=short",
+]
+
+# -------------------------------------------------------------------
+# Configuração do ruff (linter + formatter)
+# -------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "api", "busca", "config", "context", "core", "estado",
+    "evaluation", "feedback", "integracao_holyrics", "intelligence",
+    "llm", "microfone", "parser", "pipeline", "presentation", "transcricao",
+]
+
+# -------------------------------------------------------------------
+# Configuração do mypy (type checker)
+# -------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = false

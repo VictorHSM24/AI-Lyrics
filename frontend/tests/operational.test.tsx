@@ -573,7 +573,8 @@ describe("AudioTab", () => {
 
   it("renderiza teste de áudio", () => {
     render(wrapProviders(<AudioTab />));
-    expect(screen.getByText("Teste de áudio")).toBeInTheDocument();
+    // Sprint 15.1: "Teste de áudio" foi substituído por "Captura" com medidores reais.
+    expect(screen.getByText("Captura")).toBeInTheDocument();
   });
 });
 

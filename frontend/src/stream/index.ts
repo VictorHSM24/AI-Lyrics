@@ -13,3 +13,17 @@ export {
   createEventStreamBridge,
   EventStreamBridge,
 } from "./bridge";
+
+export {
+  dispatchDomainHandlers,
+  handlePipelineLifecycle,
+  handleSessionEvent,
+  handleMetricsEvent,
+  handleDiagnosticEvent,
+} from "./handlers";
+
+export {
+  bootstrapStores,
+  type BootstrapResult,
+  type DomainKey,
+} from "./bootstrap";

@@ -2,13 +2,14 @@
  * HolyricsTab — Configurações > Holyrics.
  *
  * Permite configurar: URL, Token, Versão, Quick Presentation.
- * Botão: Testar conexão.
+ * Botão: Testar conexão (chamada real ao backend).
  * Exibe: Conectado, Desconectado, Erro, Tempo de resposta.
  */
 
 import { useState } from "react";
 import { Church, Plug, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { useOperationState } from "@/contexts/OperationContext";
+import { useServicesHook } from "@/hooks";
 import { Card } from "@/components";
 import { TextField, Toggle, Button } from "./FormControls";
 import { cn } from "@/utils";
@@ -23,6 +24,7 @@ interface TestResult {
 
 export function HolyricsTab() {
   const { settings, updateSettings } = useOperationState();
+  const services = useServicesHook();
   const [test, setTest] = useState<TestResult>({ state: "idle", message: "" });
 
   const holyrics = settings?.data.holyrics;
@@ -35,25 +37,26 @@ export function HolyricsTab() {
     setTest({ state: "testing", message: "Testando…" });
     const start = Date.now();
     try {
-      // Simulate connection test.
-      // In real system, this would call services.health.getHealth()
-      // or a specific holyrics test endpoint.
-      await new Promise((resolve, reject) => {
-        setTimeout(() => {
-          // Simulate: success if URL is non-empty and looks valid.
-          if (holyrics.url.startsWith("http")) {
-            resolve(null);
-          } else {
-            reject(new Error("URL inválida"));
-          }
-        }, 500 + Math.random() * 500);
+      // Chamada real ao backend — POST /health/holyrics/test
+      // O backend faz uma chamada real à API Holyrics com timeout 2s.
+      const result = await services.health.testHolyrics({
+        base_url: holyrics.url,
+        token: holyrics.token || "",
       });
       const elapsed = Date.now() - start;
-      setTest({
-        state: "connected",
-        message: "Conexão bem-sucedida.",
-        responseTimeMs: elapsed,
-      });
+      if (result.ok) {
+        setTest({
+          state: "connected",
+          message: result.message || "Conexão bem-sucedida.",
+          responseTimeMs: elapsed,
+        });
+      } else {
+        setTest({
+          state: "error",
+          message: result.message || "Falha na conexão.",
+          responseTimeMs: elapsed,
+        });
+      }
     } catch (err) {
       const elapsed = Date.now() - start;
       setTest({
@@ -102,7 +105,7 @@ export function HolyricsTab() {
             description="Endereço do servidor Holyrics."
             tooltip="Inclua o protocolo (http:// ou https://) e a porta."
             value={holyrics.url}
-            placeholder="http://localhost:8080"
+            placeholder="http://localhost:8091/api"
             onChange={(value) =>
               updateSettings((prev) => ({
                 ...prev,

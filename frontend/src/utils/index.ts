@@ -72,3 +72,9 @@ export function generateId(prefix = "id"): string {
 export function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(" ");
 }
+
+// ============================================================
+// Dev Log — telemetria de desenvolvimento.
+// ============================================================
+
+export { devLog, type DevLog } from "./dev-log";

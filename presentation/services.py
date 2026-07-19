@@ -222,11 +222,22 @@ class MetricsPresentationService:
 
 
 class ConfigurationPresentationService:
-    """Service para consultar configuração."""
+    """Service para consultar e atualizar configuração.
 
-    def __init__(self, config: Any, pipeline_policy: Any | None = None) -> None:
+    Sprint 14: adiciona update_configuration() que persiste
+    overrides em disco e atualiza a config em memória.
+    """
+
+    def __init__(
+        self,
+        config: Any,
+        pipeline_policy: Any | None = None,
+        overrides_path: str = "config/config.overrides.json",
+    ) -> None:
         self._config = config
         self._pipeline_policy = pipeline_policy
+        self._overrides_path = overrides_path
+        self._overrides: dict = {}
 
     def get_configuration(self) -> ConfigurationDTO:
         """Retorna DTO da configuração."""
@@ -238,6 +249,39 @@ class ConfigurationPresentationService:
             timestamp=time.time(),
             configuration=self.get_configuration(),
         )
+
+    def update_configuration(self, overrides: dict) -> ConfigurationDTO:
+        """Aplica overrides na configuração e persiste em disco.
+
+        Args:
+            overrides: dict com chaves válidas (holyrics, stt, llm, etc.).
+
+        Returns:
+            ConfigurationDTO atualizada.
+
+        Raises:
+            ValueError: se overrides contiver chaves inválidas.
+        """
+        from config.persistence import (
+            save_overrides,
+            validate_overrides,
+            merge_overrides,
+        )
+
+        errors = validate_overrides(overrides)
+        if errors:
+            raise ValueError("; ".join(errors))
+
+        # Mescla overrides acumulados.
+        self._overrides = merge_overrides(self._overrides, overrides)
+
+        # Persistir em disco.
+        save_overrides(self._overrides, self._overrides_path)
+
+        # Aplicar overrides na config em memória (criar nova SimpleNamespace).
+        self._config = _apply_overrides(self._config, overrides)
+
+        return self.get_configuration()
 
     @property
     def mode(self) -> str:
@@ -254,6 +298,38 @@ class ConfigurationPresentationService:
         return getattr(llm, "model", "") if llm else ""
 
 
+def _apply_overrides(config: Any, overrides: dict) -> Any:
+    """Aplica overrides a uma config (SimpleNamespace ou dataclass).
+
+    Cria uma nova SimpleNamespace com os valores mesclados.
+    Não modifica a config original.
+    """
+    from types import SimpleNamespace
+    from dataclasses import asdict, is_dataclass
+
+    # Converter config para dict.
+    if is_dataclass(config):
+        base = asdict(config)
+    elif isinstance(config, SimpleNamespace):
+        base = vars(config).copy()
+    elif isinstance(config, dict):
+        base = dict(config)
+    else:
+        base = {}
+
+    # Mesclar overrides (deep merge).
+    from config.persistence import merge_overrides
+    merged = merge_overrides(base, overrides)
+
+    # Converter dicts aninhados de volta para SimpleNamespace.
+    def to_namespace(d: Any) -> Any:
+        if isinstance(d, dict):
+            return SimpleNamespace(**{k: to_namespace(v) for k, v in d.items()})
+        return d
+
+    return to_namespace(merged)
+
+
 # ---------------------------------------------------------------------------
 # HealthPresentationService
 # ---------------------------------------------------------------------------
@@ -263,7 +339,9 @@ class HealthPresentationService:
     """Service para consultar saúde dos componentes.
 
     Constrói HealthDTOs a partir do estado observado.
-    Não executa verificações complexas — apenas adapta estado.
+    Verificações reais (Sprint 14 + Sprint 15.2) para todos os componentes:
+    Backend, WebSocket, EventStream, Pipeline, Microfone, STT, Searcher,
+    Ranking, Intelligence e Holyrics.
     """
 
     def __init__(
@@ -271,20 +349,68 @@ class HealthPresentationService:
         pipeline_state: Any | None = None,
         bus: Any | None = None,
         store: Any | None = None,
+        stt: Any | None = None,
+        searcher: Any | None = None,
+        stt_config: Any | None = None,
+        search_config: Any | None = None,
+        llm_config: Any | None = None,
+        holyrics_config: Any | None = None,
+        holyrics_client: Any | None = None,
+        audio_capture: Any | None = None,
+        audio_config: Any | None = None,
+        ws_server: Any | None = None,
+        ws_client_count: int = 0,
     ) -> None:
         self._pipeline_state = pipeline_state
         self._bus = bus
         self._store = store
+        self._stt = stt
+        self._searcher = searcher
+        self._stt_config = stt_config
+        self._search_config = search_config
+        self._llm_config = llm_config
+        self._holyrics_config = holyrics_config
+        self._holyrics_client = holyrics_client
+        self._audio_capture = audio_capture
+        self._audio_config = audio_config
+        self._ws_server = ws_server
+        self._ws_client_count = ws_client_count
+
+    def backend_health(self) -> HealthDTO:
+        """Saúde do backend (sempre saudável se o endpoint responde)."""
+        from presentation.health_checks import check_backend_health
+        return check_backend_health()
+
+    def websocket_health(self) -> HealthDTO:
+        """Saúde do WebSocket (verificação real)."""
+        from presentation.health_checks import check_websocket_health
+        return check_websocket_health(
+            ws_server=self._ws_server,
+            connected_clients=self._ws_client_count,
+        )
+
+    def eventstream_health(self) -> HealthDTO:
+        """Saúde do EventStream (verificação real)."""
+        from presentation.health_checks import check_eventstream_health
+        return check_eventstream_health(bus=self._bus)
 
     def pipeline_health(self) -> HealthDTO:
         """Saúde do pipeline."""
         if self._pipeline_state is None:
             return HealthMapper.unknown("pipeline", "state not available")
         if self._pipeline_state.is_active:
-            return HealthMapper.healthy("pipeline", "Pipeline running")
+            return HealthMapper.healthy("pipeline", "Pipeline em execução")
         if self._pipeline_state.paused:
-            return HealthMapper.degraded("pipeline", "Pipeline paused")
-        return HealthMapper.unhealthy("pipeline", "Pipeline stopped")
+            return HealthMapper.degraded("pipeline", "Pipeline pausado")
+        return HealthMapper.unhealthy("pipeline", "Pipeline parado")
+
+    def microphone_health(self) -> HealthDTO:
+        """Saúde do Microfone (verificação real)."""
+        from presentation.health_checks import check_microphone_health
+        return check_microphone_health(
+            capture_service=self._audio_capture,
+            audio_config=self._audio_config,
+        )
 
     def event_bus_health(self) -> HealthDTO:
         """Saúde do EventBus."""
@@ -305,37 +431,53 @@ class HealthPresentationService:
         )
 
     def speech_recognition_health(self) -> HealthDTO:
-        """Saúde do Speech Recognition (placeholder)."""
-        return HealthMapper.unknown(
-            "speech_recognition", "Not verified (architecture only)")
+        """Saúde do Speech Recognition (verificação real)."""
+        from presentation.health_checks import check_stt_health
+        return check_stt_health(stt=self._stt, config=self._stt_config)
 
     def searcher_health(self) -> HealthDTO:
-        """Saúde do Searcher (placeholder)."""
-        return HealthMapper.unknown("searcher", "Not verified")
+        """Saúde do Searcher (verificação real)."""
+        from presentation.health_checks import check_searcher_health
+        return check_searcher_health(searcher=self._searcher, config=self._search_config)
 
     def ranking_health(self) -> HealthDTO:
-        """Saúde do Ranking (placeholder)."""
-        return HealthMapper.unknown("ranking", "Not verified")
+        """Saúde do Ranking (verificação real)."""
+        from presentation.health_checks import check_ranking_health
+        return check_ranking_health(config=self._search_config)
 
     def intelligence_health(self) -> HealthDTO:
-        """Saúde do Intelligence (placeholder)."""
-        return HealthMapper.unknown("intelligence", "Not verified")
+        """Saúde do Intelligence (verificação real)."""
+        from presentation.health_checks import check_intelligence_health
+        return check_intelligence_health(config=self._llm_config)
 
     def holyrics_health(self) -> HealthDTO:
-        """Saúde do Holyrics (placeholder)."""
-        return HealthMapper.unknown("holyrics", "Not verified")
+        """Saúde do Holyrics (verificação real)."""
+        from presentation.health_checks import check_holyrics_health
+        return check_holyrics_health(client=self._holyrics_client, config=self._holyrics_config)
 
     def all_components(self) -> tuple:
-        """Retorna tuple com HealthDTO de todos os componentes."""
+        """Retorna tuple com HealthDTO de todos os componentes.
+
+        Ordem alinhada com o frontend HealthPanel:
+        backend, presentation, websocket, eventstream, pipeline,
+        microphone, stt, bible, holyrics.
+        Componentes extras (event_bus, event_store, ranking, intelligence)
+        são incluídos para completude.
+        """
         return (
+            self.backend_health(),
+            self.websocket_health(),
+            self.eventstream_health(),
             self.pipeline_health(),
-            self.event_bus_health(),
-            self.event_store_health(),
+            self.microphone_health(),
             self.speech_recognition_health(),
             self.searcher_health(),
+            self.holyrics_health(),
+            # Componentes extras (não exibidos no HealthPanel mas úteis).
+            self.event_bus_health(),
+            self.event_store_health(),
             self.ranking_health(),
             self.intelligence_health(),
-            self.holyrics_health(),
         )
 
     def get_snapshot(self) -> HealthSnapshot:

@@ -678,14 +678,16 @@ class TestHealthPresentationService(unittest.TestCase):
         bus = PipelineEventBus()
         svc = HealthPresentationService(pipeline_state=state, bus=bus, store=bus.store)
         components = svc.all_components()
-        self.assertEqual(len(components), 8)
+        # Sprint 15.2: 12 components (backend, websocket, eventstream, pipeline,
+        # microphone, speech_recognition, searcher, holyrics, event_bus, event_store, ranking, intelligence).
+        self.assertEqual(len(components), 12)
 
     def test_get_snapshot(self):
         state = PipelineState(running=True)
         svc = HealthPresentationService(pipeline_state=state)
         snap = svc.get_snapshot()
         self.assertIsInstance(snap, HealthSnapshot)
-        self.assertEqual(snap.component_count, 8)
+        self.assertEqual(snap.component_count, 12)
 
     def test_component_by_name(self):
         state = PipelineState(running=True)
@@ -979,7 +981,7 @@ class TestFullIntegration(unittest.TestCase):
         self.assertEqual(len(c1_events), 2)
 
         health = health_svc.get_snapshot()
-        self.assertEqual(health.component_count, 8)
+        self.assertEqual(health.component_count, 12)
 
 
 # ---------------------------------------------------------------------------

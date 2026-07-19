@@ -11,15 +11,20 @@
  */
 
 import type {
+  AudioDeviceDTO,
+  AudioDevicesResponse,
+  AudioLevelsDTO,
   ConfigurationDTO,
   DiagnosticDTO,
   EventDTO,
   EventSnapshot,
   HealthSnapshot,
+  InfoDTO,
   MetricsDTO,
   PipelineSnapshot,
   PipelineStatusDTO,
   SessionDTO,
+  SystemInfoDTO,
 } from "@/types";
 import {
   notConfigured,
@@ -61,6 +66,7 @@ export interface MetricsService {
 
 export interface ConfigurationService {
   getConfiguration(options?: CallOptions): Promise<ConfigurationDTO>;
+  updateConfiguration(overrides: Partial<ConfigurationDTO>, options?: CallOptions): Promise<ConfigurationDTO>;
 }
 
 // ============================================================
@@ -69,6 +75,12 @@ export interface ConfigurationService {
 
 export interface HealthService {
   getHealth(options?: CallOptions): Promise<HealthSnapshot>;
+  testHolyrics(params: { base_url: string; token: string }, options?: CallOptions): Promise<{
+    ok: boolean;
+    message: string;
+    latency_ms: number;
+    base_url: string;
+  }>;
 }
 
 // ============================================================
@@ -101,6 +113,48 @@ export interface ReplayService {
 }
 
 // ============================================================
+// AudioService (Sprint 14)
+// ============================================================
+
+export interface AudioService {
+  getDevices(options?: CallOptions): Promise<AudioDevicesResponse>;
+  getCurrentDevice(options?: CallOptions): Promise<AudioDeviceDTO | null>;
+  getLevels(options?: CallOptions): Promise<AudioLevelsDTO>;
+  startCapture(options?: CallOptions): Promise<AudioCaptureStatus>;
+  stopCapture(options?: CallOptions): Promise<AudioCaptureStatus>;
+  selectDevice(deviceIndex: number, options?: CallOptions): Promise<AudioSelectResult>;
+}
+
+export interface AudioCaptureStatus {
+  capturing: boolean;
+  already: boolean;
+  device_index: number | null;
+  sample_rate?: number;
+  channels?: number;
+}
+
+export interface AudioSelectResult {
+  device_index: number;
+  restarted: boolean;
+}
+
+// ============================================================
+// SystemService (Sprint 14)
+// ============================================================
+
+export interface SystemService {
+  getSystemInfo(options?: CallOptions): Promise<SystemInfoDTO>;
+}
+
+// ============================================================
+// InfoService (Sprint 14)
+// ============================================================
+
+export interface InfoService {
+  getInfo(options?: CallOptions): Promise<InfoDTO>;
+}
+
+// ============================================================
 // PresentationServices — agregador.
 // ============================================================
 
@@ -113,6 +167,9 @@ export interface PresentationServices {
   diagnostics: DiagnosticsService;
   events: EventService;
   replay: ReplayService;
+  audio: AudioService;
+  system: SystemService;
+  info: InfoService;
 }
 
 // ============================================================
@@ -148,9 +205,14 @@ export function createServices(client: Client): PresentationServices {
     },
     configuration: {
       getConfiguration: (o) => call<ConfigurationDTO>("configuration.get", {}, o),
+      updateConfiguration: (overrides, o) => call<ConfigurationDTO>("configuration.update", overrides as unknown as Record<string, unknown>, o),
     },
     health: {
-      getHealth: (o) => call<HealthSnapshot>("health.get", {}, o),
+      getHealth: (o?) => call<HealthSnapshot>("health.get", {}, o),
+      testHolyrics: (params: { base_url: string; token: string }, o?) =>
+        call<{ ok: boolean; message: string; latency_ms: number; base_url: string }>(
+          "health.testHolyrics", params as unknown as Record<string, unknown>, o,
+        ),
     },
     diagnostics: {
       getDiagnostics: (o) => call<DiagnosticDTO[]>("diagnostics.get", {}, o),
@@ -165,6 +227,20 @@ export function createServices(client: Client): PresentationServices {
       getReplayEvents: (cid, o) => call<EventDTO[]>("replay.getEvents", { correlationId: cid }, o),
       getReplaySessions: (o) => call<string[]>("replay.getSessions", {}, o),
       getReplayCorrelations: (sid, o) => call<string[]>("replay.getCorrelations", { sessionId: sid }, o),
+    },
+    audio: {
+      getDevices: (o) => call<AudioDevicesResponse>("audio.getDevices", {}, o),
+      getCurrentDevice: (o) => call<AudioDeviceDTO | null>("audio.getCurrent", {}, o),
+      getLevels: (o) => call<AudioLevelsDTO>("audio.getLevels", {}, o),
+      startCapture: (o) => call<AudioCaptureStatus>("audio.start", {}, o),
+      stopCapture: (o) => call<AudioCaptureStatus>("audio.stop", {}, o),
+      selectDevice: (deviceIndex, o) => call<AudioSelectResult>("audio.select", { device_index: deviceIndex }, o),
+    },
+    system: {
+      getSystemInfo: (o) => call<SystemInfoDTO>("system.get", {}, o),
+    },
+    info: {
+      getInfo: (o) => call<InfoDTO>("info.get", {}, o),
     },
   };
 }
@@ -185,8 +261,8 @@ export function createStubServices(): PresentationServices {
     },
     session: { getCurrentSession: reject },
     metrics: { getMetrics: reject },
-    configuration: { getConfiguration: reject },
-    health: { getHealth: reject },
+    configuration: { getConfiguration: reject, updateConfiguration: reject },
+    health: { getHealth: reject, testHolyrics: reject },
     diagnostics: { getDiagnostics: reject },
     events: {
       getAllEvents: reject,
@@ -199,6 +275,9 @@ export function createStubServices(): PresentationServices {
       getReplaySessions: reject,
       getReplayCorrelations: reject,
     },
+    audio: { getDevices: reject, getCurrentDevice: reject, getLevels: reject, startCapture: reject, stopCapture: reject, selectDevice: reject },
+    system: { getSystemInfo: reject },
+    info: { getInfo: reject },
   };
 }
 

@@ -97,10 +97,15 @@ class TestInfoEndpoint(unittest.TestCase):
         r = self.client.get("/info")
         self.assertEqual(r.status_code, 200)
         data = r.json()
-        self.assertEqual(data["name"], "AI Lyrics API")
-        self.assertIn("version", data)
-        self.assertIn("major", data["version"])
-        self.assertIn("server_time", data)
+        # Sprint 14: /info agora retorna Versioned<InfoDTO>.
+        self.assertIn("api", data)
+        self.assertIn("payload", data)
+        payload = data["payload"]
+        self.assertEqual(payload["name"], "AI Lyrics API")
+        self.assertIn("version", payload)
+        self.assertIn("api_version", payload)
+        self.assertIn("major", payload["api_version"])
+        self.assertIn("server_time", payload)
 
     def test_info_trailing_slash(self):
         r = self.client.get("/info/")
@@ -236,7 +241,9 @@ class TestConfigurationEndpoint(unittest.TestCase):
         r = self.client.get("/configuration")
         self.assertEqual(r.status_code, 200)
         payload = r.json()["payload"]
-        self.assertEqual(payload["mode"], "production")
+        # Sprint 14: config real carregada de config.yaml.
+        # mode pode ser "auto", "confirm" ou "quick".
+        self.assertIn(payload["mode"], {"auto", "confirm", "quick", "production"})
         self.assertIn("holyrics", payload)
         self.assertIn("stt", payload)
         self.assertIn("llm", payload)

@@ -10,13 +10,16 @@ from fastapi import Depends
 
 from api.startup import CompositionRoot, get_root
 from presentation import (
+    AudioPresentationService,
     ConfigurationPresentationService,
     DiagnosticPresentationService,
     EventPresentationService,
     HealthPresentationService,
+    InfoPresentationService,
     MetricsPresentationService,
     PipelinePresentationService,
     SessionPresentationService,
+    SystemPresentationService,
 )
 
 
@@ -65,3 +68,21 @@ def get_event_service(
     root: CompositionRoot = Depends(get_composition_root),
 ) -> EventPresentationService:
     return root.event_service
+
+
+def get_audio_service(
+    root: CompositionRoot = Depends(get_composition_root),
+) -> AudioPresentationService:
+    return root.audio_service
+
+
+def get_system_service(
+    root: CompositionRoot = Depends(get_composition_root),
+) -> SystemPresentationService:
+    return root.system_service
+
+
+def get_info_service(
+    root: CompositionRoot = Depends(get_composition_root),
+) -> InfoPresentationService:
+    return root.info_service

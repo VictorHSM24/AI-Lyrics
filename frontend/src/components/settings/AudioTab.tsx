@@ -1,80 +1,120 @@
 /**
- * AudioTab — Configurações > Áudio.
+ * AudioTab — Configurações > Áudio (Sprint 15.1).
  *
- * Lista dispositivos disponíveis (mock quando não há backend).
- * Permite: selecionar, atualizar lista, testar dispositivo.
- * Mostra nível do áudio em tempo real (AudioLevelMeter).
+ * Captura de áudio REAL via backend.
+ * Nenhum mock. Nenhuma animação fake.
+ *
+ * Fluxo:
+ *   Backend (AudioCaptureService) → WebSocket → Bridge → AudioStore → useAudio → AudioTab
+ *
+ * Controles:
+ * - Selecionar dispositivo (POST /audio/select)
+ * - Iniciar captura (POST /audio/start)
+ * - Parar captura (POST /audio/stop)
+ * - Medidor RMS real (via WebSocket audio.level)
+ * - Medidor Peak real (via WebSocket audio.level)
  */
 
 import { useState } from "react";
-import { RefreshCw, Mic, Volume2 } from "lucide-react";
+import { RefreshCw, Mic, Play, Square } from "lucide-react";
 import { useOperationState } from "@/contexts/OperationContext";
+import { useAudio } from "@/hooks";
+import { useServices } from "@/contexts/InfraContext";
 import { Card, EmptyState, PropertyGrid } from "@/components";
 import { AudioLevelMeter } from "@/components/operational";
 import { Button, SelectField, NumberField } from "./FormControls";
 
-interface AudioDevice {
-  id: string;
-  name: string;
-  type: "input" | "output";
-  sampleRate: number;
-  channels: number;
-}
-
-// Mock devices — em produção viria do backend via Services.
-const MOCK_DEVICES: AudioDevice[] = [
-  { id: "default", name: "Dispositivo padrão", type: "input", sampleRate: 48000, channels: 2 },
-  { id: "mic-1", name: "Microfone USB", type: "input", sampleRate: 16000, channels: 1 },
-  { id: "mic-2", name: "Microfone Interno", type: "input", sampleRate: 44100, channels: 1 },
-];
-
 export function AudioTab() {
   const { settings, updateSettings } = useOperationState();
-  const [devices, setDevices] = useState<AudioDevice[]>(MOCK_DEVICES);
+  const {
+    devices,
+    current,
+    capturing,
+    rms,
+    peak,
+    lastUpdate,
+    connected,
+  } = useAudio();
+  const services = useServices();
   const [refreshing, setRefreshing] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testLevel, setTestLevel] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const audio = settings?.data.audio;
-  const selected = devices.find((d) => d.id === audio?.selectedDeviceId);
-  const noDevice = !audio?.selectedDeviceId;
+  const selectedDeviceId = audio?.selectedDeviceId ?? (current ? String(current.index) : "");
+  const selected = devices.find((d) => String(d.index) === selectedDeviceId) ?? current ?? null;
+  const noDevice = !selected;
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setDevices([...MOCK_DEVICES]);
+    setError(null);
+    try {
+      const resp = await services.audio.getDevices();
+      // O store será atualizado via bootstrap, mas podemos forçar refresh.
+      void resp;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao listar dispositivos");
+    } finally {
       setRefreshing(false);
-    }, 500);
+    }
   };
 
-  const handleTest = () => {
-    if (noDevice) return;
-    setTesting(true);
-    // Simulate audio test with varying levels.
-    const start = Date.now();
-    const tick = () => {
-      const elapsed = Date.now() - start;
-      if (elapsed > 3000) {
-        setTesting(false);
-        setTestLevel(0);
-        return;
-      }
-      setTestLevel(0.3 + Math.random() * 0.5);
-      requestAnimationFrame(tick);
-    };
-    tick();
+  const handleStart = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await services.audio.startCapture();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao iniciar captura");
+    } finally {
+      setBusy(false);
+    }
   };
 
-  if (!audio) {
-    return (
-      <Card title="Áudio">
-        <p className="text-sm text-text-muted">Carregando configurações…</p>
-      </Card>
-    );
-  }
+  const handleStop = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await services.audio.stopCapture();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao parar captura");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSelectDevice = async (value: string) => {
+    // Atualiza o estado local primeiro.
+    updateSettings((prev) => ({
+      ...prev,
+      audio: { ...prev.audio, selectedDeviceId: value },
+    }));
+
+    if (!value) return;
+
+    const deviceIndex = parseInt(value, 10);
+    if (isNaN(deviceIndex)) return;
+
+    setBusy(true);
+    setError(null);
+    try {
+      // POST /audio/select — backend troca dispositivo e reinicia se estava ativo.
+      await services.audio.selectDevice(deviceIndex);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao selecionar dispositivo");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4" data-testid="audio-tab">
+      {error && (
+        <div className="rounded-md bg-status-error/10 p-3 text-sm text-status-error">
+          {error}
+        </div>
+      )}
+
       <Card
         title="Dispositivos"
         description="Selecione o microfone usado pelo reconhecimento."
@@ -105,34 +145,116 @@ export function AudioTab() {
               label="Dispositivo de entrada"
               description="Microfone usado para captura de áudio."
               tooltip="Recomendado: microfone dedicado com sample rate 16kHz mono."
-              value={audio.selectedDeviceId}
+              value={selectedDeviceId}
               options={[
                 { value: "", label: "— Selecionar —" },
                 ...devices.map((d) => ({
-                  value: d.id,
-                  label: `${d.name} (${d.sampleRate / 1000}kHz, ${d.channels === 1 ? "mono" : "stereo"})`,
+                  value: String(d.index),
+                  label: `${d.name} (${d.sample_rate / 1000}kHz, ${d.channels === 1 ? "mono" : "stereo"})${d.is_default ? " (padrão)" : ""}`,
                 })),
               ]}
-              onChange={(value) =>
-                updateSettings((prev) => ({
-                  ...prev,
-                  audio: { ...prev.audio, selectedDeviceId: value },
-                }))
-              }
+              onChange={handleSelectDevice}
             />
 
             {selected && (
               <PropertyGrid
                 properties={[
                   { label: "Nome", value: selected.name },
-                  { label: "Tipo", value: selected.type === "input" ? "Entrada" : "Saída" },
-                  { label: "Taxa de amostragem", value: `${selected.sampleRate} Hz` },
+                  { label: "Índice", value: String(selected.index) },
                   { label: "Canais", value: selected.channels === 1 ? "Mono" : "Stereo" },
+                  { label: "Taxa de amostragem", value: `${selected.sample_rate} Hz` },
+                  { label: "Padrão do sistema", value: selected.is_default ? "Sim" : "Não" },
                 ]}
               />
             )}
           </div>
         )}
+      </Card>
+
+      <Card
+        title="Captura"
+        description="Controle de captura de áudio em tempo real."
+        actions={
+          <div className="flex gap-2">
+            <Button
+              onClick={handleStart}
+              loading={busy}
+              disabled={capturing || noDevice}
+              icon={<Play className="h-4 w-4" />}
+              variant="primary"
+            >
+              Iniciar
+            </Button>
+            <Button
+              onClick={handleStop}
+              loading={busy}
+              disabled={!capturing}
+              icon={<Square className="h-4 w-4" />}
+              variant="danger"
+            >
+              Parar
+            </Button>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
+                capturing
+                  ? "bg-status-success/15 text-status-success"
+                  : "bg-border text-text-muted"
+              }`}
+              data-testid="audio-capture-status"
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  capturing ? "bg-status-success animate-pulse" : "bg-text-subtle"
+                }`}
+              />
+              {capturing ? "Capturando" : "Parado"}
+            </span>
+            {connected && (
+              <span className="text-xs text-text-subtle">
+                Conectado via WebSocket
+              </span>
+            )}
+          </div>
+
+          {noDevice ? (
+            <EmptyState
+              title="Nenhum dispositivo selecionado"
+              description="Selecione um dispositivo para capturar."
+              icon={<Mic className="h-12 w-12" />}
+            />
+          ) : (
+            <div className="flex flex-col gap-3">
+              <div>
+                <div className="mb-1 text-xs font-medium text-text-muted">
+                  Nível RMS (tempo real)
+                </div>
+                <AudioLevelMeter
+                  level={capturing ? rms : 0}
+                  deviceName={selected?.name}
+                  lastActivityAt={lastUpdate}
+                  data-testid="rms-meter"
+                />
+              </div>
+              <div>
+                <div className="mb-1 text-xs font-medium text-text-muted">
+                  Nível Peak (tempo real)
+                </div>
+                <AudioLevelMeter
+                  level={capturing ? peak : 0}
+                  deviceName={selected?.name}
+                  lastActivityAt={lastUpdate}
+                  compact
+                  data-testid="peak-meter"
+                />
+              </div>
+            </div>
+          )}
+        </div>
       </Card>
 
       <Card
@@ -144,7 +266,7 @@ export function AudioTab() {
             label="Taxa de amostragem"
             description="Frequência de amostragem em Hz."
             tooltip="Whisper funciona melhor com 16kHz."
-            value={audio.sampleRate}
+            value={audio?.sampleRate ?? 16000}
             min={8000}
             max={48000}
             step={1000}
@@ -158,7 +280,7 @@ export function AudioTab() {
           <NumberField
             label="Canais"
             description="Número de canais (1 = mono, 2 = stereo)."
-            value={audio.channels}
+            value={audio?.channels ?? 1}
             min={1}
             max={2}
             onChange={(value) =>
@@ -169,35 +291,6 @@ export function AudioTab() {
             }
           />
         </div>
-      </Card>
-
-      <Card
-        title="Teste de áudio"
-        description="Teste o nível de captura do dispositivo selecionado."
-        actions={
-          <Button
-            onClick={handleTest}
-            loading={testing}
-            disabled={noDevice}
-            icon={<Volume2 className="h-4 w-4" />}
-          >
-            Testar
-          </Button>
-        }
-      >
-        {noDevice ? (
-          <EmptyState
-            title="Nenhum dispositivo selecionado"
-            description="Selecione um dispositivo para testar."
-            icon={<Mic className="h-12 w-12" />}
-          />
-        ) : (
-          <AudioLevelMeter
-            level={testing ? testLevel : 0}
-            deviceName={selected?.name}
-            lastActivityAt={testing ? Date.now() / 1000 : 0}
-          />
-        )}
       </Card>
     </div>
   );

@@ -10,15 +10,19 @@
  */
 
 import type {
+  AudioDeviceDTO,
+  AudioLevelsDTO,
   ConfigurationDTO,
   DiagnosticDTO,
   EventDTO,
   HealthSnapshot,
+  InfoDTO,
   LogDTO,
   MetricsDTO,
   PipelineSnapshot,
   PipelineStatusDTO,
   SessionDTO,
+  SystemInfoDTO,
 } from "@/types";
 import {
   createSnapshotStore,
@@ -164,6 +168,48 @@ export function createEventStore(): EventStore {
 }
 
 // ============================================================
+// AudioStore (Sprint 14/15.1) — dispositivos, níveis e captura.
+// ============================================================
+
+export interface AudioState {
+  devices: AudioDeviceDTO[];
+  current: AudioDeviceDTO | null;
+  levels: AudioLevelsDTO | null;
+  // Sprint 15.1 — estado de captura em tempo real.
+  capturing: boolean;
+  selectedDeviceIndex: number | null;
+  sampleRate: number;
+  channels: number;
+  rms: number;
+  peak: number;
+  lastUpdate: number;
+  connected: boolean;
+}
+
+export type AudioStore = DomainStore<AudioState>;
+export function createAudioStore(): AudioStore {
+  return wrap(createSnapshotStore<AudioState>());
+}
+
+// ============================================================
+// SystemStore (Sprint 14) — informações de sistema.
+// ============================================================
+
+export type SystemStore = DomainStore<SystemInfoDTO>;
+export function createSystemStore(): SystemStore {
+  return wrap(createSnapshotStore<SystemInfoDTO>());
+}
+
+// ============================================================
+// InfoStore (Sprint 14) — metadados da API.
+// ============================================================
+
+export type InfoStore = DomainStore<InfoDTO>;
+export function createInfoStore(): InfoStore {
+  return wrap(createSnapshotStore<InfoDTO>());
+}
+
+// ============================================================
 // Registry — agregador de todos os stores.
 // ============================================================
 
@@ -177,6 +223,9 @@ export interface StoreRegistry {
   readonly logs: LogStore;
   readonly replay: ReplayStore;
   readonly events: EventStore;
+  readonly audio: AudioStore;
+  readonly system: SystemStore;
+  readonly info: InfoStore;
 }
 
 export function createStoreRegistry(): StoreRegistry {
@@ -190,5 +239,8 @@ export function createStoreRegistry(): StoreRegistry {
     logs: createLogStore(),
     replay: createReplayStore(),
     events: createEventStore(),
+    audio: createAudioStore(),
+    system: createSystemStore(),
+    info: createInfoStore(),
   };
 }

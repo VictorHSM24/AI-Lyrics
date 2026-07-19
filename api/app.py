@@ -58,8 +58,15 @@ def create_app() -> FastAPI:
         # O CompositionRoot é inicializado lazy via get_root().
         # Aqui apenas garantimos que está pronto.
         from api.startup import get_root
-        get_root()
+        root = get_root()
         logger.info("Composition root pronto.")
+
+        # Sprint 15.1 — conectar AudioCaptureService ao WebSocket publisher.
+        try:
+            from api.websocket.audio_events import connect_audio_capture_to_publisher
+            connect_audio_capture_to_publisher(root.audio_capture)
+        except Exception as e:
+            logger.warning("Failed to connect audio capture to publisher: %s", e)
 
     @app.on_event("shutdown")
     async def on_shutdown() -> None:
@@ -67,6 +74,17 @@ def create_app() -> FastAPI:
         from api.websocket import get_event_publisher
         try:
             get_event_publisher().stop()
+        except Exception:
+            pass
+        # Sprint 15.1 — parar audio capture e publisher.
+        try:
+            from api.websocket.audio_events import get_audio_event_publisher
+            get_audio_event_publisher().stop()
+        except Exception:
+            pass
+        try:
+            from api.startup import get_root
+            get_root().audio_capture.shutdown()
         except Exception:
             pass
 

@@ -21,8 +21,10 @@ import {
   type StreamEvent,
   type StreamSubscription,
 } from "@/stream";
+import { dispatchDomainHandlers } from "@/stream/handlers";
 import type { StoreRegistry } from "@/stores";
 import type { EventDTO } from "@/types";
+import { devLog } from "@/utils";
 
 // ============================================================
 // EventStreamBridge
@@ -46,6 +48,7 @@ export class EventStreamBridge {
   start(): void {
     if (this.started) return;
     this.started = true;
+    devLog.bridge("Bridge iniciada — assinando Client SDK e EventStream");
 
     // 1. Assina eventos do Client SDK → publica no EventStream.
     this.clientSub = this.client.subscribe((event) => {
@@ -94,6 +97,7 @@ export class EventStreamBridge {
 
   private handleStreamEvent(event: StreamEvent): void {
     const dto = event.payload as EventDTO;
+    console.log("[DIAG bridge] handleStreamEvent:", dto?.event_type);
     if (!dto || typeof dto !== "object" || !("event_type" in dto)) {
       return;
     }
@@ -102,41 +106,9 @@ export class EventStreamBridge {
     const currentEvents = this.stores.events.current?.data ?? [];
     this.stores.events.set([...currentEvents, dto]);
 
-    // Atualiza Stores específicos baseado no tipo de evento.
-    this.updateDomainStores(dto);
-  }
-
-  private updateDomainStores(dto: EventDTO): void {
-    // Mapeamento de tipos de evento → atualizações de Store.
-    // Esta NÃO é lógica de negócio — é apenas roteamento de eventos
-    // para Stores. Cada Store decide como interpretar o evento.
-    switch (dto.event_type) {
-      case "PipelineStarted":
-      case "PipelineStopped":
-      case "PipelinePaused":
-      case "PipelineResumed":
-        // Eventos de ciclo de vida do pipeline — atualiza PipelineStore.
-        // O Store apenas armazena o último evento; a interpretação
-        // fica para os Hooks/Componentes.
-        break;
-      case "SpeechSegmentReceived":
-      case "SpeechRecognized":
-      case "SearchRequested":
-      case "SearchCompleted":
-      case "RankingCompleted":
-      case "IntelligenceCompleted":
-      case "PresentationRequested":
-      case "PresentationCompleted":
-        // Eventos de processamento — poderiam atualizar MetricsStore.
-        // Por enquanto, apenas registramos no EventStore.
-        break;
-      case "PipelineError":
-        // Erro de pipeline — poderia atualizar um ErrorStore futuro.
-        break;
-      default:
-        // Evento desconhecido — apenas registrado no EventStore.
-        break;
-    }
+    // Despacha para handlers de domínio organizados.
+    // Cada handler atualiza apenas os Stores correspondentes.
+    dispatchDomainHandlers(dto, this.stores);
   }
 }
 

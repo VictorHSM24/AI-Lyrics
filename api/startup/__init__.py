@@ -5,6 +5,7 @@ from api.startup.composition import (
     create_composition_root,
     get_root,
     reset_root,
+    set_root,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "create_composition_root",
     "get_root",
     "reset_root",
+    "set_root",
 ]

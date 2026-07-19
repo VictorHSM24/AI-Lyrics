@@ -15,7 +15,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   type ReactNode,
 } from "react";
 import {
@@ -112,10 +111,10 @@ export function InfraProvider({
   }, [client, stream, stores, services, config?.restUrl, config?.wsUrl]);
 
   // Inicia bridge e conecta ao backend.
-  const bridgeStarted = useRef(false);
+  // Nota: não usar ref guard (bridgeStarted) — React StrictMode
+  // monta/desmonta/desmonta e o guard impediria a segunda montagem
+  // de iniciar a bridge, deixando eventos sem processamento.
   useEffect(() => {
-    if (bridgeStarted.current) return;
-    bridgeStarted.current = true;
     infra.bridge.start();
     if (config?.autoConnect !== false && config?.restUrl) {
       infra.client.connect().then(() => {

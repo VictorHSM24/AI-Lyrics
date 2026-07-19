@@ -90,6 +90,41 @@ class HolyricsClient:
             logger.warning("test_connection failed: %s", e)
             return False
 
+    def test_connection_detailed(self) -> dict:
+        """Testa conexão e retorna detalhes do resultado.
+
+        Diferente de ``test_connection()``, não captura exceções —
+        propaga-as para que o chamador possa distinguir entre
+        erro de conexão, timeout, auth, etc.
+
+        Retorna dict com:
+          - ok: bool
+          - message: str
+          - latency_ms: int
+          - error_type: str (opcional)
+        """
+        import time as _time
+        t0 = _time.monotonic()
+        try:
+            self._post("GetTokenInfo", {}, timeout_s=1.0)
+            latency_ms = int((_time.monotonic() - t0) * 1000)
+            return {"ok": True, "message": "Conexão bem-sucedida", "latency_ms": latency_ms}
+        except HolyricsAuthError as e:
+            latency_ms = int((_time.monotonic() - t0) * 1000)
+            return {"ok": False, "message": "Token inválido", "latency_ms": latency_ms, "error_type": "auth"}
+        except HolyricsConnectionError as e:
+            latency_ms = int((_time.monotonic() - t0) * 1000)
+            return {"ok": False, "message": "Conexão recusada", "latency_ms": latency_ms, "error_type": "connection"}
+        except HolyricsTimeoutError as e:
+            latency_ms = int((_time.monotonic() - t0) * 1000)
+            return {"ok": False, "message": "Tempo limite esgotado", "latency_ms": latency_ms, "error_type": "timeout"}
+        except HolyricsAPIError as e:
+            latency_ms = int((_time.monotonic() - t0) * 1000)
+            return {"ok": False, "message": f"Erro da API: {e}", "latency_ms": latency_ms, "error_type": "api"}
+        except HolyricsError as e:
+            latency_ms = int((_time.monotonic() - t0) * 1000)
+            return {"ok": False, "message": f"Erro: {e}", "latency_ms": latency_ms, "error_type": "generic"}
+
     def health_check(self) -> bool:
         """Verifica se o Holyrics está reachável e responsivo.
 

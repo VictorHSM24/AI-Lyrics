@@ -8,6 +8,7 @@ import {
   OperationProvider,
   ThemeProvider,
 } from "@/contexts";
+import { useBootstrap, useHealthPolling } from "@/hooks";
 import { ToastContainer } from "@/components";
 
 // Configuração do backend.
@@ -15,6 +16,16 @@ import { ToastContainer } from "@/components";
 // Em produção, seria configurado via variável de ambiente.
 const BACKEND_REST_URL = "http://localhost:8000";
 const BACKEND_WS_URL = "ws://localhost:8000/ws/events";
+
+/**
+ * BootstrapOrchestrator — dispara o bootstrap quando a conexão
+ * é estabelecida. Deve estar dentro de ConnectionProvider.
+ */
+function BootstrapOrchestrator() {
+  useBootstrap();
+  useHealthPolling(10000); // Poll health every 10s for real-time status.
+  return null;
+}
 
 export function App() {
   return (
@@ -28,6 +39,7 @@ export function App() {
           }}
         >
           <ConnectionProvider>
+            <BootstrapOrchestrator />
             <OperationProvider>
               <NotificationsProvider>
                 <RouterProvider router={router} />

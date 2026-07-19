@@ -82,6 +82,17 @@ from presentation.services import (
     PipelinePresentationService,
     SessionPresentationService,
 )
+from presentation.services_system import (
+    AudioPresentationService,
+    InfoPresentationService,
+    SystemPresentationService,
+)
+from presentation.dtos_system import (
+    AudioDeviceDTO,
+    AudioLevelsDTO,
+    InfoDTO,
+    SystemInfoDTO,
+)
 from presentation.snapshots import (
     ConfigurationSnapshot,
     EventSnapshot,
@@ -156,6 +167,9 @@ __all__ = [
     "HealthPresentationService",
     "DiagnosticPresentationService",
     "EventPresentationService",
+    "AudioPresentationService",
+    "SystemPresentationService",
+    "InfoPresentationService",
     # Adapters
     "BaseAdapter",
     "RestAdapter",
@@ -163,4 +177,9 @@ __all__ = [
     "CliAdapter",
     "DashboardAdapter",
     "ReplayAdapter",
+    # System DTOs (Sprint 14)
+    "AudioDeviceDTO",
+    "AudioLevelsDTO",
+    "SystemInfoDTO",
+    "InfoDTO",
 ]

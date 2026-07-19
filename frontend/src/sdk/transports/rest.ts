@@ -55,7 +55,9 @@ const METHOD_TO_ENDPOINT: Record<string, string> = {
   "session.getCurrent": "/session/current",
   "metrics.get": "/metrics",
   "configuration.get": "/configuration",
+  "configuration.update": "/configuration",
   "health.get": "/health",
+  "health.testHolyrics": "/health/holyrics/test",
   "diagnostics.get": "/diagnostics",
   "events.getAll": "/events",
   "events.getByCorrelation": "/events/by-correlation",
@@ -64,7 +66,28 @@ const METHOD_TO_ENDPOINT: Record<string, string> = {
   "replay.getEvents": "/replay/events",
   "replay.getSessions": "/replay/sessions",
   "replay.getCorrelations": "/replay/correlations",
+  "audio.getDevices": "/audio/devices",
+  "audio.getCurrent": "/audio/current",
+  "audio.getLevels": "/audio/levels",
+  "audio.start": "/audio/start",
+  "audio.stop": "/audio/stop",
+  "audio.select": "/audio/select",
+  "system.get": "/system",
+  "info.get": "/info",
 };
+
+/** Métodos que usam PUT (body JSON) em vez de GET (query params). */
+const PUT_METHODS: ReadonlySet<string> = new Set([
+  "configuration.update",
+]);
+
+/** Métodos que usam POST (body JSON) em vez de GET (query params). */
+const POST_METHODS: ReadonlySet<string> = new Set([
+  "audio.start",
+  "audio.stop",
+  "audio.select",
+  "health.testHolyrics",
+]);
 
 // ============================================================
 // RestTransport
@@ -129,7 +152,7 @@ export class RestTransport implements Transport {
       return { id: req.id, ok: false, error: err };
     }
 
-    const url = this.buildUrl(endpoint, req.params);
+    const url = this.buildUrl(endpoint, (PUT_METHODS.has(req.method) || POST_METHODS.has(req.method)) ? {} : req.params);
     const timeoutMs = req.timeoutMs ?? this.config.defaultTimeoutMs ?? 30000;
     const cancel = req.cancel;
 
@@ -148,16 +171,25 @@ export class RestTransport implements Transport {
 
     try {
       this.logger.debug("REST request", { method: req.method, url });
+      const isPut = PUT_METHODS.has(req.method);
+      const isPost = POST_METHODS.has(req.method);
+      const hasBody = isPut || isPost;
       const headers: Record<string, string> = {
         "Accept": "application/json",
         ...(this.config.headers ?? {}),
       };
 
-      const response = await fetch(url, {
-        method: "GET",
+      const fetchOptions: RequestInit = {
+        method: isPut ? "PUT" : isPost ? "POST" : "GET",
         headers,
         signal: controller.signal,
-      });
+      };
+      if (hasBody) {
+        headers["Content-Type"] = "application/json";
+        fetchOptions.body = JSON.stringify(req.params);
+      }
+
+      const response = await fetch(url, fetchOptions);
 
       if (!response.ok) {
         const err = await this.parseError(response, req.id);

@@ -1,3 +1,4 @@
+export { StartupPage } from "./StartupPage";
 export { DashboardPage } from "./DashboardPage";
 export { ConsolePage } from "./ConsolePage";
 export { SessionsPage } from "./SessionsPage";

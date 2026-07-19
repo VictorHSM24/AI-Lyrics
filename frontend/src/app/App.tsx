@@ -5,6 +5,7 @@ import {
   ConnectionProvider,
   InfraProvider,
   NotificationsProvider,
+  OperationProvider,
   ThemeProvider,
 } from "@/contexts";
 import { ToastContainer } from "@/components";
@@ -27,10 +28,12 @@ export function App() {
           }}
         >
           <ConnectionProvider>
-            <NotificationsProvider>
-              <RouterProvider router={router} />
-              <ToastContainer />
-            </NotificationsProvider>
+            <OperationProvider>
+              <NotificationsProvider>
+                <RouterProvider router={router} />
+                <ToastContainer />
+              </NotificationsProvider>
+            </OperationProvider>
           </ConnectionProvider>
         </InfraProvider>
       </ApplicationProvider>

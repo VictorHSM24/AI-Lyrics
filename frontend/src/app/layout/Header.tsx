@@ -2,6 +2,8 @@ import { Mic, Sun, Moon, Monitor, Wifi, WifiOff, CircleDashed } from "lucide-rea
 import { useApplication } from "@/contexts/ApplicationContext";
 import { useTheme, type ThemeMode } from "@/contexts/ThemeContext";
 import { useConnection, type ConnectionStatus } from "@/contexts/ConnectionContext";
+import { useOperationState } from "@/contexts/OperationContext";
+import { OperationStatusBadge } from "@/components/operational";
 import { cn } from "@/utils";
 
 const CONNECTION_CONFIG: Record<ConnectionStatus, { icon: typeof Wifi; label: string; color: string }> = {
@@ -21,9 +23,12 @@ export function Header() {
   const { info } = useApplication();
   const { mode, setMode } = useTheme();
   const { status } = useConnection();
+  const { operation } = useOperationState();
 
   const connConfig = CONNECTION_CONFIG[status];
   const ConnIcon = connConfig.icon;
+  const opState = operation?.data.state ?? "stopped";
+  const opMessage = operation?.data.message ?? "";
 
   return (
     <header
@@ -41,13 +46,14 @@ export function Header() {
         </div>
       </div>
 
-      {/* Status da conexão + Pipeline indicator + Tema */}
+      {/* Estado operacional + Status da conexão + Tema */}
       <div className="flex items-center gap-4">
-        {/* Pipeline indicator (placeholder) */}
-        <div className="hidden items-center gap-1.5 sm:flex">
-          <span className="h-2 w-2 rounded-full bg-text-subtle" aria-hidden="true" />
-          <span className="text-xs text-text-muted">Pipeline: —</span>
-        </div>
+        {/* Estado operacional global */}
+        <OperationStatusBadge
+          state={opState}
+          message={opMessage}
+          compact
+        />
 
         {/* Status da conexão */}
         <div className="flex items-center gap-1.5">

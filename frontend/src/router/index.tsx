@@ -2,6 +2,7 @@ import { createBrowserRouter, type RouteObject } from "react-router-dom";
 import { AppLayout } from "@/app/layout";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import {
+  StartupPage,
   DashboardPage,
   ConsolePage,
   SessionsPage,
@@ -14,6 +15,14 @@ import {
 } from "@/pages";
 
 const routes: RouteObject[] = [
+  {
+    path: "/startup",
+    element: (
+      <ErrorBoundary>
+        <StartupPage />
+      </ErrorBoundary>
+    ),
+  },
   {
     path: "/",
     element: (

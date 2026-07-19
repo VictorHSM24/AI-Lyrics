@@ -12,6 +12,7 @@ import {
   ConnectionProvider,
   InfraProvider,
   NotificationsProvider,
+  OperationProvider,
 } from "@/contexts";
 
 function wrapProviders(children: React.ReactNode) {
@@ -20,9 +21,11 @@ function wrapProviders(children: React.ReactNode) {
       <ApplicationProvider>
         <InfraProvider>
           <ConnectionProvider>
-            <NotificationsProvider>
-              {children}
-            </NotificationsProvider>
+            <OperationProvider skipStartup>
+              <NotificationsProvider>
+                {children}
+              </NotificationsProvider>
+            </OperationProvider>
           </ConnectionProvider>
         </InfraProvider>
       </ApplicationProvider>
@@ -53,9 +56,9 @@ describe("Header", () => {
     expect(screen.getByLabelText("Tema Sistema")).toBeInTheDocument();
   });
 
-  it("renderiza indicador do pipeline", () => {
+  it("renderiza badge de estado operacional", () => {
     render(wrapProviders(<Header />));
-    expect(screen.getByText(/Pipeline/)).toBeInTheDocument();
+    expect(screen.getByTestId("operation-status-badge")).toBeInTheDocument();
   });
 });
 

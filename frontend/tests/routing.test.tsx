@@ -7,6 +7,7 @@ import {
   ConnectionProvider,
   InfraProvider,
   NotificationsProvider,
+  OperationProvider,
 } from "@/contexts";
 import { AppLayout } from "@/app/layout";
 import {
@@ -27,9 +28,11 @@ function wrapProviders(children: React.ReactNode) {
       <ApplicationProvider>
         <InfraProvider>
           <ConnectionProvider>
-            <NotificationsProvider>
-              {children}
-            </NotificationsProvider>
+            <OperationProvider skipStartup>
+              <NotificationsProvider>
+                {children}
+              </NotificationsProvider>
+            </OperationProvider>
           </ConnectionProvider>
         </InfraProvider>
       </ApplicationProvider>
@@ -132,7 +135,6 @@ describe("Padrão visual das páginas", () => {
     { route: "/sessoes", title: "Sessões" },
     { route: "/replay", title: "Replay" },
     { route: "/logs", title: "Logs" },
-    { route: "/configuracoes", title: "Configurações" },
     { route: "/diagnostico", title: "Diagnóstico" },
   ];
 
@@ -165,6 +167,23 @@ describe("Padrão visual das páginas", () => {
     expect(screen.getByTestId("console-header")).toBeInTheDocument();
     expect(screen.getByTestId("timeline-panel")).toBeInTheDocument();
     expect(screen.getByTestId("pipeline-panel")).toBeInTheDocument();
+    unmount();
+  });
+
+  it("Configurações é funcional com abas (sem 'Em desenvolvimento')", () => {
+    const { unmount } = renderRoute("/configuracoes");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Configurações");
+    expect(screen.queryByText("Em desenvolvimento")).not.toBeInTheDocument();
+    expect(screen.getByTestId("tab-nav")).toBeInTheDocument();
+    expect(screen.getByTestId("general-tab")).toBeInTheDocument();
+    unmount();
+  });
+
+  it("Sobre é funcional com HealthPanel e OperationStatusBadge", () => {
+    const { unmount } = renderRoute("/sobre");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Sobre");
+    expect(screen.queryByText("Em desenvolvimento")).not.toBeInTheDocument();
+    expect(screen.getByTestId("health-panel")).toBeInTheDocument();
     unmount();
   });
 });

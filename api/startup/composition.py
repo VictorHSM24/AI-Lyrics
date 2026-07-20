@@ -43,6 +43,77 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Sprint 17.3 — STT Runtime Audit Log
+# ---------------------------------------------------------------------------
+
+
+def _log_stt_runtime(stt_instance: Any, stt_config: Any) -> None:
+    """Loga bloco detalhado do runtime STT no startup.
+
+    Sprint 17.3 — Auditoria do Runtime do STT.
+    Mostra exatamente qual configuração foi solicitada vs qual foi
+    efetivamente carregada, evidenciando divergências e fallbacks.
+    """
+    from transcricao.stt import FasterWhisperBackend
+
+    backend = stt_instance.backend
+    model_loaded = getattr(stt_config, "model", "?")
+    backend_name = "faster-whisper"
+    actual_device = getattr(stt_config, "device", "?")
+    actual_compute = getattr(stt_config, "compute_type", "?")
+    actual_threads = getattr(stt_config, "cpu_threads", 0)
+    fallback_reason = ""
+
+    if isinstance(backend, FasterWhisperBackend):
+        actual_device = backend.actual_device
+        actual_compute = backend.actual_compute_type
+        actual_threads = backend.actual_cpu_threads
+        fallback_reason = backend.fallback_reason
+
+    threads_display = (
+        str(actual_threads) if actual_threads and actual_threads > 0
+        else "default (os.cpu_count)"
+    )
+
+    # Detectar divergências.
+    divergences: list[str] = []
+    if str(actual_device) != str(getattr(stt_config, "device", "")):
+        divergences.append(
+            f"device: solicitado={stt_config.device} usado={actual_device}"
+        )
+    if str(actual_compute) != str(getattr(stt_config, "compute_type", "")):
+        divergences.append(
+            f"compute_type: solicitado={stt_config.compute_type} usado={actual_compute}"
+        )
+
+    logger.info("========== STT RUNTIME ==========")
+    logger.info("Backend............. %s", backend_name)
+    logger.info("Modelo solicitado... %s", getattr(stt_config, "model", "?"))
+    logger.info("Modelo carregado.... %s", model_loaded)
+    logger.info("Device solicitado... %s", getattr(stt_config, "device", "?"))
+    logger.info("Device usado........ %s", actual_device)
+    logger.info("Compute solicitado.. %s", getattr(stt_config, "compute_type", "?"))
+    logger.info("Compute usado....... %s", actual_compute)
+    logger.info("Threads solicitadas. %s",
+                getattr(stt_config, "cpu_threads", 0) or "default")
+    logger.info("Threads usadas...... %s", threads_display)
+    logger.info("Sample rate......... 16000")
+    logger.info("Beam size........... %s", getattr(stt_config, "beam_size", "?"))
+    logger.info("VAD filter.......... %s", getattr(stt_config, "vad_filter", "?"))
+    logger.info("Language............ %s", getattr(stt_config, "language", "?"))
+    logger.info("Model load ms....... %d", stt_instance.metrics.model_load_ms)
+    if fallback_reason:
+        logger.info("Fallback reason..... %s", fallback_reason)
+    if divergences:
+        logger.warning("DIVERGÊNCIAS detectadas:")
+        for d in divergences:
+            logger.warning("  - %s", d)
+    else:
+        logger.info("Divergências........ nenhuma")
+    logger.info("=================================")
+
+
+# ---------------------------------------------------------------------------
 # CompositionRoot — contêiner de dependências.
 # ---------------------------------------------------------------------------
 
@@ -79,6 +150,20 @@ class CompositionRoot:
 
     # Sprint 15.1 — Audio Capture
     audio_capture: Any  # AudioCaptureService
+
+    # Sprint 16 — Continuous Speech Pipeline
+    stt: Any  # STT (faster-whisper) or None if unavailable
+    speech_queue: Any  # SpeechQueue or None
+    speech_pipeline: Any  # SpeechPipelineService or None
+    speech_worker: Any  # SpeechWorker or None
+
+    # Sprint 17 — Biblical Intent & Reference Extraction
+    nlu_service: Any = None  # BiblicalNLUService or None
+
+    # Sprint 18 — Automatic Verse Presentation
+    verse_presentation_service: Any = None  # VersePresentationService or None
+    searcher: Any = None  # Searcher or None
+    holyrics_client: Any = None  # HolyricsClient or None
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +231,152 @@ def create_composition_root() -> CompositionRoot:
     # Sprint 15.2 — Conectar AudioCaptureService ao HealthService.
     health_service._audio_capture = audio_capture
 
+    # Sprint 16 — Continuous Speech Pipeline.
+    # STT (faster-whisper) + SpeechQueue + SpeechPipelineService (VAD) + SpeechWorker.
+    stt_instance = None
+    speech_queue = None
+    speech_pipeline = None
+    speech_worker = None
+    try:
+        from transcricao.stt import STT, FasterWhisperBackend
+        stt_config = getattr(config, "stt", None)
+        if stt_config is not None:
+            logger.info("Sprint 16: loading STT (faster-whisper)...")
+            stt_instance = STT(config=stt_config)
+            logger.info("Sprint 16: STT loaded successfully.")
+
+            # Sprint 17.3 — Log detalhado do runtime STT (auditoria).
+            _log_stt_runtime(stt_instance, stt_config)
+
+            from microfone.speech_queue import SpeechQueue
+            from microfone.speech_pipeline import SpeechPipelineService
+            from microfone.speech_worker import SpeechWorker
+
+            speech_queue = SpeechQueue(maxsize=10)
+            speech_pipeline = SpeechPipelineService(
+                capture_service=audio_capture,
+                audio_config=audio_config,
+                bus=bus,
+                speech_queue=speech_queue,
+                session_id=session.session_id,
+            )
+            speech_worker = SpeechWorker(
+                stt=stt_instance,
+                bus=bus,
+                speech_queue=speech_queue,
+                session_id=session.session_id,
+            )
+
+            # Conectar STT ao HealthService para verificação real.
+            health_service._stt = stt_instance
+        else:
+            logger.warning("Sprint 16: STT config not found — speech pipeline disabled.")
+    except Exception as e:
+        logger.warning("Sprint 16: STT initialization failed — speech pipeline disabled: %s", e)
+
+    # Sprint 17 — Biblical NLU Service (Parser determinístico).
+    nlu_service = None
+    try:
+        from parser.books import load_parser_books
+        from parser.parser import Parser
+        from pipeline.nlu import BiblicalNLUService
+
+        parser_books = load_parser_books("config/books.json")
+        parser_instance = Parser(books=parser_books)
+        nlu_service = BiblicalNLUService(
+            parser=parser_instance,
+            bus=bus,
+            session_id=session.session_id,
+        )
+        nlu_service.start()
+        logger.info("Sprint 17: BiblicalNLUService started.")
+    except Exception as e:
+        logger.warning("Sprint 17: NLU initialization failed: %s", e)
+
+    # Sprint 18 — Automatic Verse Presentation.
+    # Conecta ReferenceDetected → Searcher → HolyricsClient.show_verse().
+    verse_presentation_service = None
+    searcher_instance = None
+    holyrics_client_instance = None
+    try:
+        from busca.searcher import Searcher
+        from integracao_holyrics.client import HolyricsClient
+        from presentation.verse_presentation_service import (
+            VersePresentationService,
+        )
+
+        # Searcher — usa config.search + book_table.
+        search_config = getattr(config, "search", None)
+        if search_config is None:
+            logger.warning(
+                "Sprint 18: search config not found — verse presentation disabled."
+            )
+        else:
+            from config.loader import load_books
+
+            # load_books retorna BookTable pronto para uso.
+            try:
+                book_table = load_books("config/books.json")
+            except Exception as e_books:
+                logger.warning(
+                    "Sprint 18: failed to load books for Searcher: %s", e_books,
+                )
+                book_table = None
+
+            if book_table is not None:
+                searcher_instance = Searcher(
+                    config=search_config,
+                    book_table=book_table,
+                )
+
+                # HolyricsClient — usa config.holyrics.
+                holyrics_config = getattr(config, "holyrics", None)
+                if holyrics_config is None:
+                    logger.warning(
+                        "Sprint 18: holyrics config not found — "
+                        "verse presentation disabled."
+                    )
+                else:
+                    base_url = getattr(holyrics_config, "base_url", "")
+                    token = getattr(holyrics_config, "token", "")
+                    timeout_ms = getattr(holyrics_config, "timeout_ms", 2000)
+                    holyrics_client_instance = HolyricsClient(
+                        base_url=base_url,
+                        token=token,
+                        timeout_s=timeout_ms / 1000.0,
+                    )
+
+                    # Versão bíblica padrão — do config.state.default_version
+                    # ou fallback "ACF".
+                    state_config = getattr(config, "state", None)
+                    default_version = (
+                        getattr(state_config, "default_version", "ACF")
+                        if state_config is not None else "ACF"
+                    )
+
+                    # quick_presentation — do config.holyrics (opcional).
+                    quick = bool(getattr(holyrics_config, "quick_presentation", False))
+
+                    verse_presentation_service = VersePresentationService(
+                        searcher=searcher_instance,
+                        holyrics=holyrics_client_instance,
+                        bus=bus,
+                        session_id=session.session_id,
+                        version=default_version,
+                        quick_presentation=quick,
+                    )
+                    verse_presentation_service.start()
+                    logger.info(
+                        "Sprint 18: VersePresentationService started "
+                        "(version=%s, quick=%s).",
+                        default_version,
+                        quick,
+                    )
+    except Exception as e:
+        logger.warning(
+            "Sprint 18: VersePresentationService initialization failed: %s", e
+        )
+
     system_service = SystemPresentationService(
         log_dir=_config_value(config, "log", "path") or "logs",
         cache_dir="cache",
@@ -181,6 +412,14 @@ def create_composition_root() -> CompositionRoot:
         system_service=system_service,
         info_service=info_service,
         audio_capture=audio_capture,
+        stt=stt_instance,
+        speech_queue=speech_queue,
+        speech_pipeline=speech_pipeline,
+        speech_worker=speech_worker,
+        nlu_service=nlu_service,
+        verse_presentation_service=verse_presentation_service,
+        searcher=searcher_instance,
+        holyrics_client=holyrics_client_instance,
     )
 
 
@@ -209,18 +448,37 @@ def _load_config() -> Any:
             return _build_config(merged)
         return config
     except Exception as e:
-        logger.warning("Failed to load config.yaml: %s — using minimal config", e)
-        minimal = _minimal_config()
-        if overrides:
-            from types import SimpleNamespace
-            base = vars(minimal).copy()
-            merged = merge_overrides(base, overrides)
-            def to_ns(d):
-                if isinstance(d, dict):
-                    return SimpleNamespace(**{k: to_ns(v) for k, v in d.items()})
-                return d
-            return to_ns(merged)
-        return minimal
+        # Sprint 17.5.1 — Não usar fallback silencioso para configuração inválida.
+        # Se a config real não carrega (override inválido, campo faltando, etc.),
+        # propaga o erro para que o operador corrija em vez de rodar com config
+        # mínima não-validada. O _minimal_config() só é usado quando config.yaml
+        # realmente não existe (arquivo ausente) — não para mascarar erros de
+        # validação.
+        import os
+        config_path = "config/config.yaml"
+        if not os.path.isfile(config_path):
+            logger.warning(
+                "config.yaml não encontrado em %s — usando minimal config. "
+                "Crie o arquivo para usar configuração real.",
+                config_path,
+            )
+            minimal = _minimal_config()
+            if overrides:
+                from types import SimpleNamespace
+                base = vars(minimal).copy()
+                merged = merge_overrides(base, overrides)
+                def to_ns(d):
+                    if isinstance(d, dict):
+                        return SimpleNamespace(**{k: to_ns(v) for k, v in d.items()})
+                    return d
+                return to_ns(merged)
+            return minimal
+        # config.yaml existe mas falhou ao carregar — erro de validação.
+        logger.error(
+            "Failed to load config.yaml: %s — config.yaml existe mas é inválido. "
+            "Corrija o erro em vez de usar fallback mínimo.", e,
+        )
+        raise
 
 
 def _config_value(config: Any, *path: str, default: Any = None) -> Any:

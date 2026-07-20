@@ -50,11 +50,38 @@ export function AdvancedTab() {
     }
   };
 
+  // Sprint 17.5.1 — Expõe TODOS os grupos da ConfigurationDTO, não apenas
+  // holyrics e stt. Cada grupo é flattado recursivamente para exibir
+  // every.key.path = value.
   if (configuration.holyrics) {
     flatten(configuration.holyrics as Record<string, unknown>, "holyrics");
   }
   if (configuration.stt) {
     flatten(configuration.stt as Record<string, unknown>, "stt");
+  }
+  if (configuration.llm) {
+    flatten(configuration.llm as Record<string, unknown>, "llm");
+  }
+  if (configuration.search) {
+    flatten(configuration.search as Record<string, unknown>, "search");
+  }
+  if (configuration.state) {
+    flatten(configuration.state as Record<string, unknown>, "state");
+  }
+  if (configuration.cache) {
+    flatten(configuration.cache as Record<string, unknown>, "cache");
+  }
+  if (configuration.confidence) {
+    flatten(configuration.confidence as Record<string, unknown>, "confidence");
+  }
+  if (configuration.log) {
+    flatten(configuration.log as Record<string, unknown>, "log");
+  }
+  if (configuration.audio) {
+    flatten(configuration.audio as Record<string, unknown>, "audio");
+  }
+  if (configuration.pipeline_policy) {
+    flatten(configuration.pipeline_policy as Record<string, unknown>, "pipeline_policy");
   }
 
   return (

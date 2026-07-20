@@ -24,6 +24,7 @@ import {
   InfraProvider,
   ConnectionProvider,
   NotificationsProvider,
+  OperationProvider,
 } from "@/contexts";
 import { createClient } from "@/sdk";
 import {
@@ -165,7 +166,9 @@ function wrapWithProviders(
         >
           <ConnectionProvider>
             <NotificationsProvider>
-              {children}
+              <OperationProvider skipStartup>
+                {children}
+              </OperationProvider>
             </NotificationsProvider>
           </ConnectionProvider>
         </InfraProvider>

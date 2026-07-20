@@ -182,6 +182,8 @@ function createMockServices(overrides?: Partial<{
         metrics: overrides?.metrics ?? makeMetrics(),
         last_event: null,
       })),
+      startPipeline: vi.fn(async () => makePipelineStatus(true)),
+      stopPipeline: vi.fn(async () => makePipelineStatus(false)),
     },
     session: {
       getCurrentSession: vi.fn(async () => overrides?.session ?? makeSession()),
@@ -262,6 +264,8 @@ function createFailingServices(): PresentationServices {
       getSession: reject,
       getMetrics: reject,
       getSnapshot: reject,
+      startPipeline: reject,
+      stopPipeline: reject,
     },
     session: { getCurrentSession: reject },
     metrics: { getMetrics: reject },

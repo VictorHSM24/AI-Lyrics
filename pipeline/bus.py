@@ -121,7 +121,10 @@ class PipelineEventBus:
         """Notifica todos os handlers inscritos no tipo do evento.
 
         Síncrono. Handlers executam na ordem de inscrição.
-        O evento é armazenado no EventStore ANTES de notificar handlers.
+
+        Sprint 17.2 — Event Stream Optimization:
+        Apenas OperationalEvents são armazenados no EventStore.
+        TelemetryEvents são dispatchados aos handlers mas NÃO persistidos.
 
         Erros em handlers NÃO são capturados aqui — o Engine trata
         erros via try/except ao redor do publish. O bus é puro.
@@ -129,9 +132,12 @@ class PipelineEventBus:
         Args:
             event: evento a ser publicado.
         """
-        # 1. Armazenar no EventStore
-        self._store.append(event)
-        # 2. Notificar handlers
+        # 1. Armazenar no EventStore — apenas OperationalEvents.
+        #    TelemetryEvents não são persistidos.
+        from pipeline.events import TelemetryEvent
+        if not isinstance(event, TelemetryEvent):
+            self._store.append(event)
+        # 2. Notificar handlers (sempre — operational e telemetry).
         event_type = type(event)
         handlers = self._subscriptions.get(event_type, [])
         for handler in handlers:

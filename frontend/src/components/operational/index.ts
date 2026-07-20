@@ -3,3 +3,6 @@ export { StartupStepRow } from "./StartupStepRow";
 export { StartupScreen } from "./StartupScreen";
 export { HealthPanel } from "./HealthPanel";
 export { AudioLevelMeter } from "./AudioLevelMeter";
+export { TranscriptPanel } from "./TranscriptPanel";
+export { ReferencePanel } from "./ReferencePanel";
+export { VersePresentationPanel } from "./VersePresentationPanel";

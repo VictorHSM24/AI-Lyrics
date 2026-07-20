@@ -175,6 +175,9 @@ class EventPublisher:
                 PipelineStarted, PipelineStopped, PresentationCompleted,
                 PresentationRequested, RankingCompleted, SearchCompleted,
                 SearchRequested, SpeechRecognized, SpeechSegmentReceived,
+                SpeechStarted, SpeechEnded, SpeechSegmentCreated,
+                SpeechTranscribing, SpeechTranscribed,
+                ReferenceDetected, ReferenceInvalid, IntentUnknown,
             )
             for evt in [
                 SpeechSegmentReceived, SpeechRecognized, SearchRequested,
@@ -182,6 +185,11 @@ class EventPublisher:
                 PresentationRequested, PresentationCompleted, FeedbackRecorded,
                 EvaluationRecorded, PipelineStarted, PipelineStopped,
                 PipelinePaused, PipelineResumed, PipelineError,
+                # Sprint 16 — Continuous Speech Pipeline
+                SpeechStarted, SpeechEnded, SpeechSegmentCreated,
+                SpeechTranscribing, SpeechTranscribed,
+                # Sprint 17 — Biblical Intent & Reference Extraction
+                ReferenceDetected, ReferenceInvalid, IntentUnknown,
             ]:
                 root.bus.subscribe(evt, self._on_event)
         self._subscribed = True

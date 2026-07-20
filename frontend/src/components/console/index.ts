@@ -5,6 +5,7 @@
 export { ConsoleHeader } from "./ConsoleHeader";
 export { TimelinePanel } from "./TimelinePanel";
 export { PipelinePanel } from "./PipelinePanel";
+export { PipelineControl } from "./PipelineControl";
 export { RecognitionPanel } from "./RecognitionPanel";
 export { ResultPanel } from "./ResultPanel";
 

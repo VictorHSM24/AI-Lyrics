@@ -1,0 +1,10 @@
+{
+  "stt": {
+    "backend": "faster-whisper",
+    "compute_type": "float16",
+    "cpu_threads": 4,
+    "device": "auto",
+    "language": "pt",
+    "model": "medium"
+  }
+}

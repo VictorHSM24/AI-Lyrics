@@ -56,7 +56,9 @@ from pipeline.events import (
     EvaluationRecorded,
     FeedbackRecorded,
     IntelligenceCompleted,
+    OperationalEvent,
     PipelineError,
+    PipelineEvent,
     PipelinePaused,
     PipelineResumed,
     PipelineStarted,
@@ -68,6 +70,25 @@ from pipeline.events import (
     SearchRequested,
     SpeechRecognized,
     SpeechSegmentReceived,
+    TelemetryEvent,
+    # Sprint 16 — Continuous Speech Pipeline
+    SpeechStarted,
+    SpeechEnded,
+    SpeechSegmentCreated,
+    SpeechTranscribing,
+    SpeechTranscribed,
+    # Sprint 17 — Biblical Intent & Reference Extraction
+    ReferenceDetected,
+    ReferenceInvalid,
+    IntentUnknown,
+    # Sprint 18 — Automatic Verse Presentation
+    VerseResolving,
+    VerseResolved,
+    VersePresented,
+    VersePresentationFailed,
+    is_operational_event,
+    is_pipeline_event,
+    is_telemetry_event,
 )
 from pipeline.handlers import (
     ContextHandler,
@@ -105,6 +126,9 @@ __all__ = [
     # Metrics
     "PipelineMetrics",
     # Events
+    "PipelineEvent",
+    "OperationalEvent",
+    "TelemetryEvent",
     "SpeechSegmentReceived",
     "SpeechRecognized",
     "SearchRequested",
@@ -120,6 +144,24 @@ __all__ = [
     "PipelinePaused",
     "PipelineResumed",
     "PipelineError",
+    # Sprint 16 — Continuous Speech Pipeline
+    "SpeechStarted",
+    "SpeechEnded",
+    "SpeechSegmentCreated",
+    "SpeechTranscribing",
+    "SpeechTranscribed",
+    # Sprint 17 — Biblical Intent & Reference Extraction
+    "ReferenceDetected",
+    "ReferenceInvalid",
+    "IntentUnknown",
+    # Sprint 18 — Automatic Verse Presentation
+    "VerseResolving",
+    "VerseResolved",
+    "VersePresented",
+    "VersePresentationFailed",
+    "is_pipeline_event",
+    "is_operational_event",
+    "is_telemetry_event",
     # Handlers
     "RecognitionHandler",
     "SearchHandler",

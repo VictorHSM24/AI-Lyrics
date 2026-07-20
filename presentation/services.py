@@ -61,10 +61,11 @@ from presentation.snapshots import (
 
 
 class PipelinePresentationService:
-    """Service para consultar estado do pipeline.
+    """Service para consultar e controlar o estado do pipeline.
 
     Recebe referências a PipelineState, PipelineSession e
-    PipelineMetrics (apenas leitura).
+    PipelineMetrics. Sprint 17.1 adiciona start()/stop() que
+    atualizam o estado e publicam eventos no EventBus.
     """
 
     def __init__(
@@ -78,6 +79,10 @@ class PipelinePresentationService:
         self._session = session
         self._metrics = metrics
         self._bus = bus
+
+    def _set_state(self, new_state: Any) -> None:
+        """Substitui a referência de estado interna (Sprint 17.1)."""
+        self._state = new_state
 
     def get_status(self) -> PipelineStatusDTO:
         """Retorna DTO do estado atual do pipeline."""
@@ -117,6 +122,47 @@ class PipelinePresentationService:
     def is_active(self) -> bool:
         """True se o pipeline está ativo (rodando e não pausado)."""
         return self.is_running() and not self.is_paused()
+
+    # ------------------------------------------------------------------
+    # Sprint 17.1 — Controle de ciclo de vida
+    # ------------------------------------------------------------------
+
+    def start(self) -> None:
+        """Marca o pipeline como rodando e publica PipelineStarted.
+
+        Não inicia audio/speech diretamente — isso é responsabilidade
+        do endpoint /pipeline/start que orquestra todos os componentes.
+        Este método apenas atualiza o estado lógico do pipeline.
+        """
+        if self._state.running:
+            return  # Idempotente
+        new_state = self._state.with_running(True)
+        self._set_state(new_state)
+        if self._bus is not None:
+            from pipeline.events import PipelineStarted
+            from pipeline.metadata import EventMetadata
+            meta = EventMetadata.for_session_event(
+                session_id=getattr(self._session, "session_id", "session"),
+                origin="PipelinePresentationService",
+            )
+            self._bus.publish(PipelineStarted(meta=meta))
+            self._set_state(new_state.with_last_event("PipelineStarted", meta.timestamp))
+
+    def stop(self, reason: str = "") -> None:
+        """Marca o pipeline como parado e publica PipelineStopped."""
+        if not self._state.running:
+            return  # Idempotente
+        new_state = self._state.with_running(False)
+        self._set_state(new_state)
+        if self._bus is not None:
+            from pipeline.events import PipelineStopped
+            from pipeline.metadata import EventMetadata
+            meta = EventMetadata.for_session_event(
+                session_id=getattr(self._session, "session_id", "session"),
+                origin="PipelinePresentationService",
+            )
+            self._bus.publish(PipelineStopped(meta=meta, reason=reason))
+            self._set_state(new_state.with_last_event("PipelineStopped", meta.timestamp))
 
 
 # ---------------------------------------------------------------------------

@@ -30,6 +30,8 @@ export interface EventDTO {
   event_type: string;
   meta: EventMetadataDTO;
   payload: Record<string, unknown>;
+  /** Sprint 17.2 — "operational" (Timeline/EventStore) ou "telemetry" (VU Meter). */
+  category?: "operational" | "telemetry";
 }
 
 // ============================================================

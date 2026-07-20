@@ -91,6 +91,11 @@ def _make_mock_root() -> CompositionRoot:
         system_service=system_service,
         info_service=info_service,
         audio_capture=mock_capture,
+        stt=None,
+        speech_queue=None,
+        speech_pipeline=None,
+        speech_worker=None,
+        nlu_service=None,
     )
     return root
 

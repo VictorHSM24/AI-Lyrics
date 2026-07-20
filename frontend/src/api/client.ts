@@ -30,6 +30,8 @@ export function createPresentationApi(): PresentationApi {
       getSession: notImplemented,
       getMetrics: notImplemented,
       getSnapshot: notImplemented,
+      startPipeline: notImplemented,
+      stopPipeline: notImplemented,
     },
     session: {
       getCurrentSession: notImplemented,

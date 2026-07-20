@@ -27,3 +27,14 @@ export {
   type BootstrapResult,
   type DomainKey,
 } from "./bootstrap";
+
+// Sprint 17.5.1 — BootstrapCoordinator: orquestra bootstrap com retry
+// exponencial e estado por recurso. Substitui o uso direto de
+// bootstrapStores no useBootstrap.
+export {
+  createBootstrapCoordinator,
+  BootstrapCoordinator,
+  type ResourceState,
+  type ResourceStatus,
+  type BootstrapCoordinatorConfig,
+} from "./BootstrapCoordinator";

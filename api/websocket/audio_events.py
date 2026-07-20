@@ -48,8 +48,14 @@ def _make_audio_event(
     payload: dict,
     session_id: str = "audio",
     correlation_id: str | None = None,
+    category: str = "operational",
 ) -> EventDTO:
-    """Constrói um EventDTO para um evento de áudio."""
+    """Constrói um EventDTO para um evento de áudio.
+
+    Sprint 17.2 — category distingue operational de telemetry:
+      - audio.started, audio.stopped, audio.device.changed → "operational"
+      - audio.level → "telemetry"
+    """
     now = time.time()
     return EventDTO(
         event_type=event_type,
@@ -63,6 +69,7 @@ def _make_audio_event(
             metadata=(),
         ),
         payload=payload,
+        category=category,
     )
 
 
@@ -135,6 +142,7 @@ class AudioEventPublisher:
                 "channels": frame.channels,
                 "frame_count": frame.frame_count,
             },
+            category="telemetry",
         )
         self._pending.append(event)
 

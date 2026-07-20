@@ -10,6 +10,7 @@
  */
 
 import type { VisualStatus } from "@/shared/status";
+import type { EventDTO } from "@/types";
 
 // ============================================================
 // EventCategory — categoria visual de um evento.
@@ -41,8 +42,22 @@ const TYPE_TO_CATEGORY: Record<string, EventCategory> = {
   SpeechEnded: "audio",
   SpeechSegmentReceived: "audio",
 
-  // STT
+  // STT (Sprint 16 — Continuous Speech Pipeline)
   SpeechRecognized: "stt",
+  SpeechSegmentCreated: "stt",
+  SpeechTranscribing: "stt",
+  SpeechTranscribed: "stt",
+
+  // NLU (Sprint 17 — Biblical Intent & Reference Extraction)
+  ReferenceDetected: "search",
+  ReferenceInvalid: "error",
+  IntentUnknown: "system",
+
+  // Sprint 18 — Automatic Verse Presentation
+  VerseResolving: "search",
+  VerseResolved: "search",
+  VersePresented: "holyrics",
+  VersePresentationFailed: "error",
 
   // Pipeline
   PipelineStarted: "pipeline",
@@ -219,3 +234,50 @@ export const ALL_SEVERITIES: EventSeverity[] = [
   "high",
   "critical",
 ];
+
+// ============================================================
+// Sprint 17.2 — Event Stream Optimization
+// ============================================================
+
+/**
+ * True se o evento é de telemetria (alta frequência, não operacional).
+ * Eventos de telemetria NÃO devem aparecer na Timeline nem no EventStore.
+ */
+export function isTelemetryEvent(dto: EventDTO): boolean {
+  return dto.category === "telemetry";
+}
+
+/**
+ * True se o evento é operacional (negócio, aparece na Timeline).
+ */
+export function isOperationalEvent(dto: EventDTO): boolean {
+  return dto.category !== "telemetry";
+}
+
+/**
+ * Lista de event_types conhecidos como telemetria.
+ * Usado como fallback quando o campo `category` não está presente
+ * (compatibilidade com eventos legacy sem category).
+ */
+export const TELEMETRY_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "audio.level",
+  "audio.rms",
+  "audio.peak",
+  "waveform",
+  "cpu.usage",
+  "gpu.usage",
+  "ram.usage",
+  "latency",
+  "fps",
+  "queue.size",
+  "pipeline.metrics",
+]);
+
+/**
+ * Verifica se um event_type é telemetria — considerando tanto
+ * o campo `category` quanto a lista de tipos conhecidos.
+ */
+export function isTelemetryType(eventType: string, category?: string): boolean {
+  if (category === "telemetry") return true;
+  return TELEMETRY_EVENT_TYPES.has(eventType);
+}

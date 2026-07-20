@@ -101,6 +101,7 @@ def _build_stt(data: dict[str, Any]) -> STTConfig:
     backend = data.get("backend", "faster-whisper")
     beam_size = data.get("beam_size", 1)
     vad_filter = data.get("vad_filter", False)
+    cpu_threads = data.get("cpu_threads", 0)
     valid_backends = {"faster-whisper"}
     if str(backend) not in valid_backends:
         raise ConfigError(
@@ -116,6 +117,7 @@ def _build_stt(data: dict[str, Any]) -> STTConfig:
         backend=str(backend),
         beam_size=int(beam_size),
         vad_filter=bool(vad_filter),
+        cpu_threads=int(cpu_threads),
     )
 
 

@@ -17,6 +17,18 @@ Arquitetura:
   - Embeddings NÃO são implementados neste módulo (futuro: busca híbrida
     com embeddings será adicionada via Embedder injetável).
 
+Sprint 18.0.1 — Thread Safety:
+  - A conexão SQLite NÃO é mais mantida aberta entre chamadas.
+  - Cada operação abre uma conexão nova (read-only, via URI) e fecha ao
+    terminar. Isto elimina definitivamente o erro
+    "SQLite objects created in a thread can only be used in that same
+    thread" que ocorria quando o VersePresentationService chamava
+    search_by_reference() a partir da thread SpeechWorker-Whisper.
+  - O custo de abrir/fechar (~0.5-2ms) é desprezível frente ao tempo
+    total de busca (~50ms) e garante segurança total em ambientes
+    multithreaded sem recorrer a check_same_thread=False ou mutex.
+  - O Searcher é agora verdadeiramente stateless após a construção.
+
 Performance:
   - FTS5: 1-5ms para ~31k versículos.
   - rapidfuzz: ~5-10ms para top-50 candidatos.
@@ -34,8 +46,9 @@ import re
 import sqlite3
 import time
 import unicodedata
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Iterator, Literal
 
 from busca.exceptions import SearchError
 from busca.query_planner import QueryPlan, QueryPlanner
@@ -288,16 +301,20 @@ class Searcher:
         self._book_table = book_table
         self._default_version = version or "ACF"
         self._metrics = SearchMetrics()
-        self._db: sqlite3.Connection | None = None
+        # Sprint 18.0.1 — Conexão NÃO é mais mantida aberta.
+        # Cada operação abre/fecha sua própria conexão (thread-safe).
         self._db_path = config.fts5_db
         self._embedding_searcher = embedding_searcher
+        self._validated = False
 
         # Cache simples de buscas recentes (query → resultados).
         self._cache: dict[str, list[SearchResult]] = {}
         self._cache_max = 50
 
-        # Abrir conexão read-only.
-        self._open_db()
+        # Sprint 18.0.1 — Validar que o banco existe e tem a tabela
+        # 'verses' na inicialização (fail-fast), mas SEM manter a
+        # conexão aberta. A validação usa uma conexão temporária.
+        self._validate_db()
 
         logger.info(
             "Searcher initialized: db=%s version=%s rrf_k=%d top_k=%d "
@@ -309,6 +326,67 @@ class Searcher:
             config.search_gap,
             "enabled" if embedding_searcher else "disabled",
         )
+
+    # ------------------------------------------------------------------
+    # Sprint 18.0.1 — Thread-safe database access.
+    # ------------------------------------------------------------------
+
+    @contextmanager
+    def _db_connection(self) -> Iterator[sqlite3.Connection]:
+        """Abre uma conexão SQLite read-only para esta operação.
+
+        Sprint 18.0.1 — A conexão é criada e fechada dentro do
+        context manager, garantindo que cada chamada use sua própria
+        conexão na thread que a executou. Isto elimina o erro
+        "SQLite objects created in a thread can only be used in that
+        same thread" sem recorrer a check_same_thread=False.
+
+        Uso:
+            with self._db_connection() as db:
+                cursor = db.execute("SELECT ...")
+                rows = cursor.fetchall()
+        """
+        if not os.path.isfile(self._db_path):
+            raise SearchError(
+                f"FTS5 database not found: {self._db_path}. "
+                "Run build_index.py to create it."
+            )
+        uri = f"file:{self._db_path}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    def _validate_db(self) -> None:
+        """Valida que o banco existe e tem a tabela 'verses'.
+
+        Sprint 18.0.1 — Substitui o antigo _open_db() que mantinha
+        a conexão aberta. Usa uma conexão temporária apenas para
+        validação fail-fast na inicialização.
+        """
+        if not os.path.isfile(self._db_path):
+            raise SearchError(
+                f"FTS5 database not found: {self._db_path}. "
+                "Run build_index.py to create it."
+            )
+        try:
+            with self._db_connection() as db:
+                cursor = db.execute(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type='table' AND name='verses'"
+                )
+                if cursor.fetchone() is None:
+                    raise SearchError(
+                        f"FTS5 table 'verses' not found in {self._db_path}. "
+                        "Run build_index.py to create it."
+                    )
+        except SearchError:
+            raise
+        except sqlite3.Error as e:
+            raise SearchError(f"failed to verify FTS5 table: {e}") from e
+        self._validated = True
 
     # ------------------------------------------------------------------
     # Busca principal (auto-detecção)
@@ -341,6 +419,9 @@ class Searcher:
         """
         if not query or not query.strip():
             return []
+
+        if not self._validated:
+            raise SearchError("database not open")
 
         top_k = top_k or self._config.top_k
         version = version or self._default_version
@@ -684,28 +765,27 @@ class Searcher:
         Returns:
             Dict com metadados do versículo, ou None se não encontrado.
         """
-        if self._db is None:
-            return None
         try:
-            row = self._db.execute(
-                "SELECT id, book, chapter, verse, text, version "
-                "FROM verses WHERE id = ? LIMIT 1",
-                (uid,),
-            ).fetchone()
-            if row is None:
-                return None
-            return {
-                "id": row[0],
-                "book": row[1],
-                "chapter": row[2],
-                "verse": row[3],
-                "text": row[4],
-                "version": row[5],
-                "uid": row[0],
-                "bm25": 0.0,
-            }
-        except sqlite3.OperationalError:
+            with self._db_connection() as db:
+                row = db.execute(
+                    "SELECT id, book, chapter, verse, text, version "
+                    "FROM verses WHERE id = ? LIMIT 1",
+                    (uid,),
+                ).fetchone()
+        except (sqlite3.OperationalError, SearchError):
             return None
+        if row is None:
+            return None
+        return {
+            "id": row[0],
+            "book": row[1],
+            "chapter": row[2],
+            "verse": row[3],
+            "text": row[4],
+            "version": row[5],
+            "uid": row[0],
+            "bm25": 0.0,
+        }
 
     def _fts5_search_or(
         self,
@@ -717,8 +797,6 @@ class Searcher:
         Mais permissivo que AND: retorna versículos que contêm pelo menos
         uma das keywords. BM25 ranking prioriza versículos com mais matches.
         """
-        if self._db is None:
-            raise SearchError("database not open")
         if not keywords:
             return []
 
@@ -729,16 +807,20 @@ class Searcher:
         fts5_query = " OR ".join(quoted)
 
         try:
-            cursor = self._db.execute(
-                "SELECT id, book, chapter, verse, text, version, "
-                "bm25(verses) as bm25_score "
-                "FROM verses WHERE verses MATCH ? "
-                "ORDER BY bm25(verses) LIMIT ?",
-                (fts5_query, limit),
-            )
-            rows = cursor.fetchall()
+            with self._db_connection() as db:
+                cursor = db.execute(
+                    "SELECT id, book, chapter, verse, text, version, "
+                    "bm25(verses) as bm25_score "
+                    "FROM verses WHERE verses MATCH ? "
+                    "ORDER BY bm25(verses) LIMIT ?",
+                    (fts5_query, limit),
+                )
+                rows = cursor.fetchall()
         except sqlite3.OperationalError as e:
             logger.warning("FTS5 OR query failed: %s (query=%r)", e, fts5_query)
+            return []
+        except SearchError as e:
+            logger.warning("FTS5 OR query failed (db): %s", e)
             return []
 
         return self._rows_to_candidates(rows)
@@ -749,8 +831,6 @@ class Searcher:
         limit: int,
     ) -> list[dict]:
         """Busca FTS5 com AND — todas as keywords devem estar presentes."""
-        if self._db is None:
-            raise SearchError("database not open")
         if not keywords:
             return []
 
@@ -760,16 +840,20 @@ class Searcher:
         fts5_query = " ".join(quoted)
 
         try:
-            cursor = self._db.execute(
-                "SELECT id, book, chapter, verse, text, version, "
-                "bm25(verses) as bm25_score "
-                "FROM verses WHERE verses MATCH ? "
-                "ORDER BY bm25(verses) LIMIT ?",
-                (fts5_query, limit),
-            )
-            rows = cursor.fetchall()
+            with self._db_connection() as db:
+                cursor = db.execute(
+                    "SELECT id, book, chapter, verse, text, version, "
+                    "bm25(verses) as bm25_score "
+                    "FROM verses WHERE verses MATCH ? "
+                    "ORDER BY bm25(verses) LIMIT ?",
+                    (fts5_query, limit),
+                )
+                rows = cursor.fetchall()
         except sqlite3.OperationalError as e:
             logger.warning("FTS5 AND query failed: %s (query=%r)", e, fts5_query)
+            return []
+        except SearchError as e:
+            logger.warning("FTS5 AND query failed (db): %s", e)
             return []
 
         return self._rows_to_candidates(rows)
@@ -781,8 +865,6 @@ class Searcher:
         limit: int,
     ) -> list[dict]:
         """Busca FTS5 com OR restrita a livros específicos."""
-        if self._db is None:
-            raise SearchError("database not open")
         if not keywords or not book_ids:
             return []
 
@@ -798,17 +880,21 @@ class Searcher:
         )
 
         try:
-            cursor = self._db.execute(
-                "SELECT id, book, chapter, verse, text, version, "
-                "bm25(verses) as bm25_score "
-                "FROM verses WHERE verses MATCH ? "
-                f"AND ({book_filters}) "
-                "ORDER BY bm25(verses) LIMIT ?",
-                (fts5_query, limit),
-            )
-            rows = cursor.fetchall()
+            with self._db_connection() as db:
+                cursor = db.execute(
+                    "SELECT id, book, chapter, verse, text, version, "
+                    "bm25(verses) as bm25_score "
+                    "FROM verses WHERE verses MATCH ? "
+                    f"AND ({book_filters}) "
+                    "ORDER BY bm25(verses) LIMIT ?",
+                    (fts5_query, limit),
+                )
+                rows = cursor.fetchall()
         except sqlite3.OperationalError as e:
             logger.warning("FTS5 book_filter query failed: %s", e)
+            return []
+        except SearchError as e:
+            logger.warning("FTS5 book_filter query failed (db): %s", e)
             return []
 
         return self._rows_to_candidates(rows)
@@ -1023,24 +1109,25 @@ class Searcher:
             Lista de dicionários com id, uid, book, chapter, verse, text,
             version, bm25.
         """
-        if self._db is None:
-            raise SearchError("database not open")
-
         # Escapar query FTS5 (tokens separados por espaço = AND implícito)
         # FTS5 trata tokens não reconhecidos como palavras individuais.
         fts5_query = self._build_fts5_query(normalized_query)
 
         try:
-            cursor = self._db.execute(
-                "SELECT id, book, chapter, verse, text, version, "
-                "bm25(verses) as bm25_score "
-                "FROM verses WHERE verses MATCH ? "
-                "ORDER BY bm25(verses) LIMIT ?",
-                (fts5_query, limit),
-            )
-            rows = cursor.fetchall()
+            with self._db_connection() as db:
+                cursor = db.execute(
+                    "SELECT id, book, chapter, verse, text, version, "
+                    "bm25(verses) as bm25_score "
+                    "FROM verses WHERE verses MATCH ? "
+                    "ORDER BY bm25(verses) LIMIT ?",
+                    (fts5_query, limit),
+                )
+                rows = cursor.fetchall()
         except sqlite3.OperationalError as e:
             logger.warning("FTS5 query failed: %s (query=%r)", e, fts5_query)
+            return []
+        except SearchError as e:
+            logger.warning("FTS5 query failed (db): %s", e)
             return []
 
         results = []
@@ -1126,6 +1213,9 @@ class Searcher:
         Raises:
             SearchError: se o livro não for reconhecido.
         """
+        if not self._validated:
+            raise SearchError("database not open")
+
         version = version or self._default_version
 
         # Resolver nome do livro via BookTable
@@ -1136,60 +1226,58 @@ class Searcher:
         book_id = match.book.id
         book_canonical = match.book.canonical
 
-        if self._db is None:
-            raise SearchError("database not open")
+        with self._db_connection() as db:
+            if verse is not None:
+                # Buscar versículo exato
+                verse_id = f"{book_id:02d}{chapter:03d}{verse:03d}"
+                cursor = db.execute(
+                    "SELECT id, book, chapter, verse, text, version "
+                    "FROM verses WHERE id = ? AND version = ?",
+                    (verse_id, version),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    return None
 
-        if verse is not None:
-            # Buscar versículo exato
-            verse_id = f"{book_id:02d}{chapter:03d}{verse:03d}"
-            cursor = self._db.execute(
-                "SELECT id, book, chapter, verse, text, version "
-                "FROM verses WHERE id = ? AND version = ?",
-                (verse_id, version),
-            )
-            row = cursor.fetchone()
-            if row is None:
-                return None
+                return SearchResult(
+                    reference=_build_reference(book_canonical, chapter, verse),
+                    book=book_canonical,
+                    book_id=book_id,
+                    chapter=chapter,
+                    verse=verse,
+                    text=row[4],
+                    version=row[5],
+                    score=1.0,
+                    c_search=1.0,
+                    ambiguous=False,
+                    match_type="reference",
+                )
+            else:
+                # Buscar primeiro versículo do capítulo (para referência de capítulo)
+                chapter_prefix = f"{book_id:02d}{chapter:03d}"
+                cursor = db.execute(
+                    "SELECT id, book, chapter, verse, text, version "
+                    "FROM verses WHERE id LIKE ? AND version = ? "
+                    "ORDER BY verse LIMIT 1",
+                    (f"{chapter_prefix}%", version),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    return None
 
-            return SearchResult(
-                reference=_build_reference(book_canonical, chapter, verse),
-                book=book_canonical,
-                book_id=book_id,
-                chapter=chapter,
-                verse=verse,
-                text=row[4],
-                version=row[5],
-                score=1.0,
-                c_search=1.0,
-                ambiguous=False,
-                match_type="reference",
-            )
-        else:
-            # Buscar primeiro versículo do capítulo (para referência de capítulo)
-            chapter_prefix = f"{book_id:02d}{chapter:03d}"
-            cursor = self._db.execute(
-                "SELECT id, book, chapter, verse, text, version "
-                "FROM verses WHERE id LIKE ? AND version = ? "
-                "ORDER BY verse LIMIT 1",
-                (f"{chapter_prefix}%", version),
-            )
-            row = cursor.fetchone()
-            if row is None:
-                return None
-
-            return SearchResult(
-                reference=_build_reference(book_canonical, chapter, row[3]),
-                book=book_canonical,
-                book_id=book_id,
-                chapter=chapter,
-                verse=row[3],
-                text=row[4],
-                version=row[5],
-                score=1.0,
-                c_search=1.0,
-                ambiguous=False,
-                match_type="reference",
-            )
+                return SearchResult(
+                    reference=_build_reference(book_canonical, chapter, row[3]),
+                    book=book_canonical,
+                    book_id=book_id,
+                    chapter=chapter,
+                    verse=row[3],
+                    text=row[4],
+                    version=row[5],
+                    score=1.0,
+                    c_search=1.0,
+                    ambiguous=False,
+                    match_type="reference",
+                )
 
     # ------------------------------------------------------------------
     # Busca por capítulo
@@ -1215,6 +1303,9 @@ class Searcher:
         Raises:
             SearchError: se o livro não for reconhecido.
         """
+        if not self._validated:
+            raise SearchError("database not open")
+
         version = version or self._default_version
 
         match = self._book_table.resolve(book_name)
@@ -1224,17 +1315,15 @@ class Searcher:
         book_id = match.book.id
         book_canonical = match.book.canonical
 
-        if self._db is None:
-            raise SearchError("database not open")
-
         chapter_prefix = f"{book_id:02d}{chapter:03d}"
-        cursor = self._db.execute(
-            "SELECT id, book, chapter, verse, text, version "
-            "FROM verses WHERE id LIKE ? AND version = ? "
-            "ORDER BY verse",
-            (f"{chapter_prefix}%", version),
-        )
-        rows = cursor.fetchall()
+        with self._db_connection() as db:
+            cursor = db.execute(
+                "SELECT id, book, chapter, verse, text, version "
+                "FROM verses WHERE id LIKE ? AND version = ? "
+                "ORDER BY verse",
+                (f"{chapter_prefix}%", version),
+            )
+            rows = cursor.fetchall()
 
         results = []
         for row in rows:
@@ -1278,6 +1367,9 @@ class Searcher:
         Returns:
             Lista com 0 ou 1 SearchResult.
         """
+        if not self._validated:
+            raise SearchError("database not open")
+
         version = version or self._default_version
 
         # BibleState tem: book_id, chapter, verse, version
@@ -1289,59 +1381,56 @@ class Searcher:
             logger.debug("search_context: state is empty")
             return []
 
-        if self._db is None:
-            raise SearchError("database not open")
-
         try:
             book = self._book_table.by_id(book_id)
             book_canonical = book.canonical
         except KeyError:
             raise SearchError(f"invalid book_id in state: {book_id}")
 
-        if direction == "next":
-            target_verse = (verse or 0) + 1
-            target_id = f"{book_id:02d}{chapter:03d}{target_verse:03d}"
-            cursor = self._db.execute(
-                "SELECT id, book, chapter, verse, text, version "
-                "FROM verses WHERE id = ? AND version = ?",
-                (target_id, version),
-            )
-            row = cursor.fetchone()
-
-            if row is None:
-                # Tentar próximo capítulo, versículo 1
-                next_chapter = chapter + 1
-                next_id = f"{book_id:02d}{next_chapter:03d}001"
-                cursor = self._db.execute(
-                    "SELECT id, book, chapter, verse, text, version "
-                    "FROM verses WHERE id LIKE ? AND version = ? "
-                    "ORDER BY verse LIMIT 1",
-                    (f"{book_id:02d}{next_chapter:03d}%", version),
-                )
-                row = cursor.fetchone()
-
-        else:  # prev
-            target_verse = (verse or 1) - 1
-            if target_verse >= 1:
+        with self._db_connection() as db:
+            if direction == "next":
+                target_verse = (verse or 0) + 1
                 target_id = f"{book_id:02d}{chapter:03d}{target_verse:03d}"
-                cursor = self._db.execute(
+                cursor = db.execute(
                     "SELECT id, book, chapter, verse, text, version "
                     "FROM verses WHERE id = ? AND version = ?",
                     (target_id, version),
                 )
                 row = cursor.fetchone()
-            else:
-                row = None
-                # Tentar capítulo anterior, último versículo
-                prev_chapter = chapter - 1
-                if prev_chapter >= 1:
-                    cursor = self._db.execute(
+
+                if row is None:
+                    # Tentar próximo capítulo, versículo 1
+                    next_chapter = chapter + 1
+                    cursor = db.execute(
                         "SELECT id, book, chapter, verse, text, version "
                         "FROM verses WHERE id LIKE ? AND version = ? "
-                        "ORDER BY verse DESC LIMIT 1",
-                        (f"{book_id:02d}{prev_chapter:03d}%", version),
+                        "ORDER BY verse LIMIT 1",
+                        (f"{book_id:02d}{next_chapter:03d}%", version),
                     )
                     row = cursor.fetchone()
+
+            else:  # prev
+                target_verse = (verse or 1) - 1
+                if target_verse >= 1:
+                    target_id = f"{book_id:02d}{chapter:03d}{target_verse:03d}"
+                    cursor = db.execute(
+                        "SELECT id, book, chapter, verse, text, version "
+                        "FROM verses WHERE id = ? AND version = ?",
+                        (target_id, version),
+                    )
+                    row = cursor.fetchone()
+                else:
+                    row = None
+                    # Tentar capítulo anterior, último versículo
+                    prev_chapter = chapter - 1
+                    if prev_chapter >= 1:
+                        cursor = db.execute(
+                            "SELECT id, book, chapter, verse, text, version "
+                            "FROM verses WHERE id LIKE ? AND version = ? "
+                            "ORDER BY verse DESC LIMIT 1",
+                            (f"{book_id:02d}{prev_chapter:03d}%", version),
+                        )
+                        row = cursor.fetchone()
 
         if row is None:
             return []
@@ -1564,41 +1653,27 @@ class Searcher:
     # ------------------------------------------------------------------
 
     def _open_db(self) -> None:
-        """Abre conexão SQLite read-only com a base FTS5."""
-        if not os.path.isfile(self._db_path):
-            raise SearchError(
-                f"FTS5 database not found: {self._db_path}. "
-                "Run build_index.py to create it."
-            )
+        """Sprint 18.0.1 — Deprecated: não abre conexão persistente.
 
-        try:
-            # URI mode para read-only
-            uri = f"file:{self._db_path}?mode=ro"
-            self._db = sqlite3.connect(uri, uri=True)
-            self._db.row_factory = sqlite3.Row
-        except sqlite3.Error as e:
-            raise SearchError(f"failed to open FTS5 database: {e}") from e
-
-        # Verificar que a tabela verses existe
-        try:
-            cursor = self._db.execute(
-                "SELECT name FROM sqlite_master "
-                "WHERE type='table' AND name='verses'"
-            )
-            if cursor.fetchone() is None:
-                raise SearchError(
-                    f"FTS5 table 'verses' not found in {self._db_path}. "
-                    "Run build_index.py to create it."
-                )
-        except sqlite3.Error as e:
-            raise SearchError(f"failed to verify FTS5 table: {e}") from e
+        Mantido por compatibilidade com código legado que chama
+        _open_db() explicitamente. Agora é no-op — a validação
+        acontece em __init__ via _validate_db(), e cada operação
+        abre sua própria conexão via _db_connection().
+        """
+        # No-op: conexões são abertas por operação.
+        pass
 
     def close(self) -> None:
-        """Fecha a conexão com a base FTS5."""
-        if self._db is not None:
-            self._db.close()
-            self._db = None
-            logger.info("Searcher database closed")
+        """Sprint 18.0.1 — Fecha recursos persistentes.
+
+        Como não há mais conexão persistente, este método apenas
+        marca o Searcher como fechado (is_open=False). Cada operação
+        abria/fechava sua própria conexão; nada mais a fazer.
+        Mantido por compatibilidade com código que chama close()
+        explicitamente (ex: CompositionRoot em shutdown, context
+        manager __exit__, testes).
+        """
+        self._validated = False
 
     # ------------------------------------------------------------------
     # Propriedades
@@ -1611,8 +1686,14 @@ class Searcher:
 
     @property
     def is_open(self) -> bool:
-        """True se a conexão com a base está aberta."""
-        return self._db is not None
+        """True se a base FTS5 está disponível e foi validada.
+
+        Sprint 18.0.1 — Antes indicava se havia uma conexão SQLite
+        aberta. Agora indica se o Searcher foi inicializado com
+        sucesso (banco existe e tabela 'verses' presente). Cada
+        operação abre/fecha sua própria conexão.
+        """
+        return self._validated
 
     @property
     def db_path(self) -> str:

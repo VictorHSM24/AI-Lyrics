@@ -210,6 +210,149 @@ export function createInfoStore(): InfoStore {
 }
 
 // ============================================================
+// TranscriptStore (Sprint 16) — transcrições em tempo real.
+// ============================================================
+
+export interface TranscriptEntry {
+  /** ID único (correlation_id do evento SpeechTranscribed). */
+  id: string;
+  /** Texto transcrito. */
+  text: string;
+  /** Idioma detectado. */
+  language: string;
+  /** Confiança [0.0, 1.0]. */
+  confidence: number;
+  /** Latência em ms (fim da fala → texto). */
+  latencyMs: number;
+  /** Duração do segmento de áudio em ms. */
+  durationMs: number;
+  /** Timestamp do evento. */
+  timestamp: number;
+}
+
+export interface TranscriptState {
+  /** Histórico de transcrições (mais recente primeiro). */
+  entries: TranscriptEntry[];
+  /** True se o VAD está detectando fala agora. */
+  listening: boolean;
+  /** True se o Whisper está transcrevendo um segmento. */
+  transcribing: boolean;
+  /** Texto parcial (vazio até completar). */
+  partialText: string;
+}
+
+export type TranscriptStore = DomainStore<TranscriptState>;
+export function createTranscriptStore(): TranscriptStore {
+  return wrap(createSnapshotStore<TranscriptState>());
+}
+
+// ============================================================
+// ReferenceStore (Sprint 17) — referências bíblicas detectadas.
+// ============================================================
+
+export interface ReferenceEntry {
+  /** ID único (correlation_id do evento). */
+  id: string;
+  /** Intenção detectada (ex.: "OPEN_REFERENCE"). */
+  intent: string;
+  /** Nome canônico do livro (ex.: "João", "1 Coríntios"). */
+  book: string;
+  /** ID do livro (1..66). */
+  bookId: number;
+  /** Capítulo. */
+  chapter: number;
+  /** Versículo inicial. */
+  verseStart: number;
+  /** Versículo final (igual a verseStart se for versículo único). */
+  verseEnd: number;
+  /** Confiança da detecção [0.0, 1.0]. */
+  confidence: number;
+  /** Texto original transcrito. */
+  rawText: string;
+  /** Texto normalizado (ex.: "joao 3:16"). */
+  normalizedText: string;
+  /** Timestamp do evento. */
+  timestamp: number;
+}
+
+export interface ReferenceState {
+  /** Última referência detectada (ou null se nenhuma). */
+  current: ReferenceEntry | null;
+  /** Histórico de referências (mais recente primeiro). */
+  entries: ReferenceEntry[];
+  /** Última referência inválida (ou null). */
+  invalid: { book: string; reason: string; rawText: string; timestamp: number } | null;
+}
+
+export type ReferenceStore = DomainStore<ReferenceState>;
+export function createReferenceStore(): ReferenceStore {
+  return wrap(createSnapshotStore<ReferenceState>());
+}
+
+// ============================================================
+// VersePresentationStore (Sprint 18) — apresentação automática
+// de versículos no Holyrics.
+// ============================================================
+
+/**
+ * Status possível da última apresentação.
+ * - "presenting"  : VerseResolving publicado, busca em andamento.
+ * - "presented"   : VersePresented publicado, Holyrics confirmou.
+ * - "failed"      : VersePresentationFailed publicado.
+ * - "idle"        : nenhuma apresentação iniciada ainda.
+ */
+export type VersePresentationStatus = "idle" | "presenting" | "presented" | "failed";
+
+export interface VersePresentationEntry {
+  /** ID único (correlation_id do fluxo). */
+  id: string;
+  /** Livro (ex.: "João"). */
+  book: string;
+  /** ID do livro (1..66). */
+  bookId: number;
+  /** Capítulo. */
+  chapter: number;
+  /** Versículo. */
+  verse: number;
+  /** Referência formatada (ex.: "João 3:16"). */
+  reference: string;
+  /** Versão bíblica usada. */
+  version: string;
+  /** Texto do versículo (vazio até VerseResolved). */
+  verseText: string;
+  /** Status da apresentação. */
+  status: VersePresentationStatus;
+  /** True se quick_presentation foi usado. */
+  quickPresentation: boolean;
+  /** Latência total (ReferenceDetected → VersePresented) em ms. */
+  totalLatencyMs: number;
+  /** Latência específica do Holyrics em ms. */
+  holyricsLatencyMs: number;
+  /** Status retornado pelo Holyrics (ex.: "ok"). */
+  holyricsStatus: string;
+  /** Stage da falha (se status="failed"): "search" | "holyrics" | "internal". */
+  failureStage: string;
+  /** Tipo do erro (se status="failed"): "book_not_found", "timeout", etc. */
+  errorType: string;
+  /** Mensagem de erro (se status="failed"). */
+  errorMessage: string;
+  /** Timestamp do evento mais recente deste fluxo. */
+  timestamp: number;
+}
+
+export interface VersePresentationState {
+  /** Última apresentação (ou null). */
+  current: VersePresentationEntry | null;
+  /** Histórico de apresentações (mais recente primeiro, máx 50). */
+  entries: VersePresentationEntry[];
+}
+
+export type VersePresentationStore = DomainStore<VersePresentationState>;
+export function createVersePresentationStore(): VersePresentationStore {
+  return wrap(createSnapshotStore<VersePresentationState>());
+}
+
+// ============================================================
 // Registry — agregador de todos os stores.
 // ============================================================
 
@@ -226,6 +369,9 @@ export interface StoreRegistry {
   readonly audio: AudioStore;
   readonly system: SystemStore;
   readonly info: InfoStore;
+  readonly transcript: TranscriptStore;
+  readonly reference: ReferenceStore;
+  readonly versePresentation: VersePresentationStore;
 }
 
 export function createStoreRegistry(): StoreRegistry {
@@ -242,5 +388,8 @@ export function createStoreRegistry(): StoreRegistry {
     audio: createAudioStore(),
     system: createSystemStore(),
     info: createInfoStore(),
+    transcript: createTranscriptStore(),
+    reference: createReferenceStore(),
+    versePresentation: createVersePresentationStore(),
   };
 }

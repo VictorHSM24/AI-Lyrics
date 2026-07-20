@@ -105,9 +105,23 @@ ALLOWED_TOP_KEYS = frozenset({
     "confidence", "log", "mode", "audio",
 })
 
+# Sprint 17.5.2 — Conjuntos de valores válidos para campos críticos.
+# Espelham a validação de config/loader.py para impedir que valores
+# inválidos sejam persistidos em config.overrides.json e quebrem o
+# restart do backend.
+VALID_STT_BACKENDS = frozenset({"faster-whisper"})
+VALID_STT_DEVICES = frozenset({"cpu", "cuda", "auto"})
+VALID_STT_COMPUTE_TYPES = frozenset({"int8", "int8_float16", "float16", "float32"})
+VALID_STT_LANGUAGES = frozenset({"pt", "en", "es", "auto"})
+VALID_AUDIO_CHUNK_MS = frozenset({10, 20, 30})
+
 
 def validate_overrides(overrides: dict[str, Any]) -> list[str]:
-    """Valida estrutura de overrides.
+    """Valida estrutura E valores de overrides.
+
+    Sprint 17.5.2 — agora valida também valores críticos de stt e audio,
+    espelhando config/loader.py. Isto impede que um valor inválido seja
+    persistido em config.overrides.json e quebre o restart do backend.
 
     Returns:
         Lista de erros (vazia se válido).
@@ -121,4 +135,76 @@ def validate_overrides(overrides: dict[str, Any]) -> list[str]:
     if "mode" in overrides and isinstance(overrides["mode"], str):
         if overrides["mode"] not in {"auto", "confirm", "quick"}:
             errors.append(f"invalid mode: {overrides['mode']!r} (auto, confirm, quick)")
+
+    # Sprint 17.5.2 — Validação de stt.* (campos críticos).
+    stt = overrides.get("stt")
+    if isinstance(stt, dict):
+        backend = stt.get("backend")
+        if backend is not None and str(backend) not in VALID_STT_BACKENDS:
+            errors.append(
+                f"invalid stt.backend: {backend!r} "
+                f"(valid: {sorted(VALID_STT_BACKENDS)})"
+            )
+        device = stt.get("device")
+        if device is not None and str(device) not in VALID_STT_DEVICES:
+            errors.append(
+                f"invalid stt.device: {device!r} "
+                f"(valid: {sorted(VALID_STT_DEVICES)})"
+            )
+        compute_type = stt.get("compute_type")
+        if compute_type is not None and str(compute_type) not in VALID_STT_COMPUTE_TYPES:
+            errors.append(
+                f"invalid stt.compute_type: {compute_type!r} "
+                f"(valid: {sorted(VALID_STT_COMPUTE_TYPES)})"
+            )
+        language = stt.get("language")
+        if language is not None and str(language) not in VALID_STT_LANGUAGES:
+            errors.append(
+                f"invalid stt.language: {language!r} "
+                f"(valid: {sorted(VALID_STT_LANGUAGES)})"
+            )
+        cpu_threads = stt.get("cpu_threads")
+        if cpu_threads is not None:
+            if not isinstance(cpu_threads, int) or isinstance(cpu_threads, bool):
+                errors.append(f"stt.cpu_threads must be int, got {type(cpu_threads).__name__}")
+            elif cpu_threads < 0 or cpu_threads > 128:
+                errors.append(f"stt.cpu_threads out of range (0..128): {cpu_threads}")
+        beam_size = stt.get("beam_size")
+        if beam_size is not None:
+            if not isinstance(beam_size, int) or isinstance(beam_size, bool):
+                errors.append(f"stt.beam_size must be int, got {type(beam_size).__name__}")
+            elif beam_size < 1 or beam_size > 20:
+                errors.append(f"stt.beam_size out of range (1..20): {beam_size}")
+
+    # Sprint 17.5.2 — Validação de audio.* (campos críticos).
+    audio = overrides.get("audio")
+    if isinstance(audio, dict):
+        chunk_ms = audio.get("chunk_ms")
+        if chunk_ms is not None:
+            if not isinstance(chunk_ms, int) or isinstance(chunk_ms, bool):
+                errors.append(f"audio.chunk_ms must be int, got {type(chunk_ms).__name__}")
+            elif chunk_ms not in VALID_AUDIO_CHUNK_MS:
+                errors.append(
+                    f"invalid audio.chunk_ms: {chunk_ms} "
+                    f"(valid: {sorted(VALID_AUDIO_CHUNK_MS)})"
+                )
+        vad_mode = audio.get("vad_mode")
+        if vad_mode is not None:
+            if not isinstance(vad_mode, int) or isinstance(vad_mode, bool):
+                errors.append(f"audio.vad_mode must be int, got {type(vad_mode).__name__}")
+            elif not (0 <= vad_mode <= 3):
+                errors.append(f"audio.vad_mode out of range (0..3): {vad_mode}")
+        sample_rate = audio.get("sample_rate")
+        if sample_rate is not None:
+            if not isinstance(sample_rate, int) or isinstance(sample_rate, bool):
+                errors.append(f"audio.sample_rate must be int, got {type(sample_rate).__name__}")
+            elif sample_rate <= 0:
+                errors.append(f"audio.sample_rate must be positive: {sample_rate}")
+        channels = audio.get("channels")
+        if channels is not None:
+            if not isinstance(channels, int) or isinstance(channels, bool):
+                errors.append(f"audio.channels must be int, got {type(channels).__name__}")
+            elif channels not in (1, 2):
+                errors.append(f"audio.channels must be 1 or 2: {channels}")
+
     return errors

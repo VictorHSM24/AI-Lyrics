@@ -97,17 +97,23 @@ export class EventStreamBridge {
 
   private handleStreamEvent(event: StreamEvent): void {
     const dto = event.payload as EventDTO;
-    console.log("[DIAG bridge] handleStreamEvent:", dto?.event_type);
     if (!dto || typeof dto !== "object" || !("event_type" in dto)) {
       return;
     }
 
-    // Atualiza o EventStore (histórico de eventos).
-    const currentEvents = this.stores.events.current?.data ?? [];
-    this.stores.events.set([...currentEvents, dto]);
+    // Sprint 17.2 — Event Stream Optimization.
+    // Apenas OperationalEvents vão para o EventStore (Timeline).
+    // TelemetryEvents (audio.level, cpu.usage, etc.) são dispatchados
+    // aos handlers de domínio mas NÃO entram no histórico.
+    const isTelemetry = dto.category === "telemetry";
+    if (!isTelemetry) {
+      const currentEvents = this.stores.events.current?.data ?? [];
+      this.stores.events.set([...currentEvents, dto]);
+    }
 
-    // Despacha para handlers de domínio organizados.
+    // Despacha para handlers de domínio — sempre, independente da categoria.
     // Cada handler atualiza apenas os Stores correspondentes.
+    // TelemetryEvents atualizam AudioStore (VU Meter), gráficos, etc.
     dispatchDomainHandlers(dto, this.stores);
   }
 }

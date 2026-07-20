@@ -345,6 +345,28 @@ const AUDIO_EVENTS = new Set([
   "audio.level",
 ]);
 
+const SPEECH_EVENTS = new Set([
+  "SpeechStarted",
+  "SpeechEnded",
+  "SpeechSegmentCreated",
+  "SpeechTranscribing",
+  "SpeechTranscribed",
+]);
+
+const REFERENCE_EVENTS = new Set([
+  "ReferenceDetected",
+  "ReferenceInvalid",
+  "IntentUnknown",
+]);
+
+// Sprint 18 — Automatic Verse Presentation
+const VERSE_PRESENTATION_EVENTS = new Set([
+  "VerseResolving",
+  "VerseResolved",
+  "VersePresented",
+  "VersePresentationFailed",
+]);
+
 /**
  * Despacha um EventDTO para os handlers de domínio apropriados.
  *
@@ -368,6 +390,314 @@ export function dispatchDomainHandlers(
   if (AUDIO_EVENTS.has(dto.event_type)) {
     handleAudioEvent(dto, stores);
   }
+  if (SPEECH_EVENTS.has(dto.event_type)) {
+    handleSpeechEvent(dto, stores);
+  }
+  if (REFERENCE_EVENTS.has(dto.event_type)) {
+    handleReferenceEvent(dto, stores);
+  }
+  if (VERSE_PRESENTATION_EVENTS.has(dto.event_type)) {
+    handleVersePresentationEvent(dto, stores);
+  }
+}
+
+// ============================================================
+// Reference — eventos do Biblical Intent & Reference Extraction (Sprint 17).
+// ============================================================
+
+/**
+ * Atualiza o ReferenceStore com base em eventos de referência bíblica.
+ *
+ * ReferenceDetected → adiciona entrada ao histórico, define current
+ * ReferenceInvalid  → define invalid
+ * IntentUnknown     → (apenas log, sem mudança de estado)
+ */
+export function handleReferenceEvent(
+  dto: EventDTO,
+  stores: StoreRegistry,
+): void {
+  const prev = stores.reference.current?.data;
+  const baseState = prev ?? {
+    current: null,
+    entries: [],
+    invalid: null,
+  };
+
+  switch (dto.event_type) {
+    case "ReferenceDetected": {
+      const entry = {
+        id: dto.meta.correlation_id,
+        intent: str(dto.payload, "intent"),
+        book: str(dto.payload, "book"),
+        bookId: num(dto.payload, "book_id"),
+        chapter: num(dto.payload, "chapter"),
+        verseStart: num(dto.payload, "verse_start"),
+        verseEnd: num(dto.payload, "verse_end"),
+        confidence: num(dto.payload, "confidence"),
+        rawText: str(dto.payload, "raw_text"),
+        normalizedText: str(dto.payload, "normalized_text"),
+        timestamp: dto.meta.timestamp,
+      };
+
+      stores.reference.set({
+        current: entry,
+        entries: [entry, ...baseState.entries].slice(0, 50),
+        invalid: null,
+      });
+      devLog.bridge(`ReferenceDetected → ${entry.normalizedText} (conf=${entry.confidence})`);
+      break;
+    }
+
+    case "ReferenceInvalid": {
+      const invalid = {
+        book: str(dto.payload, "book"),
+        reason: str(dto.payload, "reason"),
+        rawText: str(dto.payload, "raw_text"),
+        timestamp: dto.meta.timestamp,
+      };
+      stores.reference.set({
+        ...baseState,
+        invalid,
+      });
+      devLog.bridge(`ReferenceInvalid → ${invalid.book}: ${invalid.reason}`);
+      break;
+    }
+
+    case "IntentUnknown":
+      devLog.bridge(`IntentUnknown → reason=${dto.payload.reason}`);
+      break;
+
+    default:
+      break;
+  }
+}
+
+// ============================================================
+// Speech — eventos do Continuous Speech Pipeline (Sprint 16).
+// ============================================================
+
+/**
+ * Atualiza o TranscriptStore com base em eventos de speech.
+ *
+ * SpeechStarted       → listening=true
+ * SpeechEnded         → listening=false
+ * SpeechSegmentCreated → (apenas log, sem mudança de estado)
+ * SpeechTranscribing  → transcribing=true
+ * SpeechTranscribed   → transcribing=false, adiciona entrada ao histórico
+ */
+export function handleSpeechEvent(
+  dto: EventDTO,
+  stores: StoreRegistry,
+): void {
+  const prev = stores.transcript.current?.data;
+  const baseState = prev ?? {
+    entries: [],
+    listening: false,
+    transcribing: false,
+    partialText: "",
+  };
+
+  switch (dto.event_type) {
+    case "SpeechStarted":
+      stores.transcript.set({
+        ...baseState,
+        listening: true,
+      });
+      devLog.bridge(`SpeechStarted → listening=true`);
+      break;
+
+    case "SpeechEnded":
+      stores.transcript.set({
+        ...baseState,
+        listening: false,
+      });
+      devLog.bridge(`SpeechEnded → listening=false`);
+      break;
+
+    case "SpeechSegmentCreated":
+      // Segmento criado — aguardando transcrição.
+      devLog.bridge(`SpeechSegmentCreated → duration=${dto.payload.duration_ms}ms`);
+      break;
+
+    case "SpeechTranscribing":
+      stores.transcript.set({
+        ...baseState,
+        transcribing: true,
+      });
+      devLog.bridge(`SpeechTranscribing → transcribing=true`);
+      break;
+
+    case "SpeechTranscribed": {
+      const text = str(dto.payload, "text");
+      const language = str(dto.payload, "language");
+      const confidence = num(dto.payload, "confidence");
+      const latencyMs = num(dto.payload, "latency_ms");
+      const durationMs = num(dto.payload, "duration_ms");
+
+      const entry = {
+        id: dto.meta.correlation_id,
+        text,
+        language,
+        confidence,
+        latencyMs,
+        durationMs,
+        timestamp: dto.meta.timestamp,
+      };
+
+      stores.transcript.set({
+        entries: [entry, ...baseState.entries].slice(0, 100), // max 100 entries
+        listening: false,
+        transcribing: false,
+        partialText: "",
+      });
+      devLog.bridge(`SpeechTranscribed → text="${text.slice(0, 50)}..." latency=${latencyMs}ms`);
+      break;
+    }
+
+    default:
+      break;
+  }
+}
+
+// ============================================================
+// VersePresentation — eventos da apresentação automática (Sprint 18).
+// ============================================================
+
+/**
+ * Atualiza o VersePresentationStore com base em eventos do fluxo
+ * ReferenceDetected → VerseResolving → VerseResolved → VersePresented
+ * (ou VersePresentationFailed).
+ *
+ * A chave de correlação é dto.meta.correlation_id — todos os eventos
+ * de um mesmo fluxo compartilham o mesmo correlation_id, então
+ * atualizamos a mesma entrada.
+ */
+export function handleVersePresentationEvent(
+  dto: EventDTO,
+  stores: StoreRegistry,
+): void {
+  const prev = stores.versePresentation.current?.data;
+  const prevEntries = prev?.entries ?? [];
+  const correlationId = dto.meta.correlation_id;
+
+  // Encontrar entrada existente para este fluxo (mesmo correlation_id).
+  const existingIdx = prevEntries.findIndex((e) => e.id === correlationId);
+  const existing = existingIdx >= 0 ? prevEntries[existingIdx] : null;
+
+  // Construir entrada base (preserva campos de etapas anteriores).
+  const baseEntry = existing ?? {
+    id: correlationId,
+    book: "",
+    bookId: 0,
+    chapter: 0,
+    verse: 0,
+    reference: "",
+    version: "",
+    verseText: "",
+    status: "idle" as const,
+    quickPresentation: false,
+    totalLatencyMs: 0,
+    holyricsLatencyMs: 0,
+    holyricsStatus: "",
+    failureStage: "",
+    errorType: "",
+    errorMessage: "",
+    timestamp: dto.meta.timestamp,
+  };
+
+  let updated: typeof baseEntry | null = null;
+
+  switch (dto.event_type) {
+    case "VerseResolving": {
+      updated = {
+        ...baseEntry,
+        book: str(dto.payload, "book"),
+        bookId: num(dto.payload, "book_id"),
+        chapter: num(dto.payload, "chapter"),
+        verse: num(dto.payload, "verse_start"),
+        reference: str(dto.payload, "normalized_text"),
+        status: "presenting",
+        timestamp: dto.meta.timestamp,
+      };
+      devLog.bridge(
+        `VerseResolving → ${updated.reference} (status=presenting)`,
+      );
+      break;
+    }
+
+    case "VerseResolved": {
+      updated = {
+        ...baseEntry,
+        book: str(dto.payload, "book") || baseEntry.book,
+        bookId: num(dto.payload, "book_id") || baseEntry.bookId,
+        chapter: num(dto.payload, "chapter") || baseEntry.chapter,
+        verse: num(dto.payload, "verse") || baseEntry.verse,
+        reference: str(dto.payload, "reference") || baseEntry.reference,
+        version: str(dto.payload, "version"),
+        verseText: str(dto.payload, "verse_text"),
+        status: "presenting", // ainda apresentando — aguarda VersePresented
+        timestamp: dto.meta.timestamp,
+      };
+      devLog.bridge(
+        `VerseResolved → ${updated.reference} = "${updated.verseText.slice(0, 50)}..."`,
+      );
+      break;
+    }
+
+    case "VersePresented": {
+      updated = {
+        ...baseEntry,
+        reference: str(dto.payload, "reference") || baseEntry.reference,
+        version: str(dto.payload, "version") || baseEntry.version,
+        quickPresentation: bool(dto.payload, "quick_presentation"),
+        holyricsStatus: str(dto.payload, "holyrics_status"),
+        holyricsLatencyMs: num(dto.payload, "holyrics_latency_ms"),
+        totalLatencyMs: num(dto.payload, "total_latency_ms"),
+        status: "presented",
+        timestamp: dto.meta.timestamp,
+      };
+      devLog.bridge(
+        `VersePresented → ${updated.reference} (status=${updated.holyricsStatus}, total=${updated.totalLatencyMs}ms)`,
+      );
+      break;
+    }
+
+    case "VersePresentationFailed": {
+      updated = {
+        ...baseEntry,
+        reference: str(dto.payload, "reference") || baseEntry.reference,
+        failureStage: str(dto.payload, "failure_stage"),
+        errorType: str(dto.payload, "error_type"),
+        errorMessage: str(dto.payload, "error_message"),
+        totalLatencyMs: num(dto.payload, "latency_ms"),
+        status: "failed",
+        timestamp: dto.meta.timestamp,
+      };
+      devLog.bridge(
+        `VersePresentationFailed → ${updated.reference} stage=${updated.failureStage} error=${updated.errorType}`,
+      );
+      break;
+    }
+
+    default:
+      break;
+  }
+
+  if (updated === null) return;
+
+  // Substituir entrada existente ou adicionar nova no topo.
+  let newEntries: typeof prevEntries;
+  if (existingIdx >= 0) {
+    newEntries = [...prevEntries];
+    newEntries[existingIdx] = updated;
+  } else {
+    newEntries = [updated, ...prevEntries].slice(0, 50);
+  }
+
+  stores.versePresentation.set({
+    current: updated,
+    entries: newEntries,
+  });
 }
 
 // ============================================================

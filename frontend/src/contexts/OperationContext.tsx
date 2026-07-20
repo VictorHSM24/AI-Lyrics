@@ -147,7 +147,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   },
   ai: {
     whisperModel: "whisper-base",
-    backend: "whisper",
+    // Sprint 17.5.2 — Default deve ser um valor válido aceito pelo backend.
+    // O backend (config/loader.py) só aceita "faster-whisper". O valor
+    // "whisper" era inválido e causava falha no restart do backend após
+    // "Aplicar no Backend".
+    backend: "faster-whisper",
     device: "cpu",
     computeType: "int8",
     language: "pt-BR",
@@ -179,11 +183,34 @@ const STARTUP_STEPS: StartupStep[] = [
 
 const SETTINGS_KEY = "ai-lyrics:settings";
 
+/**
+ * Sprint 17.5.2 — Conjunto de valores válidos para campos críticos.
+ * Espelha a validação do backend (config/loader.py). Qualquer valor
+ * fora destes conjuntos é substituído pelo default ANTES de chegar à UI.
+ */
+const VALID_STT_BACKENDS = new Set(["faster-whisper"]);
+
+/**
+ * Normaliza um objeto AppSettings parcial, corrigindo valores inválidos
+ * persistidos em versões anteriores do frontend.
+ *
+ * Isto é uma migração defensiva: se o localStorage contiver
+ * `ai.backend === "whisper"` (default antigo inválido), substitui por
+ * `"faster-whisper"`. Sem isto, usuários que já abriram a app antes
+ * da Sprint 17.5.2 continuariam enviando "whisper" ao backend.
+ */
+function normalizeSettings(parsed: Partial<AppSettings>): Partial<AppSettings> {
+  if (parsed.ai?.backend && !VALID_STT_BACKENDS.has(parsed.ai.backend)) {
+    parsed.ai.backend = "faster-whisper";
+  }
+  return parsed;
+}
+
 function loadSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return DEFAULT_SETTINGS;
-    const parsed = JSON.parse(raw) as Partial<AppSettings>;
+    const parsed = normalizeSettings(JSON.parse(raw) as Partial<AppSettings>);
     return {
       general: { ...DEFAULT_SETTINGS.general, ...parsed.general },
       audio: { ...DEFAULT_SETTINGS.audio, ...parsed.audio },

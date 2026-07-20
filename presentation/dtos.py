@@ -64,11 +64,17 @@ class EventMetadataDTO:
 
 @dataclass(frozen=True)
 class EventDTO:
-    """DTO de um evento do pipeline."""
+    """DTO de um evento do pipeline.
+
+    Sprint 17.2 — category distingue Operational de Telemetry:
+      - "operational": evento de negócio (Timeline, EventStore, Replay).
+      - "telemetry": métrica de alta frequência (VU Meter, gráficos).
+    """
 
     event_type: str
     meta: EventMetadataDTO
     payload: dict = field(default_factory=dict)
+    category: str = "operational"
 
     @property
     def event_id(self) -> str:
@@ -94,11 +100,20 @@ class EventDTO:
     def origin(self) -> str:
         return self.meta.origin
 
+    @property
+    def is_operational(self) -> bool:
+        return self.category != "telemetry"
+
+    @property
+    def is_telemetry(self) -> bool:
+        return self.category == "telemetry"
+
     def to_dict(self) -> dict:
         return {
             "event_type": self.event_type,
             "meta": self.meta.to_dict(),
             "payload": dict(self.payload),
+            "category": self.category,
         }
 
 

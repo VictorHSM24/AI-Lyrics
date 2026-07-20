@@ -108,6 +108,12 @@ class STTMetrics:
     model_loaded: bool = False
     model_load_ms: int = 0
     errors: int = 0
+    # Sprint 17.3 — Janela deslizante das últimas N transcrições.
+    recent_processing_ms: list[int] = field(default_factory=list)
+    recent_audio_ms: list[int] = field(default_factory=list)
+    recent_confidence: list[float] = field(default_factory=list)
+    recent_rtf: list[float] = field(default_factory=list)
+    _window_size: int = 20
 
     @property
     def avg_confidence(self) -> float:
@@ -129,6 +135,56 @@ class STTMetrics:
         if self.total_audio_ms == 0:
             return 0.0
         return self.total_processing_ms / self.total_audio_ms
+
+    # ------------------------------------------------------------------
+    # Sprint 17.3 — Média móvel (últimas 20 transcrições).
+    # ------------------------------------------------------------------
+
+    def _prune(self) -> None:
+        """Mantém apenas os últimos _window_size elementos."""
+        if len(self.recent_processing_ms) > self._window_size:
+            self.recent_processing_ms = self.recent_processing_ms[-self._window_size:]
+        if len(self.recent_audio_ms) > self._window_size:
+            self.recent_audio_ms = self.recent_audio_ms[-self._window_size:]
+        if len(self.recent_confidence) > self._window_size:
+            self.recent_confidence = self.recent_confidence[-self._window_size:]
+        if len(self.recent_rtf) > self._window_size:
+            self.recent_rtf = self.recent_rtf[-self._window_size:]
+
+    def record_recent(
+        self,
+        processing_ms: int,
+        audio_ms: int,
+        confidence: float,
+    ) -> None:
+        """Registra métricas de uma transcrição na janela deslizante."""
+        self.recent_processing_ms.append(processing_ms)
+        self.recent_audio_ms.append(audio_ms)
+        self.recent_confidence.append(confidence)
+        rtf = processing_ms / audio_ms if audio_ms > 0 else 0.0
+        self.recent_rtf.append(rtf)
+        self._prune()
+
+    @property
+    def moving_avg_processing_ms(self) -> float:
+        """Média móvel do tempo de processamento (últimas 20)."""
+        if not self.recent_processing_ms:
+            return 0.0
+        return sum(self.recent_processing_ms) / len(self.recent_processing_ms)
+
+    @property
+    def moving_avg_rtf(self) -> float:
+        """Média móvel do RTF (últimas 20)."""
+        if not self.recent_rtf:
+            return 0.0
+        return sum(self.recent_rtf) / len(self.recent_rtf)
+
+    @property
+    def moving_avg_confidence(self) -> float:
+        """Média móvel da confiança (últimas 20)."""
+        if not self.recent_confidence:
+            return 0.0
+        return sum(self.recent_confidence) / len(self.recent_confidence)
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +248,8 @@ class FasterWhisperBackend:
         self._model: Any = None  # faster_whisper.WhisperModel
         self._actual_device: str = config.device
         self._actual_compute_type: str = config.compute_type
+        self._actual_cpu_threads: int = config.cpu_threads
+        self._fallback_reason: str = ""
 
     def load(self) -> None:
         """Carrega o modelo WhisperModel.
@@ -210,6 +268,20 @@ class FasterWhisperBackend:
 
         device = self._config.device
         compute_type = self._config.compute_type
+        cpu_threads = self._config.cpu_threads
+
+        # Resolver "auto" para device concreto.
+        if device == "auto":
+            cuda_available = self._check_cuda()
+            device = "cuda" if cuda_available else "cpu"
+            self._actual_device = device
+            if device == "cpu":
+                compute_type = "int8"
+                self._actual_compute_type = "int8"
+            logger.info(
+                "STT device='auto' resolved to '%s' (cuda_available=%s)",
+                device, cuda_available,
+            )
 
         # Tentar GPU se configurado
         if device == "cuda":
@@ -219,27 +291,48 @@ class FasterWhisperBackend:
                     "CUDA not available — falling back to CPU (int8). "
                     "GPU is recommended for low-latency transcription."
                 )
+                self._fallback_reason = (
+                    "CUDA not available — falling back to CPU (int8)"
+                )
                 device = "cpu"
                 compute_type = "int8"
                 self._actual_device = "cpu"
                 self._actual_compute_type = "int8"
 
+        # Resolver cpu_threads=0 → default do sistema.
+        if cpu_threads <= 0:
+            try:
+                import os as _os
+                cpu_threads = _os.cpu_count() or 0
+            except Exception:
+                cpu_threads = 0
+        self._actual_cpu_threads = cpu_threads
+
+        # Construir kwargs para WhisperModel.
+        kwargs: dict[str, Any] = {
+            "device": device,
+            "compute_type": compute_type,
+        }
+        if cpu_threads > 0:
+            kwargs["cpu_threads"] = cpu_threads
+
         try:
             logger.info(
-                "Loading Whisper model: model=%s, device=%s, compute_type=%s",
+                "Loading Whisper model: model=%s, device=%s, compute_type=%s, cpu_threads=%s",
                 self._config.model,
                 device,
                 compute_type,
+                cpu_threads if cpu_threads > 0 else "default",
             )
             self._model = WhisperModel(
                 self._config.model,
-                device=device,
-                compute_type=compute_type,
+                **kwargs,
             )
             logger.info(
-                "Whisper model loaded successfully (device=%s, compute_type=%s)",
+                "Whisper model loaded successfully (device=%s, compute_type=%s, cpu_threads=%s)",
                 device,
                 compute_type,
+                cpu_threads if cpu_threads > 0 else "default",
             )
         except Exception as e:
             # Se falhou na GPU, tentar CPU antes de desistir
@@ -247,16 +340,25 @@ class FasterWhisperBackend:
                 logger.warning(
                     "GPU load failed: %s — falling back to CPU (int8)", e
                 )
+                self._fallback_reason = (
+                    f"GPU load failed: {e} — falling back to CPU (int8)"
+                )
                 try:
+                    fallback_kwargs: dict[str, Any] = {
+                        "device": "cpu",
+                        "compute_type": "int8",
+                    }
+                    if cpu_threads > 0:
+                        fallback_kwargs["cpu_threads"] = cpu_threads
                     self._model = WhisperModel(
                         self._config.model,
-                        device="cpu",
-                        compute_type="int8",
+                        **fallback_kwargs,
                     )
                     self._actual_device = "cpu"
                     self._actual_compute_type = "int8"
                     logger.info(
-                        "Whisper model loaded on CPU fallback (int8)"
+                        "Whisper model loaded on CPU fallback (int8, cpu_threads=%s)",
+                        cpu_threads if cpu_threads > 0 else "default",
                     )
                     return
                 except Exception as e2:
@@ -332,6 +434,16 @@ class FasterWhisperBackend:
     def actual_compute_type(self) -> str:
         """Compute type efetivamente usado (após fallback)."""
         return self._actual_compute_type
+
+    @property
+    def actual_cpu_threads(self) -> int:
+        """Threads CPU efetivamente usadas (0 = default faster-whisper)."""
+        return self._actual_cpu_threads
+
+    @property
+    def fallback_reason(self) -> str:
+        """Motivo do fallback (vazio se não houve fallback)."""
+        return self._fallback_reason
 
 
 # ---------------------------------------------------------------------------
@@ -459,13 +571,20 @@ class STT:
         self._metrics.successful += 1
         self._metrics.total_confidence += confidence
 
+        # Sprint 17.3 — Registrar na janela deslizante.
+        self._metrics.record_recent(processing_ms, audio_duration_ms, confidence)
+
+        rtf = processing_ms / audio_duration_ms if audio_duration_ms > 0 else 0
         logger.info(
-            "STT: text=%r, confidence=%.3f, processing_ms=%d, audio_ms=%d, rtf=%.2f",
+            "STT: text=%r, confidence=%.3f, processing_ms=%d, audio_ms=%d, rtf=%.2f, "
+            "moving_avg_ms=%.0f, moving_avg_rtf=%.2f",
             text[:80] + ("..." if len(text) > 80 else ""),
             confidence,
             processing_ms,
             audio_duration_ms,
-            processing_ms / audio_duration_ms if audio_duration_ms > 0 else 0,
+            rtf,
+            self._metrics.moving_avg_processing_ms,
+            self._metrics.moving_avg_rtf,
         )
 
         return STTResult(

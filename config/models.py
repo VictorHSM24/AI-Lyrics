@@ -55,6 +55,7 @@ class STTConfig:
     backend: str = "faster-whisper"
     beam_size: int = 1
     vad_filter: bool = False
+    cpu_threads: int = 0  # 0 = default do faster-whisper (os.cpu_count())
 
 
 @dataclass(frozen=True)

@@ -52,6 +52,8 @@ const METHOD_TO_ENDPOINT: Record<string, string> = {
   "pipeline.getSession": "/pipeline/session",
   "pipeline.getMetrics": "/pipeline/metrics",
   "pipeline.getSnapshot": "/pipeline/snapshot",
+  "pipeline.start": "/pipeline/start",
+  "pipeline.stop": "/pipeline/stop",
   "session.getCurrent": "/session/current",
   "metrics.get": "/metrics",
   "configuration.get": "/configuration",
@@ -87,6 +89,8 @@ const POST_METHODS: ReadonlySet<string> = new Set([
   "audio.stop",
   "audio.select",
   "health.testHolyrics",
+  "pipeline.start",
+  "pipeline.stop",
 ]);
 
 // ============================================================

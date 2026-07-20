@@ -69,6 +69,7 @@ class EventModel(BaseModel):
     event_type: str
     meta: EventMetadataModel
     payload: dict
+    category: str = "operational"
 
     @classmethod
     def from_dto(cls, dto: Any) -> "EventModel":
@@ -84,6 +85,7 @@ class EventModel(BaseModel):
                 metadata=tuple(dto.meta.metadata),
             ),
             payload=dict(dto.payload),
+            category=getattr(dto, "category", "operational"),
         )
 
 

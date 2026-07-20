@@ -185,10 +185,13 @@ class EventMapper:
                     ]
                 else:
                     payload[fname] = val
+        # Sprint 17.2 — category: operational ou telemetry.
+        category = getattr(event, "category", "operational")
         return EventDTO(
             event_type=event.event_type,
             meta=meta_dto,
             payload=payload,
+            category=category,
         )
 
     @staticmethod
@@ -373,16 +376,56 @@ class ConfigurationMapper:
 
     @staticmethod
     def _to_dict(obj: Any) -> dict:
+        """Converte qualquer objeto de configuração em dict recursivamente.
+
+        Suporta:
+        - dataclass (via __dataclass_fields__)
+        - dict
+        - SimpleNamespace e qualquer objeto com __dict__ (fallback de
+          _minimal_config ou _apply_overrides)
+
+        Sprint 17.5.2 — Agora recursivo: valores aninhados que são
+        SimpleNamespace ou dataclass também são convertidos, para que
+        Pydantic possa serializar o resultado sem erro.
+        """
         if obj is None:
             return {}
         if hasattr(obj, "__dataclass_fields__"):
             return {
-                f: getattr(obj, f)
+                f: ConfigurationMapper._value_to_serializable(getattr(obj, f))
                 for f in obj.__dataclass_fields__
             }
         if isinstance(obj, dict):
-            return dict(obj)
+            return {k: ConfigurationMapper._value_to_serializable(v) for k, v in obj.items()}
+        # Sprint 17.5.1 — SimpleNamespace (fallback de _minimal_config) e
+        # qualquer objeto com __dict__ (ex.: types.SimpleNamespace).
+        if hasattr(obj, "__dict__"):
+            return {
+                k: ConfigurationMapper._value_to_serializable(v)
+                for k, v in vars(obj).items()
+                if not k.startswith("_")
+            }
         return {}
+
+    @staticmethod
+    def _value_to_serializable(v: Any) -> Any:
+        """Converte um valor aninhado para um tipo serializável por Pydantic.
+
+        - SimpleNamespace / dataclass / dict → dict recursivo
+        - list/tuple → lista com cada elemento convertido
+        - demais tipos (str, int, float, bool, None) → retornado como-is
+        """
+        if v is None:
+            return None
+        if isinstance(v, (str, int, float, bool)):
+            return v
+        if isinstance(v, (list, tuple)):
+            return [ConfigurationMapper._value_to_serializable(x) for x in v]
+        if isinstance(v, dict):
+            return {k: ConfigurationMapper._value_to_serializable(x) for k, x in v.items()}
+        if hasattr(v, "__dataclass_fields__") or hasattr(v, "__dict__"):
+            return ConfigurationMapper._to_dict(v)
+        return v
 
     @staticmethod
     def to_dto(config: Any, pipeline_policy: Any = None) -> ConfigurationDTO:

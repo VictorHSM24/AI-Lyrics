@@ -119,6 +119,10 @@ class AudioCaptureService:
         # Callback de notificação (para WebSocket publisher).
         self._on_frame: Callable[[AudioFrame], None] | None = None
 
+        # Callback de áudio raw (para VAD / SpeechPipeline).
+        # Recebe (audio_data: np.ndarray float32, timestamp: float).
+        self._on_audio_data: Callable[[Any, float], None] | None = None
+
         logger.info(
             "AudioCaptureService initialized: sr=%d ch=%d blocksize=%d buffer=%d",
             sample_rate, channels, blocksize, buffer_size,
@@ -162,6 +166,16 @@ class AudioCaptureService:
         O callback é chamado na thread do PortAudio — deve ser rápido.
         """
         self._on_frame = callback
+
+    def set_on_audio_data(self, callback: Callable[[Any, float], None] | None) -> None:
+        """Define callback chamado a cada bloco de áudio capturado.
+
+        Recebe (audio_data: np.ndarray float32, timestamp: float).
+        Usado pelo SpeechPipelineService para alimentar o VAD.
+        O callback é chamado na thread do PortAudio — deve ser rápido
+        (apenas colocar dados em uma fila, sem processamento).
+        """
+        self._on_audio_data = callback
 
     # ------------------------------------------------------------------
     # Listar dispositivos — delega para sounddevice.
@@ -407,6 +421,15 @@ class AudioCaptureService:
 
             # Adicionar ao buffer circular (thread-safe via deque).
             self._frames.append(frame)
+
+            # Notificar callback de áudio raw (VAD / SpeechPipeline).
+            # Chamado ANTES do on_frame para minimizar latência do VAD.
+            raw_cb = self._on_audio_data
+            if raw_cb is not None:
+                try:
+                    raw_cb(audio_data, frame.timestamp)
+                except Exception as e:
+                    logger.debug("on_audio_data callback error: %s", e)
 
             # Notificar callback (WebSocket publisher).
             cb = self._on_frame

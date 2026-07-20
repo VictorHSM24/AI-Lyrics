@@ -42,6 +42,8 @@ export interface PipelineService {
   getSession(options?: CallOptions): Promise<SessionDTO>;
   getMetrics(options?: CallOptions): Promise<MetricsDTO>;
   getSnapshot(options?: CallOptions): Promise<PipelineSnapshot>;
+  startPipeline(options?: CallOptions): Promise<PipelineStatusDTO>;
+  stopPipeline(options?: CallOptions): Promise<PipelineStatusDTO>;
 }
 
 // ============================================================
@@ -196,6 +198,8 @@ export function createServices(client: Client): PresentationServices {
       getSession: (o) => call<SessionDTO>("pipeline.getSession", {}, o),
       getMetrics: (o) => call<MetricsDTO>("pipeline.getMetrics", {}, o),
       getSnapshot: (o) => call<PipelineSnapshot>("pipeline.getSnapshot", {}, o),
+      startPipeline: (o) => call<PipelineStatusDTO>("pipeline.start", {}, o),
+      stopPipeline: (o) => call<PipelineStatusDTO>("pipeline.stop", {}, o),
     },
     session: {
       getCurrentSession: (o) => call<SessionDTO>("session.getCurrent", {}, o),
@@ -258,6 +262,8 @@ export function createStubServices(): PresentationServices {
       getSession: reject,
       getMetrics: reject,
       getSnapshot: reject,
+      startPipeline: reject,
+      stopPipeline: reject,
     },
     session: { getCurrentSession: reject },
     metrics: { getMetrics: reject },

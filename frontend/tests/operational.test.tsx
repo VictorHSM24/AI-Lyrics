@@ -89,6 +89,7 @@ function OperationConsumer() {
       <span data-testid="op-message">{operation?.data.message ?? ""}</span>
       <span data-testid="settings-lang">{settings?.data.general.language ?? "none"}</span>
       <span data-testid="settings-audio-id">{settings?.data.audio.selectedDeviceId ?? "none"}</span>
+      <span data-testid="settings-ai-backend">{settings?.data.ai.backend ?? "none"}</span>
       <span data-testid="startup-count">{startupSteps.length}</span>
     </div>
   );
@@ -293,6 +294,35 @@ describe("OperationContext", () => {
   it("fornece settings padrão", () => {
     render(wrapProviders(<OperationConsumer />));
     expect(screen.getByTestId("settings-lang")).toHaveTextContent("pt-BR");
+  });
+
+  // Sprint 17.5.2 — Default de ai.backend deve ser "faster-whisper"
+  // (valor válido aceito pelo backend). O valor "whisper" era inválido
+  // e causava falha no restart do backend após "Aplicar no Backend".
+  it("fornece ai.backend padrão válido (faster-whisper)", () => {
+    render(wrapProviders(<OperationConsumer />));
+    expect(screen.getByTestId("settings-ai-backend")).toHaveTextContent("faster-whisper");
+  });
+
+  it("NUNCA usa whisper como default de ai.backend", () => {
+    render(wrapProviders(<OperationConsumer />));
+    const backend = screen.getByTestId("settings-ai-backend").textContent;
+    expect(backend).not.toBe("whisper");
+    expect(backend).not.toBe("openai-whisper");
+  });
+
+  // Sprint 17.5.2 — Migração defensiva: se o localStorage contiver
+  // um valor inválido persistido de versão anterior, deve ser
+  // normalizado para "faster-whisper".
+  it("normaliza ai.backend inválido do localStorage para faster-whisper", () => {
+    localStorage.setItem(
+      "ai-lyrics:settings",
+      JSON.stringify({
+        ai: { backend: "whisper", whisperModel: "whisper-base", device: "cpu", computeType: "int8", language: "pt-BR", threads: 4, llmModel: "" },
+      }),
+    );
+    render(wrapProviders(<OperationConsumer />));
+    expect(screen.getByTestId("settings-ai-backend")).toHaveTextContent("faster-whisper");
   });
 
   it("fornece 8 etapas de startup", () => {

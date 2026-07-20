@@ -197,15 +197,25 @@ class TestPipelineEvents(unittest.TestCase):
         )
 
     def test_all_event_types_count(self):
-        """Deve haver 15 tipos de evento."""
+        """Deve haver 27 tipos de evento (15 + 5 Sprint 16 + 3 Sprint 17 + 4 Sprint 18)."""
         types = all_event_types()
-        self.assertEqual(len(types), 15)
+        self.assertEqual(len(types), 27)
 
     def test_all_event_type_names(self):
         names = all_event_type_names()
-        self.assertEqual(len(names), 15)
+        self.assertEqual(len(names), 27)
         self.assertIn("SpeechSegmentReceived", names)
         self.assertIn("PipelineError", names)
+        # Sprint 16 — Continuous Speech Pipeline
+        self.assertIn("SpeechStarted", names)
+        self.assertIn("SpeechEnded", names)
+        self.assertIn("SpeechSegmentCreated", names)
+        self.assertIn("SpeechTranscribing", names)
+        self.assertIn("SpeechTranscribed", names)
+        # Sprint 17 — Biblical Intent & Reference Extraction
+        self.assertIn("ReferenceDetected", names)
+        self.assertIn("ReferenceInvalid", names)
+        self.assertIn("IntentUnknown", names)
 
     def test_is_pipeline_event(self):
         meta = self._make_meta()

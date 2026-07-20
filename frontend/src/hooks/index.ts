@@ -21,7 +21,11 @@ import {
   useServices,
   useStores,
 } from "@/contexts/InfraContext";
-import type { Snapshot } from "@/stores";
+import { devLog } from "@/utils";
+
+// Re-export useServices for components that need to call services directly.
+export { useServices } from "@/contexts/InfraContext";
+import type { Snapshot, TranscriptEntry, ReferenceEntry, VersePresentationEntry } from "@/stores";
 import type {
   AudioDeviceDTO,
   AudioLevelsDTO,
@@ -247,6 +251,76 @@ export function useAudio(): UseAudioResult {
 }
 
 // ============================================================
+// useTranscript (Sprint 16) — transcrições em tempo real.
+// ============================================================
+
+export interface UseTranscriptResult {
+  entries: TranscriptEntry[];
+  listening: boolean;
+  transcribing: boolean;
+  partialText: string;
+  loading: boolean;
+}
+
+export function useTranscript(): UseTranscriptResult {
+  const stores = useStores();
+  const snap = useStoreSnapshot(stores.transcript);
+  const data = snap?.data;
+  return {
+    entries: data?.entries ?? [],
+    listening: data?.listening ?? false,
+    transcribing: data?.transcribing ?? false,
+    partialText: data?.partialText ?? "",
+    loading: !snap,
+  };
+}
+
+// ============================================================
+// useReference (Sprint 17) — referências bíblicas detectadas.
+// ============================================================
+
+export interface UseReferenceResult {
+  current: ReferenceEntry | null;
+  entries: ReferenceEntry[];
+  invalid: { book: string; reason: string; rawText: string; timestamp: number } | null;
+  loading: boolean;
+}
+
+export function useReference(): UseReferenceResult {
+  const stores = useStores();
+  const snap = useStoreSnapshot(stores.reference);
+  const data = snap?.data;
+  return {
+    current: data?.current ?? null,
+    entries: data?.entries ?? [],
+    invalid: data?.invalid ?? null,
+    loading: !snap,
+  };
+}
+
+// ============================================================
+// useVersePresentation (Sprint 18) — apresentação automática
+// de versículos no Holyrics.
+// ============================================================
+
+export interface UseVersePresentationResult {
+  current: VersePresentationEntry | null;
+  entries: VersePresentationEntry[];
+  loading: boolean;
+}
+
+export function useVersePresentation(): UseVersePresentationResult {
+  const stores = useStores();
+  const snap = useStoreSnapshot(stores.versePresentation);
+  const data = snap?.data;
+  return {
+    current: data?.current ?? null,
+    entries: data?.entries ?? [],
+    loading: !snap,
+  };
+}
+
+// ============================================================
 // useSystemInfo (Sprint 14)
 // ============================================================
 
@@ -345,24 +419,38 @@ export function useServicesHook() {
 }
 
 // ============================================================
-// useBootstrap — dispara bootstrapStores quando a conexão é
+// useBootstrap — dispara BootstrapCoordinator quando a conexão é
 // estabelecida. Popula todos os Stores com dados reais do backend.
 // ============================================================
 
-import { bootstrapStores, type BootstrapResult } from "@/stream";
+import {
+  createBootstrapCoordinator,
+  type BootstrapCoordinator,
+  type ResourceStatus,
+} from "@/stream";
 
 export interface UseBootstrapResult {
-  /** True se o bootstrap já foi executado com sucesso. */
+  /** True se TODOS os recursos foram carregados com sucesso. */
   bootstrapped: boolean;
-  /** True se o bootstrap está em andamento. */
+  /** True se o bootstrap está em andamento (algum recurso carregando). */
   loading: boolean;
-  /** Resultado do último bootstrap (null se nunca executou). */
-  result: BootstrapResult | null;
+  /** Estado por recurso (idle/loading/loaded/failed + timestamps). */
+  resources: Record<string, ResourceStatus>;
+  /** True se ALGUM recurso falhou após esgotar tentativas. */
+  hasFailures: boolean;
 }
 
 /**
- * Dispara o bootstrap automaticamente quando a conexão com o backend
- * é estabelecida. Popula todos os Stores com dados reais.
+ * Dispara o BootstrapCoordinator automaticamente quando a conexão
+ * com o backend é estabelecida. Popula todos os Stores com dados reais.
+ *
+ * Sprint 17.5.1 — Substitui o bootstrapStores one-shot por um
+ * coordinator com:
+ * - Estado por recurso (idle/loading/loaded/failed).
+ * - Retry exponencial para recursos que falharam.
+ * - Re-disparo quando a conexão transiciona de qualquer estado
+ *   não-conectado para "connected" (não apenas de "disconnected").
+ * - Recursos falhados NÃO impedem os demais.
  *
  * Deve ser usado uma única vez, no topo da árvore de componentes
  * (ex: dentro de ConnectionProvider ou App).
@@ -371,42 +459,86 @@ export function useBootstrap(): UseBootstrapResult {
   const services = useServices();
   const stores = useStores();
   const { status } = useConnection();
-  const [bootstrapped, setBootstrapped] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<BootstrapResult | null>(null);
+  const [resources, setResources] = useState<Record<string, ResourceStatus>>({});
+  const coordinatorRef = useRef<BootstrapCoordinator | null>(null);
   const lastStatusRef = useRef<string>("");
+  // Ref para evitar que a promise de um round anterior atualize estado
+  // após o componente desmontar (StrictMode).
+  const cancelledRef = useRef(false);
 
+  // Cria o coordinator uma única vez por par (services, stores).
+  // Se services/stores mudam (raro), recria.
   useEffect(() => {
-    // Só dispara quando transiciona para "connected".
-    if (status !== "connected" || lastStatusRef.current === "connected") return;
+    cancelledRef.current = false;
+    const coordinator = createBootstrapCoordinator(services, stores);
+    coordinatorRef.current = coordinator;
+    setResources(coordinator.snapshot());
+
+    return () => {
+      cancelledRef.current = true;
+      coordinator.dispose();
+      coordinatorRef.current = null;
+    };
+  }, [services, stores]);
+
+  // Dispara loadAll quando transiciona para "connected" a partir de
+  // qualquer estado não-conectado (incluindo "connecting" e "reconnecting").
+  useEffect(() => {
+    if (status !== "connected") {
+      lastStatusRef.current = status;
+      return;
+    }
+    // Já estava conectado — não re-dispara.
+    if (lastStatusRef.current === "connected") return;
     lastStatusRef.current = status;
 
-    if (loading || bootstrapped) return;
-    setLoading(true);
+    const coordinator = coordinatorRef.current;
+    if (!coordinator) return;
+    if (cancelledRef.current) return;
 
-    bootstrapStores(services, stores)
-      .then((res) => {
-        setResult(res);
-        setBootstrapped(true);
+    setLoading(true);
+    devLog.bootstrap(`useBootstrap: disparando loadAll (status=${status})`);
+
+    coordinator.loadAll()
+      .then((snapshot) => {
+        if (cancelledRef.current) return;
+        setResources(snapshot);
         setLoading(false);
+        devLog.bootstrap(`useBootstrap: loadAll concluído — allLoaded=${coordinator.allLoaded}`);
       })
       .catch(() => {
-        // bootstrapStores nunca rejeita, mas por segurança.
+        if (cancelledRef.current) return;
         setLoading(false);
       });
-  }, [status, services, stores, loading, bootstrapped]);
-
-  // Reset quando desconecta (para re-bootstrar na próxima conexão).
-  useEffect(() => {
-    if (status === "disconnected") {
-      lastStatusRef.current = status;
-      setBootstrapped(false);
-      setResult(null);
-    }
   }, [status]);
 
-  return { bootstrapped, loading, result };
+  // Atualiza snapshot periodicamente para refletir retries que
+  // terminaram (carregados ou falhados). Isso permite que a UI
+  // veja quando um recurso que estava "loading" passa para "loaded"
+  // via retry automático.
+  useEffect(() => {
+    if (status !== "connected") return;
+    const timer = setInterval(() => {
+      const coordinator = coordinatorRef.current;
+      if (!coordinator) return;
+      setResources(coordinator.snapshot());
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [status]);
+
+  const coordinator = coordinatorRef.current;
+  const bootstrapped = coordinator ? coordinator.allLoaded : false;
+  const hasFailures = coordinator ? coordinator.hasFailures : false;
+
+  return { bootstrapped, loading, resources, hasFailures };
 }
+
+// Import local para evitar conflito de nome com devLog do módulo.
+// (devLog já é importado no topo do arquivo via @/utils, mas usamos
+// um alias aqui para clareza dentro do hook.)
+// Sprint 17.5.1 — devLog importado no topo do arquivo (import { devLog }).
+
 
 // ============================================================
 // useHealthPolling — atualiza o HealthStore periodicamente.
@@ -449,4 +581,46 @@ export function useHealthPolling(intervalMs: number = 10000): void {
       clearInterval(timer);
     };
   }, [status, services, stores, intervalMs]);
+}
+
+// ============================================================
+// useAutoStartPipeline (Sprint 17.1) — auto-iniciar pipeline.
+// ============================================================
+
+/**
+ * Auto-inicia o pipeline quando:
+ * 1. O backend está conectado.
+ * 2. O startup sequence foi concluído com sucesso.
+ * 3. A configuração autoStart está ativada.
+ * 4. O pipeline ainda não está rodando.
+ *
+ * Este hook NÃO substitui o controle manual — apenas aciona
+ * automaticamente o mesmo ciclo de Iniciar Pipeline na inicialização.
+ */
+export function useAutoStartPipeline(autoStart: boolean): void {
+  const services = useServices();
+  const { status } = useConnection();
+  const { status: pipelineStatus } = usePipeline();
+  const startedRef = useRef(false);
+
+  useEffect(() => {
+    if (!autoStart) return;
+    if (status !== "connected") return;
+    if (startedRef.current) return;
+    if (pipelineStatus?.running) {
+      startedRef.current = true;
+      return;
+    }
+
+    // Pequeno delay para garantir que o startup concluiu.
+    const timer = setTimeout(() => {
+      if (startedRef.current) return;
+      startedRef.current = true;
+      services.pipeline.startPipeline().catch(() => {
+        // Silently ignore — usuário pode iniciar manualmente.
+      });
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [autoStart, status, pipelineStatus?.running, services]);
 }

@@ -44,6 +44,7 @@ def _stt_config(**overrides) -> STTConfig:
         "backend": "faster-whisper",
         "beam_size": 1,
         "vad_filter": False,
+        "cpu_threads": 0,
     }
     defaults.update(overrides)
     return STTConfig(**defaults)
@@ -209,6 +210,42 @@ class TestSTTMetrics:
         m.total_transcriptions = 5
         m.successful = 3
         assert m.total_transcriptions == 5
+
+    # ------------------------------------------------------------------
+    # Sprint 17.3 — Janela deslizante (média móvel)
+    # ------------------------------------------------------------------
+
+    def test_record_recent_and_moving_avg(self) -> None:
+        """record_recent popula janela e moving_avg calcula média."""
+        m = STTMetrics()
+        m.record_recent(processing_ms=100, audio_ms=1000, confidence=0.9)
+        m.record_recent(processing_ms=200, audio_ms=1000, confidence=0.8)
+        assert m.moving_avg_processing_ms == 150.0
+        assert abs(m.moving_avg_rtf - 0.15) < 0.001
+        assert abs(m.moving_avg_confidence - 0.85) < 0.001
+
+    def test_moving_avg_empty(self) -> None:
+        """Média móvel vazia = 0."""
+        m = STTMetrics()
+        assert m.moving_avg_processing_ms == 0.0
+        assert m.moving_avg_rtf == 0.0
+        assert m.moving_avg_confidence == 0.0
+
+    def test_moving_avg_window_prunes(self) -> None:
+        """Janela deslizante mantém apenas últimos 20."""
+        m = STTMetrics()
+        for i in range(25):
+            m.record_recent(
+                processing_ms=100 + i,
+                audio_ms=1000,
+                confidence=0.5,
+            )
+        # Apenas últimos 20 (i=5..24).
+        assert len(m.recent_processing_ms) == 20
+        assert m.recent_processing_ms[0] == 105
+        assert m.recent_processing_ms[-1] == 124
+        expected_avg = sum(range(105, 125)) / 20
+        assert abs(m.moving_avg_processing_ms - expected_avg) < 0.001
 
 
 # ---------------------------------------------------------------------------
@@ -457,7 +494,7 @@ class TestSTTLifecycle:
 
 class TestFasterWhisperBackend:
     def test_load_cpu(self) -> None:
-        config = _stt_config(device="cpu", compute_type="int8")
+        config = _stt_config(device="cpu", compute_type="int8", cpu_threads=4)
         backend = FasterWhisperBackend(config)
 
         with patch("faster_whisper.WhisperModel") as mock_cls:
@@ -466,12 +503,13 @@ class TestFasterWhisperBackend:
                 "large-v3-turbo",
                 device="cpu",
                 compute_type="int8",
+                cpu_threads=4,
             )
         assert backend.actual_device == "cpu"
 
     def test_load_cuda_fallback_to_cpu(self) -> None:
         """CUDA indisponível → fallback para CPU int8."""
-        config = _stt_config(device="cuda", compute_type="float16")
+        config = _stt_config(device="cuda", compute_type="float16", cpu_threads=4)
         backend = FasterWhisperBackend(config)
 
         with patch("faster_whisper.WhisperModel") as mock_cls:
@@ -481,18 +519,19 @@ class TestFasterWhisperBackend:
                     "large-v3-turbo",
                     device="cpu",
                     compute_type="int8",
+                    cpu_threads=4,
                 )
         assert backend.actual_device == "cpu"
         assert backend.actual_compute_type == "int8"
 
     def test_load_cuda_gpu_error_fallback(self) -> None:
         """Erro ao carregar na GPU → fallback para CPU."""
-        config = _stt_config(device="cuda", compute_type="float16")
+        config = _stt_config(device="cuda", compute_type="float16", cpu_threads=4)
         backend = FasterWhisperBackend(config)
 
         mock_model = MagicMock()
 
-        def mock_init(model, device, compute_type):
+        def mock_init(model, device, compute_type, cpu_threads=None):
             if device == "cuda":
                 raise RuntimeError("CUDA OOM")
             return mock_model
@@ -521,6 +560,84 @@ class TestFasterWhisperBackend:
         with patch.dict("sys.modules", {"faster_whisper": None}):
             with pytest.raises(STTError, match="faster-whisper not installed"):
                 backend.load()
+
+    # ------------------------------------------------------------------
+    # Sprint 17.3 — Auditoria de runtime
+    # ------------------------------------------------------------------
+
+    def test_cpu_threads_zero_resolves_to_system_default(self) -> None:
+        """cpu_threads=0 → resolve para os.cpu_count()."""
+        config = _stt_config(device="cpu", compute_type="int8", cpu_threads=0)
+        backend = FasterWhisperBackend(config)
+
+        with patch("faster_whisper.WhisperModel") as mock_cls:
+            with patch("os.cpu_count", return_value=8):
+                backend.load()
+                # cpu_threads=0 → resolvido para 8 (os.cpu_count)
+                assert backend.actual_cpu_threads == 8
+                # WhisperModel chamado com cpu_threads=8
+                _, kwargs = mock_cls.call_args
+                assert kwargs.get("cpu_threads") == 8
+
+    def test_cpu_threads_explicit_value(self) -> None:
+        """cpu_threads=12 → passado diretamente para WhisperModel."""
+        config = _stt_config(device="cpu", compute_type="int8", cpu_threads=12)
+        backend = FasterWhisperBackend(config)
+
+        with patch("faster_whisper.WhisperModel") as mock_cls:
+            backend.load()
+            assert backend.actual_cpu_threads == 12
+            _, kwargs = mock_cls.call_args
+            assert kwargs.get("cpu_threads") == 12
+
+    def test_fallback_reason_set_on_cuda_unavailable(self) -> None:
+        """CUDA indisponível → fallback_reason é definido."""
+        config = _stt_config(device="cuda", compute_type="float16", cpu_threads=4)
+        backend = FasterWhisperBackend(config)
+
+        with patch("faster_whisper.WhisperModel"):
+            with patch.object(backend, "_check_cuda", return_value=False):
+                backend.load()
+                assert "CUDA not available" in backend.fallback_reason
+                assert backend.actual_device == "cpu"
+                assert backend.actual_compute_type == "int8"
+
+    def test_fallback_reason_empty_when_no_fallback(self) -> None:
+        """Sem fallback → fallback_reason é vazio."""
+        config = _stt_config(device="cpu", compute_type="int8", cpu_threads=4)
+        backend = FasterWhisperBackend(config)
+
+        with patch("faster_whisper.WhisperModel"):
+            backend.load()
+            assert backend.fallback_reason == ""
+
+    def test_device_auto_resolves_to_cpu_when_no_cuda(self) -> None:
+        """device='auto' sem CUDA → resolve para cpu com int8."""
+        config = _stt_config(device="auto", compute_type="float16", cpu_threads=4)
+        backend = FasterWhisperBackend(config)
+
+        with patch("faster_whisper.WhisperModel") as mock_cls:
+            with patch.object(backend, "_check_cuda", return_value=False):
+                backend.load()
+                assert backend.actual_device == "cpu"
+                assert backend.actual_compute_type == "int8"
+                _, kwargs = mock_cls.call_args
+                assert kwargs.get("device") == "cpu"
+                assert kwargs.get("compute_type") == "int8"
+
+    def test_device_auto_resolves_to_cuda_when_available(self) -> None:
+        """device='auto' com CUDA → resolve para cuda."""
+        config = _stt_config(
+            device="auto", compute_type="int8_float16", cpu_threads=4,
+        )
+        backend = FasterWhisperBackend(config)
+
+        with patch("faster_whisper.WhisperModel") as mock_cls:
+            with patch.object(backend, "_check_cuda", return_value=True):
+                backend.load()
+                assert backend.actual_device == "cuda"
+                _, kwargs = mock_cls.call_args
+                assert kwargs.get("device") == "cuda"
 
     def test_transcribe_not_loaded(self) -> None:
         config = _stt_config()

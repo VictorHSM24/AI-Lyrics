@@ -44,6 +44,13 @@ from semantic.context_engine import ContextEngine
 from semantic.cache import SemanticCache
 from semantic.engine import SemanticEngine
 from semantic.resolver import ReferenceResolver
+from semantic.thinking_sanitizer import ThinkingSanitizer, SanitizationResult
+from semantic.capability_cache import (
+    CapabilityCache,
+    CapabilityResult,
+    CapabilityState,
+    is_think_rejection_error,
+)
 
 __all__ = [
     "SemanticCandidate",
@@ -58,4 +65,10 @@ __all__ = [
     "SemanticCache",
     "SemanticEngine",
     "ReferenceResolver",
+    "ThinkingSanitizer",
+    "SanitizationResult",
+    "CapabilityCache",
+    "CapabilityResult",
+    "CapabilityState",
+    "is_think_rejection_error",
 ]

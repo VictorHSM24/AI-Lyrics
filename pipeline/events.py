@@ -789,6 +789,23 @@ class SermonTopicChanged(OperationalEvent):
     confidence: float = 0.0
 
 
+@dataclass(frozen=True)
+class SemanticProviderUnavailable(OperationalEvent):
+    """Provider semântico indisponível (Sprint 21.1).
+
+    Emitido quando o SemanticEngine não consegue validar o provider LLM
+    (Ollama offline, modelo não instalado, etc.). O sistema continua
+    operacional — apenas a camada semântica fica desativada.
+
+    O IncrementalParser e o restante do pipeline NÃO são afetados.
+    """
+
+    provider: str = ""        # "ollama", "stub", etc.
+    model: str = ""           # modelo esperado
+    reason: str = ""          # "server_offline", "model_not_found", etc.
+    base_url: str = ""        # URL consultada
+
+
 # ---------------------------------------------------------------------------
 # Registry de tipos de evento
 # ---------------------------------------------------------------------------
@@ -838,6 +855,8 @@ _ALL_EVENT_TYPES = (
     SermonBookChanged,
     SermonChapterChanged,
     SermonTopicChanged,
+    # Sprint 21.1 — Semantic provider health
+    SemanticProviderUnavailable,
 )
 
 _ALL_EVENT_TYPE_NAMES = tuple(c.__name__ for c in _ALL_EVENT_TYPES)
@@ -915,6 +934,7 @@ __all__ = [
     "SermonBookChanged",
     "SermonChapterChanged",
     "SermonTopicChanged",
+    "SemanticProviderUnavailable",
     "all_event_types",
     "all_event_type_names",
     "is_pipeline_event",

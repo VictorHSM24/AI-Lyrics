@@ -113,6 +113,75 @@ def _log_stt_runtime(stt_instance: Any, stt_config: Any) -> None:
     logger.info("=================================")
 
 
+def _run_semantic_health_check(
+    bus: Any,
+    provider: Any,
+    session_id: str,
+) -> None:
+    """Sprint 21.1 — Etapa 4: valida disponibilidade do provider LLM.
+
+    Consulta o servidor Ollama e verifica se o modelo está instalado.
+    Se indisponível, publica SemanticProviderUnavailable — sem interromper
+    o restante do AI Lyrics. O SemanticEngine continuará tentando durante
+    a execução e registrar telemetria.
+    """
+    from pipeline.events import SemanticProviderUnavailable
+    from pipeline.metadata import EventMetadata
+
+    logger.info(
+        "Sprint 21.1: running semantic health check (model=%s, base_url=%s)...",
+        provider.model_name, provider._base_url,
+    )
+
+    # 1. Servidor online?
+    if not provider.is_available():
+        logger.warning(
+            "Sprint 21.1: Ollama server OFFLINE at %s — "
+            "SemanticEngine will retry on demand.",
+            provider._base_url,
+        )
+        bus.publish(SemanticProviderUnavailable(
+            meta=EventMetadata.for_initial(
+                session_id=session_id,
+                origin="CompositionRoot",
+            ),
+            provider=provider.name,
+            model=provider.model_name,
+            reason="server_offline",
+            base_url=provider._base_url,
+        ))
+        return
+
+    # 2. Modelo instalado?
+    if not provider.check_model_available():
+        logger.warning(
+            "Sprint 21.1: model '%s' not installed on Ollama — "
+            "SemanticEngine will still attempt inference.",
+            provider.model_name,
+        )
+        bus.publish(SemanticProviderUnavailable(
+            meta=EventMetadata.for_initial(
+                session_id=session_id,
+                origin="CompositionRoot",
+            ),
+            provider=provider.name,
+            model=provider.model_name,
+            reason="model_not_found",
+            base_url=provider._base_url,
+        ))
+        return
+
+    logger.info(
+        "Sprint 21.1: semantic health check OK — "
+        "Ollama online, model '%s' available.",
+        provider.model_name,
+    )
+
+
+class _SkipComponent(Exception):
+    """Sinaliza que um componente deve ser pulado (AI_LYRICS_TEST_MODE)."""
+
+
 # ---------------------------------------------------------------------------
 # CompositionRoot — contêiner de dependências.
 # ---------------------------------------------------------------------------
@@ -173,6 +242,12 @@ class CompositionRoot:
     incremental_parser: Any = None  # IncrementalBiblicalParser or None
     streaming_metrics: Any = None  # StreamingPipelineMetrics or None
 
+    # Sprint 20/21/21.1 — Semantic + Sermon Memory
+    semantic_engine: Any = None  # SemanticEngine or None
+    sermon_memory_engine: Any = None  # SermonMemoryEngine or None
+    reference_resolver: Any = None  # ReferenceResolver or None
+    semantic_provider: Any = None  # LocalLLMProvider / StubProvider or None
+
 
 # ---------------------------------------------------------------------------
 # Factory — cria o CompositionRoot.
@@ -186,7 +261,19 @@ def create_composition_root() -> CompositionRoot:
       1. Carrega config (config.yaml + overrides).
       2. Core (EventStore → EventBus → State/Session/Metrics/Policy).
       3. Presentation Services (recebem referências do Core + config).
+
+    Sprint 21.1: se a env var AI_LYRICS_TEST_MODE=1 estiver definida,
+    pula a inicialização de componentes pesados (STT, embeddings,
+    SemanticEngine, SermonMemoryEngine, etc.). Apenas Core + Presentation
+    Services são instanciados. Isso evita consumo excessivo de RAM em
+    testes que apenas validam endpoints REST.
     """
+    test_mode = os.environ.get("AI_LYRICS_TEST_MODE", "").strip() == "1"
+    if test_mode:
+        logger.info(
+            "create_composition_root: AI_LYRICS_TEST_MODE=1 — "
+            "skipping heavy components (STT, Semantic, Sermon, etc.)."
+        )
     # 1. Carregar config real.
     config = _load_config()
 
@@ -246,6 +333,8 @@ def create_composition_root() -> CompositionRoot:
     speech_pipeline = None
     speech_worker = None
     try:
+        if test_mode:
+            raise _SkipComponent("AI_LYRICS_TEST_MODE=1")
         from transcricao.stt import STT, FasterWhisperBackend
         stt_config = getattr(config, "stt", None)
         if stt_config is not None:
@@ -279,6 +368,8 @@ def create_composition_root() -> CompositionRoot:
             health_service._stt = stt_instance
         else:
             logger.warning("Sprint 16: STT config not found — speech pipeline disabled.")
+    except _SkipComponent as e:
+        logger.info("Sprint 16: skipped (%s).", e)
     except Exception as e:
         logger.warning("Sprint 16: STT initialization failed — speech pipeline disabled: %s", e)
 
@@ -307,6 +398,8 @@ def create_composition_root() -> CompositionRoot:
     searcher_instance = None
     holyrics_client_instance = None
     try:
+        if test_mode:
+            raise _SkipComponent("AI_LYRICS_TEST_MODE=1")
         from busca.searcher import Searcher
         from integracao_holyrics.client import HolyricsClient
         from presentation.verse_presentation_service import (
@@ -380,6 +473,8 @@ def create_composition_root() -> CompositionRoot:
                         default_version,
                         quick,
                     )
+    except _SkipComponent as e:
+        logger.info("Sprint 18: skipped (%s).", e)
     except Exception as e:
         logger.warning(
             "Sprint 18: VersePresentationService initialization failed: %s", e
@@ -394,6 +489,7 @@ def create_composition_root() -> CompositionRoot:
     stt_executor = None
     streaming_stt = None
     incremental_parser = None
+    streaming_metrics = None
     try:
         if stt_instance is not None and audio_config is not None:
             from microfone.ring_buffer import RingBuffer
@@ -489,6 +585,146 @@ def create_composition_root() -> CompositionRoot:
             "Sprint 19: Streaming pipeline initialization failed: %s", e
         )
 
+    # Sprint 20/21/21.1 — Semantic Engine + Sermon Memory + Reference Resolver.
+    # Camada paralela ao IncrementalParser. Só é instanciada se a seção
+    # `semantic` estiver presente no config.yaml.
+    semantic_engine = None
+    sermon_memory_engine = None
+    reference_resolver = None
+    semantic_provider = None
+    try:
+        if test_mode:
+            raise _SkipComponent("AI_LYRICS_TEST_MODE=1")
+        semantic_config = getattr(config, "semantic", None)
+        if semantic_config is None:
+            logger.info(
+                "Sprint 21.1: semantic config not found — "
+                "SemanticEngine disabled (backward-compatible)."
+            )
+        elif not semantic_config.enabled:
+            logger.info("Sprint 21.1: SemanticEngine disabled by config.")
+        else:
+            from semantic import (
+                ContextEngine,
+                LocalLLMProvider,
+                SemanticCache,
+                SemanticEngine,
+                SemanticProvider,
+                StubProvider,
+            )
+            from semantic.resolver import ReferenceResolver
+            from sermon import SermonMemoryEngine
+            from pipeline.events import SemanticProviderUnavailable
+
+            # 1. Construir provider conforme config.
+            if semantic_config.provider == "ollama":
+                oc = semantic_config.ollama
+                if not oc.enabled:
+                    logger.warning(
+                        "Sprint 21.1: semantic.ollama.enabled=false — "
+                        "falling back to StubProvider."
+                    )
+                    semantic_provider = StubProvider()
+                else:
+                    semantic_provider = LocalLLMProvider(
+                        base_url=oc.base_url,
+                        model=oc.model,
+                        temperature=oc.temperature,
+                        max_tokens=oc.max_tokens,
+                        request_timeout_s=oc.timeout_seconds,
+                        api_key=oc.api_key,
+                        top_p=oc.top_p,
+                        disable_thinking=oc.disable_thinking,
+                    )
+                    logger.info(
+                        "Sprint 21.1: SemanticEngine using LocalLLMProvider "
+                        "(model=%s, base_url=%s, disable_thinking=%s, "
+                        "supports_thinking=%s).",
+                        oc.model, oc.base_url, oc.disable_thinking,
+                        semantic_provider._supports_thinking,
+                    )
+            elif semantic_config.provider == "stub":
+                semantic_provider = StubProvider()
+                logger.info(
+                    "Sprint 21.1: SemanticEngine using StubProvider (test mode)."
+                )
+            else:
+                logger.warning(
+                    "Sprint 21.1: unknown semantic.provider=%r — "
+                    "falling back to StubProvider.",
+                    semantic_config.provider,
+                )
+                semantic_provider = StubProvider()
+
+            # 2. Health check (Etapa 4) — apenas para provider=ollama.
+            if semantic_config.provider == "ollama" and \
+                    isinstance(semantic_provider, LocalLLMProvider):
+                _run_semantic_health_check(
+                    bus=bus,
+                    provider=semantic_provider,
+                    session_id=session.session_id,
+                )
+
+            # 3. SermonMemoryEngine (Sprint 21) — deve iniciar antes do
+            #    SemanticEngine para que o ContextEngine possa consumir
+            #    o SermonContext.
+            sermon_memory_engine = SermonMemoryEngine(
+                bus=bus,
+                session_id=session.session_id,
+            )
+            sermon_memory_engine.start()
+            logger.info("Sprint 21: SermonMemoryEngine started.")
+
+            # 4. ContextEngine — recebe sermon_context_fn para enriquecer
+            #    o SemanticContext com a memória contínua da pregação.
+            context_engine = ContextEngine(
+                history_fn=bus.history,
+                sermon_context_fn=sermon_memory_engine.get_context,
+            )
+
+            # 5. SemanticCache.
+            cache = SemanticCache()
+
+            # 6. SemanticEngine.
+            semantic_engine = SemanticEngine(
+                bus=bus,
+                provider=semantic_provider,
+                context_engine=context_engine,
+                cache=cache,
+                session_id=session.session_id,
+                debounce_ms=semantic_config.debounce_ms,
+                timeout_ms=semantic_config.timeout_ms,
+                enabled=True,
+            )
+            semantic_engine.start()
+            logger.info(
+                "Sprint 20: SemanticEngine started (provider=%s, debounce=%dms).",
+                semantic_provider.name, semantic_config.debounce_ms,
+            )
+
+            # 7. ReferenceResolver — valida candidatos via Searcher e
+            #    publica ReferenceDetected. Só é instanciado se o Searcher
+            #    estiver disponível (Sprint 18).
+            if searcher_instance is not None:
+                reference_resolver = ReferenceResolver(
+                    bus=bus,
+                    searcher=searcher_instance,
+                    session_id=session.session_id,
+                )
+                reference_resolver.start()
+                logger.info("Sprint 20: ReferenceResolver started.")
+            else:
+                logger.warning(
+                    "Sprint 20: ReferenceResolver disabled — "
+                    "Searcher not available (Sprint 18)."
+                )
+    except _SkipComponent as e:
+        logger.info("Sprint 21.1: Semantic/Sermon skipped (%s).", e)
+    except Exception as e:
+        logger.warning(
+            "Sprint 21.1: Semantic/Sermon initialization failed: %s", e
+        )
+
     system_service = SystemPresentationService(
         log_dir=_config_value(config, "log", "path") or "logs",
         cache_dir="cache",
@@ -539,6 +775,11 @@ def create_composition_root() -> CompositionRoot:
         streaming_stt=streaming_stt,
         incremental_parser=incremental_parser,
         streaming_metrics=streaming_metrics,
+        # Sprint 20/21/21.1 — Semantic + Sermon Memory
+        semantic_engine=semantic_engine,
+        sermon_memory_engine=sermon_memory_engine,
+        reference_resolver=reference_resolver,
+        semantic_provider=semantic_provider,
     )
 
 

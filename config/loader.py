@@ -23,7 +23,9 @@ from config.models import (
     HolyricsConfig,
     LLMConfig,
     LogConfig,
+    OllamaConfig,
     SearchConfig,
+    SemanticConfig,
     StateConfig,
     STTConfig,
     VadConfig,
@@ -160,6 +162,85 @@ def _build_llm(data: dict[str, Any]) -> LLMConfig:
     )
 
 
+def _build_ollama(data: dict[str, Any]) -> OllamaConfig:
+    """Constrói OllamaConfig a partir do dict YAML `semantic.ollama`."""
+    enabled = bool(data.get("enabled", True))
+    base_url = str(data.get("base_url", "http://localhost:11434/v1"))
+    api_key = str(data.get("api_key", "ollama"))
+    model = str(data.get("model", ""))
+    if not model:
+        raise ConfigError("semantic.ollama.model is required when provider=ollama")
+    temperature = float(data.get("temperature", 0.1))
+    top_p = float(data.get("top_p", 0.9))
+    max_tokens = int(data.get("max_tokens", 300))
+    timeout_seconds = float(data.get("timeout_seconds", 10.0))
+    disable_thinking = bool(data.get("disable_thinking", True))
+    # Validações básicas.
+    if not (0.0 <= temperature <= 2.0):
+        raise ConfigError(
+            f"semantic.ollama.temperature must be 0.0..2.0, got {temperature}"
+        )
+    if not (0.0 <= top_p <= 1.0):
+        raise ConfigError(f"semantic.ollama.top_p must be 0.0..1.0, got {top_p}")
+    if max_tokens <= 0:
+        raise ConfigError(
+            f"semantic.ollama.max_tokens must be > 0, got {max_tokens}"
+        )
+    if timeout_seconds <= 0:
+        raise ConfigError(
+            f"semantic.ollama.timeout_seconds must be > 0, got {timeout_seconds}"
+        )
+    return OllamaConfig(
+        enabled=enabled,
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_tokens,
+        timeout_seconds=timeout_seconds,
+        disable_thinking=disable_thinking,
+    )
+
+
+def _build_semantic(data: dict[str, Any]) -> SemanticConfig:
+    """Constrói SemanticConfig a partir do dict YAML `semantic`.
+
+    Seção opcional — se ausente, retorna None em _build_config e o
+    SemanticEngine não é instanciado (backward-compatible).
+    """
+    provider = str(data.get("provider", "stub"))
+    if provider not in ("stub", "ollama"):
+        raise ConfigError(
+            f"semantic.provider must be 'stub' or 'ollama', got '{provider}'"
+        )
+    ollama_data = data.get("ollama", {}) or {}
+    ollama = _build_ollama(ollama_data) if ollama_data else OllamaConfig(
+        enabled=False, base_url="", api_key="", model="",
+        temperature=0.0, top_p=1.0, max_tokens=300, timeout_seconds=10.0,
+    )
+    debounce_ms = int(data.get("debounce_ms", 800))
+    timeout_ms = int(data.get("timeout_ms", 5000))
+    min_text_length = int(data.get("min_text_length", 8))
+    enabled = bool(data.get("enabled", True))
+    if debounce_ms < 0:
+        raise ConfigError(f"semantic.debounce_ms must be >= 0, got {debounce_ms}")
+    if timeout_ms <= 0:
+        raise ConfigError(f"semantic.timeout_ms must be > 0, got {timeout_ms}")
+    if min_text_length < 0:
+        raise ConfigError(
+            f"semantic.min_text_length must be >= 0, got {min_text_length}"
+        )
+    return SemanticConfig(
+        provider=provider,
+        ollama=ollama,
+        debounce_ms=debounce_ms,
+        timeout_ms=timeout_ms,
+        min_text_length=min_text_length,
+        enabled=enabled,
+    )
+
+
 def _build_search(data: dict[str, Any]) -> SearchConfig:
     fts5_db = _require(data, "fts5_db", "search")
     embeddings_path = _require(data, "embeddings_path", "search")
@@ -272,6 +353,10 @@ def _build_config(data: dict[str, Any]) -> Config:
     audio: AudioConfig | None = None
     if "audio" in data:
         audio = _build_audio(data["audio"])
+    # Sprint 21.1 — semantic é opcional (backward-compatible).
+    semantic: SemanticConfig | None = None
+    if "semantic" in data:
+        semantic = _build_semantic(data["semantic"])
     return Config(
         holyrics=holyrics,
         stt=stt,
@@ -283,6 +368,7 @@ def _build_config(data: dict[str, Any]) -> Config:
         log=log,
         mode=mode,
         audio=audio,
+        semantic=semantic,
     )
 
 

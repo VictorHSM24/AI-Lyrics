@@ -39,6 +39,28 @@ state:
   default_version: "ACF"
   persist_path: "data/state.json"
 
+# Sprint 21.1 — Semantic Understanding Engine.
+# Provider usado pelo SemanticEngine para inferência de referências implícitas.
+# Valores de provider:
+#   - "stub"   : StubProvider (respostas pré-programadas, para testes)
+#   - "ollama" : LocalLLMProvider via Ollama (LLM real)
+semantic:
+  provider: "ollama"
+  enabled: true
+  debounce_ms: 800
+  timeout_ms: 5000
+  min_text_length: 8
+  ollama:
+    enabled: true
+    base_url: "http://localhost:11434/v1"
+    api_key: "ollama"
+    model: "qwen3:8b-q4_K_M"
+    temperature: 0.1
+    top_p: 0.9
+    max_tokens: 300
+    timeout_seconds: 10
+    disable_thinking: true
+
 cache:
   recent_capacity: 50
   embedding_capacity: 200

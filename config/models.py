@@ -83,6 +83,60 @@ class LLMConfig:
 
 
 @dataclass(frozen=True)
+class OllamaConfig:
+    """Configuração do provider Ollama para o SemanticEngine (Sprint 21.1).
+
+    Campos:
+        enabled: se True, o provider tenta usar Ollama; se False, fallback stub.
+        base_url: URL base OpenAI-compatible (geralmente ".../v1").
+        api_key: API key enviada no header Authorization. Ollama aceita
+            qualquer valor não-vazio quando auth está desligada. Use
+            "ollama" por padrão.
+        model: nome do modelo instalado no Ollama (ex.: "qwen3:8b-q4_K_M").
+        temperature: temperatura da amostragem (recomendado 0.0-0.1).
+        top_p: nucleus sampling (0.0-1.0).
+        max_tokens: máximo de tokens na resposta.
+        timeout_seconds: timeout HTTP em segundos.
+        disable_thinking: se True, envia explicitamente "think": false no
+            payload. Modelos sem suporte a esse parâmetro devem ignorá-lo
+            silenciosamente.
+    """
+
+    enabled: bool
+    base_url: str
+    api_key: str
+    model: str
+    temperature: float
+    top_p: float
+    max_tokens: int
+    timeout_seconds: float
+    disable_thinking: bool = True
+
+
+@dataclass(frozen=True)
+class SemanticConfig:
+    """Configuração da camada semântica (Sprint 21.1).
+
+    Campos:
+        provider: "stub" | "ollama" — seleciona qual provider instanciar
+            no CompositionRoot.
+        ollama: configuração específica do Ollama (usada quando
+            provider == "ollama").
+        debounce_ms: debounce antes de invocar o LLM após SpeechPartialUpdated.
+        timeout_ms: timeout da inferência semântica.
+        min_text_length: mínimo de caracteres para invocar o LLM.
+        enabled: kill switch global para a camada semântica.
+    """
+
+    provider: str
+    ollama: OllamaConfig
+    debounce_ms: int = 800
+    timeout_ms: int = 5000
+    min_text_length: int = 8
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
 class SearchConfig:
     """Configuração da busca híbrida (FTS5 + embeddings + RRF)."""
 
@@ -174,3 +228,5 @@ class Config:
     log: LogConfig
     mode: str  # "auto" | "confirm" | "quick"
     audio: AudioConfig | None = None  # opcional (backward-compatible)
+    # Sprint 21.1 — Semantic Engine config (opcional p/ backward-compatible).
+    semantic: "SemanticConfig | None" = None

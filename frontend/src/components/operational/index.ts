@@ -6,3 +6,5 @@ export { AudioLevelMeter } from "./AudioLevelMeter";
 export { TranscriptPanel } from "./TranscriptPanel";
 export { ReferencePanel } from "./ReferencePanel";
 export { VersePresentationPanel } from "./VersePresentationPanel";
+export { SemanticPanel } from "./SemanticPanel";
+export { SermonMemoryPanel } from "./SermonMemoryPanel";

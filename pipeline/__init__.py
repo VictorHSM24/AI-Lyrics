@@ -86,6 +86,10 @@ from pipeline.events import (
     VerseResolved,
     VersePresented,
     VersePresentationFailed,
+    # Sprint 19 — Streaming Speech Pipeline
+    SpeechPartial,
+    SpeechPartialUpdated,
+    ReferenceCandidate,
     is_operational_event,
     is_pipeline_event,
     is_telemetry_event,
@@ -159,6 +163,10 @@ __all__ = [
     "VerseResolved",
     "VersePresented",
     "VersePresentationFailed",
+    # Sprint 19 — Streaming Speech Pipeline
+    "SpeechPartial",
+    "SpeechPartialUpdated",
+    "ReferenceCandidate",
     "is_pipeline_event",
     "is_operational_event",
     "is_telemetry_event",

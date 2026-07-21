@@ -353,6 +353,173 @@ export function createVersePresentationStore(): VersePresentationStore {
 }
 
 // ============================================================
+// SemanticStore (Sprint 20) — camada de compreensão semântica.
+// Mostra inferências do SemanticEngine e resoluções do
+// ReferenceResolver para depuração.
+// ============================================================
+
+/** Candidato semântico individual gerado pelo LLM. */
+export interface SemanticCandidateEntry {
+  book: string;
+  chapter: number;
+  verse: number;
+  confidence: number;
+  reason: string;
+}
+
+/** Resultado de uma inferência semântica. */
+export interface SemanticInferenceEntry {
+  /** ID único (correlation_id do fluxo). */
+  id: string;
+  /** Texto analisado. */
+  contextText: string;
+  /** Intenção detectada ("show_reference" | "none" | ""). */
+  intent: string;
+  /** Candidatos gerados pelo LLM. */
+  candidates: SemanticCandidateEntry[];
+  /** Tempo de inferência em ms. */
+  inferenceMs: number;
+  /** Provider usado ("local-llm", "stub", etc.). */
+  provider: string;
+  /** Modelo usado. */
+  model: string;
+  /** True se veio do cache. */
+  cached: boolean;
+  /** Erro (vazio se sucesso). */
+  error: string;
+  /** Hash do contexto. */
+  contextHash: string;
+  /** Timestamp. */
+  timestamp: number;
+}
+
+/** Resultado da resolução (ReferenceResolver). */
+export interface SemanticResolutionEntry {
+  /** ID único (correlation_id do fluxo). */
+  id: string;
+  /** True se ReferenceDetected foi publicado. */
+  resolved: boolean;
+  /** Livro escolhido. */
+  chosenBook: string;
+  /** Capítulo escolhido. */
+  chosenChapter: number;
+  /** Versículo escolhido. */
+  chosenVerse: number;
+  /** Confiança do escolhido. */
+  chosenConfidence: number;
+  /** Motivo da decisão. */
+  reason: string;
+  /** Candidatos recebidos. */
+  numCandidatesIn: number;
+  /** Candidatos válidos após Searcher. */
+  numCandidatesValid: number;
+  /** True se parser já havia resolvido. */
+  skippedDueToParser: boolean;
+  /** Timestamp. */
+  timestamp: number;
+}
+
+export interface SemanticState {
+  /** Última inferência (ou null). */
+  currentInference: SemanticInferenceEntry | null;
+  /** Última resolução (ou null). */
+  currentResolution: SemanticResolutionEntry | null;
+  /** Histórico de inferências (mais recente primeiro, máx 30). */
+  inferenceHistory: SemanticInferenceEntry[];
+  /** Histórico de resoluções (mais recente primeiro, máx 30). */
+  resolutionHistory: SemanticResolutionEntry[];
+}
+
+export type SemanticStore = DomainStore<SemanticState>;
+export function createSemanticStore(): SemanticStore {
+  return wrap(createSnapshotStore<SemanticState>());
+}
+
+// ============================================================
+// SermonStore (Sprint 21) — memória contínua da pregação.
+// Mostra o SermonContext vivo (livro, capítulo, tema, entidades,
+// referências recentes) e eventos de mudança.
+// ============================================================
+
+/** Entidade reconhecida no sermão. */
+export interface SermonEntityEntry {
+  name: string;
+  weight: number;
+  mentionCount: number;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+/** Tema provável do sermão. */
+export interface SermonTopicEntry {
+  name: string;
+  weight: number;
+  mentionCount: number;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+/** Referência bíblica histórica. */
+export interface SermonReferenceEntry {
+  book: string;
+  chapter: number;
+  verse: number;
+  referenceStr: string;
+  detectedAt: string;
+  source: string;
+}
+
+/** Snapshot do SermonContext. */
+export interface SermonContextEntry {
+  currentBook: string | null;
+  currentChapter: number | null;
+  probableTheme: string | null;
+  entities: SermonEntityEntry[];
+  recentTopics: SermonTopicEntry[];
+  recentReferences: SermonReferenceEntry[];
+  confidence: number;
+  updatedAt: string;
+  sermonStartedAt: string;
+  totalUpdates: number;
+  isEmpty: boolean;
+}
+
+/** Evento de mudança (livro/capítulo/tema). */
+export interface SermonChangeEvent {
+  type: "book" | "chapter" | "topic";
+  previous: string;
+  next: string;
+  timestamp: number;
+}
+
+export interface SermonState {
+  /** Contexto atual (ou null). */
+  current: SermonContextEntry | null;
+  /** Histórico de mudanças (mais recente primeiro, máx 30). */
+  changes: SermonChangeEvent[];
+  /** Métricas operacionais. */
+  metrics: {
+    totalUpdates: number;
+    updatesPerMinute: number;
+    bookChanges: number;
+    chapterChanges: number;
+    topicChanges: number;
+    entityExpirations: number;
+    topicExpirations: number;
+    referenceExpirations: number;
+    uptimeSeconds: number;
+    contextAgeSeconds: number;
+    sermonDurationSeconds: number;
+    confidence: number;
+  } | null;
+}
+
+export type SermonStore = DomainStore<SermonState>;
+export function createSermonStore(): SermonStore {
+  return wrap(createSnapshotStore<SermonState>());
+}
+
+// ============================================================
 // Registry — agregador de todos os stores.
 // ============================================================
 
@@ -372,6 +539,8 @@ export interface StoreRegistry {
   readonly transcript: TranscriptStore;
   readonly reference: ReferenceStore;
   readonly versePresentation: VersePresentationStore;
+  readonly semantic: SemanticStore;
+  readonly sermon: SermonStore;
 }
 
 export function createStoreRegistry(): StoreRegistry {
@@ -391,5 +560,7 @@ export function createStoreRegistry(): StoreRegistry {
     transcript: createTranscriptStore(),
     reference: createReferenceStore(),
     versePresentation: createVersePresentationStore(),
+    semantic: createSemanticStore(),
+    sermon: createSermonStore(),
   };
 }

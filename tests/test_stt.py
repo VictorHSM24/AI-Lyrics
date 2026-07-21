@@ -468,7 +468,8 @@ class TestSTTLifecycle:
 
     def test_unsupported_backend(self) -> None:
         config = _stt_config(backend="unknown")
-        with pytest.raises(STTError, match="unsupported STT backend"):
+        # Sprint 19.1: erro agora vem do BackendSelector.
+        with pytest.raises(STTError, match="backend selection failed"):
             STT(config)
 
     def test_transcribe_error_increments_failures(self) -> None:

@@ -199,11 +199,11 @@ class TestPipelineEvents(unittest.TestCase):
     def test_all_event_types_count(self):
         """Deve haver 27 tipos de evento (15 + 5 Sprint 16 + 3 Sprint 17 + 4 Sprint 18)."""
         types = all_event_types()
-        self.assertEqual(len(types), 27)
+        self.assertEqual(len(types), 30)  # Sprint 19: +3 events
 
     def test_all_event_type_names(self):
         names = all_event_type_names()
-        self.assertEqual(len(names), 27)
+        self.assertEqual(len(names), 30)  # Sprint 19: +3 events
         self.assertIn("SpeechSegmentReceived", names)
         self.assertIn("PipelineError", names)
         # Sprint 16 — Continuous Speech Pipeline

@@ -133,7 +133,7 @@ class TestReferenceEvents(unittest.TestCase):
         for name in ["ReferenceDetected", "ReferenceInvalid", "IntentUnknown"]:
             self.assertIn(name, names)
         # 15 originais + 5 Sprint 16 + 3 Sprint 17 + 4 Sprint 18 = 27
-        self.assertEqual(len(all_event_types()), 27)
+        self.assertEqual(len(all_event_types()), 30)  # Sprint 19: +3 events
 
 
 if __name__ == "__main__":

@@ -4,15 +4,16 @@ holyrics:
   timeout_ms: 2000
 
 stt:
-  backend: "faster-whisper"
+  backend: "auto"  # Sprint 19.1: auto = CUDA > DirectML > ROCm > CPU
   model: "large-v3-turbo"
-  device: "cuda"
-  compute_type: "float16"
+  device: "auto"  # Sprint 19.1: auto = seleciona com base no hardware
+  compute_type: "auto"  # Sprint 19.1: auto = resolve com base no backend
   language: "pt"
   beam_size: 1
   vad_filter: false
   cpu_threads: 0  # 0 = default do sistema (os.cpu_count())
   chunk_length_s: 30
+  gpu_memory_limit_mb: 0  # Sprint 19.1: 0 = sem limite
   vad:
     mode: "silero"
     min_speech_ms: 250

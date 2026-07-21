@@ -33,17 +33,29 @@ class STTConfig:
 
     Campos:
         model: nome ou path do modelo (ex.: "large-v3-turbo", "small").
-        device: dispositivo de inferência ("cuda", "cpu", "auto").
+        device: dispositivo de inferência ("cuda", "cpu", "auto",
+            "directml", "rocm"). Sprint 19.1: "auto" seleciona
+            automaticamente com base no hardware detectado.
         compute_type: tipo de quantização ("float16", "int8_float16",
-            "int8", "float32").
+            "int8", "float32", "auto"). Sprint 19.1: "auto" resolve
+            com base no backend selecionado.
         language: código ISO do idioma ("pt", "en", "es").
         chunk_length_s: duração do chunk em segundos (30 padrão Whisper).
         vad: configuração do VAD interno do Whisper (não confundir com
             o VAD do microfone).
-        backend: backend STT ("faster-whisper" — único suportado).
+        backend: backend STT. Sprint 19.1 valores:
+            - "faster-whisper" (legacy, mapeia para CPU/CUDA conforme device)
+            - "auto" (seleção automática: CUDA > DirectML > ROCm > CPU)
+            - "cuda" (força CUDA/NVIDIA via ctranslate2)
+            - "directml" (força DirectML via onnxruntime-directml — AMD/Intel)
+            - "rocm" (força ROCm — Linux AMD)
+            - "cpu" (força CPU)
         beam_size: beam size para decoding (1 = greedy, 5 = beam search).
         vad_filter: se True, ativa VAD interno do Whisper para descartar
             silêncio antes da transcrição.
+        cpu_threads: número de threads CPU (0 = default do sistema).
+        gpu_memory_limit_mb: limite de VRAM em MB para GPU backends
+            (0 = sem limite). Sprint 19.1.
     """
 
     model: str
@@ -56,6 +68,7 @@ class STTConfig:
     beam_size: int = 1
     vad_filter: bool = False
     cpu_threads: int = 0  # 0 = default do faster-whisper (os.cpu_count())
+    gpu_memory_limit_mb: int = 0  # Sprint 19.1: 0 = sem limite
 
 
 @dataclass(frozen=True)

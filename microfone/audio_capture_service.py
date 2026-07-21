@@ -431,6 +431,17 @@ class AudioCaptureService:
                 except Exception as e:
                     logger.debug("on_audio_data callback error: %s", e)
 
+            # Sprint 19 — RingBuffer (streaming STT).
+            # Se um RingBuffer estiver conectado, escrever o chunk nele
+            # também. Isso NÃO substitui o callback do SpeechPipeline —
+            # ambos recebem o mesmo áudio.
+            ring_buf = getattr(self, "_ring_buffer", None)
+            if ring_buf is not None:
+                try:
+                    ring_buf.write(audio_data)
+                except Exception as e:
+                    logger.debug("ring_buffer write error: %s", e)
+
             # Notificar callback (WebSocket publisher).
             cb = self._on_frame
             if cb is not None:

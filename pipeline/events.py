@@ -539,6 +539,257 @@ class VersePresentationFailed(OperationalEvent):
 
 
 # ---------------------------------------------------------------------------
+# Sprint 19 — Streaming Speech Pipeline
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SpeechPartial(OperationalEvent):
+    """Transcrição parcial de streaming (Sprint 19).
+
+    Emitido pelo StreamingSTTService quando uma janela de áudio é
+    transcrita pela primeira vez (sem texto anterior para comparar).
+    Contém o texto parcial reconhecido até o momento.
+
+    Diferente de SpeechTranscribed, este evento:
+      - É produzido continuamente (a cada ~400ms).
+      - Pode ser atualizado por SpeechPartialUpdated.
+      - Representa transcrição em andamento, não final.
+      - correlation_id é compartilhado entre todos os SpeechPartial /
+        SpeechPartialUpdated do mesmo fluxo contínuo de fala.
+    """
+
+    text: str = ""
+    language: str = ""
+    confidence: float = 0.0
+    latency_ms: int = 0          # latência captura → partial
+    audio_duration_ms: int = 0   # duração da janela transcrita
+    is_stable: bool = False      # True se o texto não deve mudar mais
+
+
+@dataclass(frozen=True)
+class SpeechPartialUpdated(OperationalEvent):
+    """Atualização de transcrição parcial de streaming (Sprint 19).
+
+    Emitido pelo StreamingSTTService quando uma nova janela é
+    transcrita e o resultado difere do SpeechPartial anterior.
+    Contém apenas o texto novo (diff por alinhamento de prefixo).
+
+    O campo ``text`` contém o texto completo atualizado (não apenas
+    o diff) para simplificar o consumo no frontend. O campo
+    ``appended_text`` contém apenas o trecho novo adicionado desde
+    o último SpeechPartial / SpeechPartialUpdated.
+
+    correlation_id é o mesmo do SpeechPartial inicial do fluxo.
+    """
+
+    text: str = ""               # texto completo atualizado
+    appended_text: str = ""      # apenas o trecho novo (diff)
+    language: str = ""
+    confidence: float = 0.0
+    latency_ms: int = 0
+    audio_duration_ms: int = 0
+    is_stable: bool = False
+
+
+@dataclass(frozen=True)
+class ReferenceCandidate(OperationalEvent):
+    """Candidato a referência bíblica detectada incrementalmente (Sprint 19).
+
+    Emitido pelo IncrementalBiblicalParser quando consome SpeechPartial
+    ou SpeechPartialUpdated e identifica parcialmente uma referência
+    (ex.: apenas o livro, ou livro + capítulo, mas não o versículo).
+
+    A confiança cresce conforme mais componentes são identificados:
+      - Apenas livro: confidence ~ 0.40
+      - Livro + capítulo: confidence ~ 0.75
+      - Livro + capítulo + versículo: confidence ~ 0.98
+
+    Quando confidence atinge o threshold (default 0.90), o
+    IncrementalBiblicalParser publica ReferenceDetected (evento
+    definitivo) em vez de ReferenceCandidate.
+
+    correlation_id é o mesmo do SpeechPartial que originou a detecção.
+    """
+
+    book: str = ""
+    book_id: int = 0
+    chapter: int = 0
+    verse_start: int = 0
+    verse_end: int = 0
+    confidence: float = 0.0
+    completeness: str = ""  # "book" | "chapter" | "verse"
+    normalized_text: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Sprint 20 — Semantic Understanding Engine
+#
+# Fluxo paralelo ao parser determinístico:
+#   SpeechPartial / SpeechPartialUpdated
+#       ↓
+#   SemanticEngine (consome SpeechPartial/Updated)
+#       ↓
+#   IntentCandidate (hipóteses do LLM, NUNCA definitivo)
+#       ↓
+#   ReferenceResolver (valida via Searcher, elimina inexistentes)
+#       ↓
+#   ReferenceDetected (publicado apenas pelo Resolver — LLM nunca publica)
+#
+# O parser determinístico (IncrementalBiblicalParser) continua sendo o
+# caminho principal. A camada semântica atua em paralelo quando o parser
+# não consegue resolver referências implícitas.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class IntentCandidate(OperationalEvent):
+    """Candidatos semânticos gerados pelo SemanticEngine (Sprint 20).
+
+    Emitido pelo SemanticEngine quando consome SpeechPartial/Updated e
+    o SemanticProvider (LLM) identifica possíveis referências implícitas.
+
+    NÃO é definitivo — é uma hipótese. O ReferenceResolver valida cada
+    candidato via Searcher antes de publicar ReferenceDetected.
+
+    O LLM NUNCA publica ReferenceDetected diretamente. Apenas o
+    ReferenceResolver pode fazer isso.
+
+    correlation_id é o mesmo do SpeechPartial que originou a análise.
+    """
+
+    intent: str = "show_reference"  # "show_reference" | "none"
+    candidates_json: str = ""       # JSON serializado de SemanticCandidate[]
+    inference_ms: int = 0           # tempo de inferência do LLM
+    provider: str = ""              # "local-llm", "stub", "openai", etc.
+    model: str = ""                 # "llama3.2:3b", etc.
+    context_hash: str = ""          # hash do contexto (para dedup de cache)
+    cached: bool = False            # True se veio do cache
+
+
+@dataclass(frozen=True)
+class SemanticInferenceCompleted(OperationalEvent):
+    """Telemetria da inferência semântica (Sprint 20).
+
+    Emitido após o SemanticEngine completar uma inferência (sucesso ou falha).
+    Útil para o painel de depuração do frontend.
+    """
+
+    intent: str = ""
+    num_candidates: int = 0
+    inference_ms: int = 0
+    provider: str = ""
+    model: str = ""
+    cached: bool = False
+    error: str = ""                 # "" se sucesso, mensagem se falha
+    context_text: str = ""          # texto analisado (para depuração)
+    context_hash: str = ""
+
+
+@dataclass(frozen=True)
+class SemanticResolutionCompleted(OperationalEvent):
+    """Resultado da resolução semântica (Sprint 20).
+
+    Emitido pelo ReferenceResolver após validar candidatos e decidir
+    se publica ou não ReferenceDetected.
+
+    Útil para o painel de depuração: mostra qual candidato foi escolhido
+    e por quê, ou por que nenhum foi escolhido.
+    """
+
+    resolved: bool = False          # True se ReferenceDetected foi publicado
+    chosen_book: str = ""
+    chosen_chapter: int = 0
+    chosen_verse: int = 0
+    chosen_confidence: float = 0.0
+    reason: str = ""                # "highest_confidence", "all_invalid", "parser_already_resolved"
+    num_candidates_in: int = 0      # candidatos recebidos
+    num_candidates_valid: int = 0   # candidatos válidos após Searcher
+    skipped_due_to_parser: bool = False  # True se parser já resolveu
+
+
+# ---------------------------------------------------------------------------
+# Sprint 21 — Sermon Memory Engine
+#
+# Fluxo paralelo ao parser e ao semantic engine:
+#   SpeechPartial / SpeechPartialUpdated / ReferenceDetected
+#       ↓
+#   SermonMemoryEngine (atualiza estado incrementalmente)
+#       ↓
+#   SermonContextUpdated (publica o contexto vivo)
+#       ↓
+#   SemanticEngine (consome SermonContextUpdated para enriquecer contexto)
+#
+# Eventos de mudança (publicados quando campos mudam):
+#   SermonBookChanged     — current_book mudou
+#   SermonChapterChanged  — current_chapter mudou
+#   SermonTopicChanged    — probable_theme mudou
+#
+# O SermonMemoryEngine NÃO identifica referências bíblicas.
+# Sua única responsabilidade é manter o estado da pregação.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SermonContextUpdated(OperationalEvent):
+    """Contexto do sermão atualizado (Sprint 21).
+
+    Emitido pelo SermonMemoryEngine após cada atualização incremental
+    do SermonContext. Contém um snapshot serializado do contexto vivo.
+
+    O SemanticEngine consome este evento para enriquecer o contexto
+    enviado ao SemanticProvider.
+    """
+
+    context_json: str = ""          # JSON serializado de SermonContext.to_dict()
+    current_book: str = ""          # livro atual (vazio se None)
+    current_chapter: int = 0        # capítulo atual (0 se None)
+    probable_theme: str = ""        # tema provável (vazio se None)
+    num_entities: int = 0           # número de entidades
+    num_topics: int = 0             # número de temas
+    num_references: int = 0         # número de referências recentes
+    confidence: float = 0.0         # confiança geral
+    total_updates: int = 0          # total de atualizações desde o início
+    is_empty: bool = True           # True se contexto vazio
+
+
+@dataclass(frozen=True)
+class SermonBookChanged(OperationalEvent):
+    """Livro atual do sermão mudou (Sprint 21).
+
+    Emitido quando current_book muda (ex.: de "João" para "Romanos").
+    """
+
+    previous_book: str = ""
+    new_book: str = ""
+    confidence: float = 0.0
+
+
+@dataclass(frozen=True)
+class SermonChapterChanged(OperationalEvent):
+    """Capítulo atual do sermão mudou (Sprint 21).
+
+    Emitido quando current_chapter muda dentro do mesmo livro.
+    """
+
+    book: str = ""
+    previous_chapter: int = 0
+    new_chapter: int = 0
+
+
+@dataclass(frozen=True)
+class SermonTopicChanged(OperationalEvent):
+    """Tema provável do sermão mudou (Sprint 21).
+
+    Emitido quando probable_theme muda significativamente.
+    """
+
+    previous_theme: str = ""
+    new_theme: str = ""
+    confidence: float = 0.0
+
+
+# ---------------------------------------------------------------------------
 # Registry de tipos de evento
 # ---------------------------------------------------------------------------
 
@@ -574,6 +825,19 @@ _ALL_EVENT_TYPES = (
     VerseResolved,
     VersePresented,
     VersePresentationFailed,
+    # Sprint 19 — Streaming Speech Pipeline
+    SpeechPartial,
+    SpeechPartialUpdated,
+    ReferenceCandidate,
+    # Sprint 20 — Semantic Understanding Engine
+    IntentCandidate,
+    SemanticInferenceCompleted,
+    SemanticResolutionCompleted,
+    # Sprint 21 — Sermon Memory Engine
+    SermonContextUpdated,
+    SermonBookChanged,
+    SermonChapterChanged,
+    SermonTopicChanged,
 )
 
 _ALL_EVENT_TYPE_NAMES = tuple(c.__name__ for c in _ALL_EVENT_TYPES)
@@ -638,6 +902,19 @@ __all__ = [
     "VerseResolved",
     "VersePresented",
     "VersePresentationFailed",
+    # Sprint 19 — Streaming Speech Pipeline
+    "SpeechPartial",
+    "SpeechPartialUpdated",
+    "ReferenceCandidate",
+    # Sprint 20 — Semantic Understanding Engine
+    "IntentCandidate",
+    "SemanticInferenceCompleted",
+    "SemanticResolutionCompleted",
+    # Sprint 21 — Sermon Memory Engine
+    "SermonContextUpdated",
+    "SermonBookChanged",
+    "SermonChapterChanged",
+    "SermonTopicChanged",
     "all_event_types",
     "all_event_type_names",
     "is_pipeline_event",

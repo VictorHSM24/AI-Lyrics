@@ -179,6 +179,15 @@ class EventPublisher:
                 SpeechTranscribing, SpeechTranscribed,
                 ReferenceDetected, ReferenceInvalid, IntentUnknown,
             )
+            from pipeline.events import (
+                SpeechPartial, SpeechPartialUpdated, ReferenceCandidate,
+                IntentCandidate, SemanticInferenceCompleted,
+                SemanticResolutionCompleted,
+                VerseResolving, VerseResolved, VersePresented,
+                VersePresentationFailed,
+                SermonContextUpdated, SermonBookChanged,
+                SermonChapterChanged, SermonTopicChanged,
+            )
             for evt in [
                 SpeechSegmentReceived, SpeechRecognized, SearchRequested,
                 SearchCompleted, RankingCompleted, IntelligenceCompleted,
@@ -190,6 +199,17 @@ class EventPublisher:
                 SpeechTranscribing, SpeechTranscribed,
                 # Sprint 17 — Biblical Intent & Reference Extraction
                 ReferenceDetected, ReferenceInvalid, IntentUnknown,
+                # Sprint 18 — Automatic Verse Presentation
+                VerseResolving, VerseResolved, VersePresented,
+                VersePresentationFailed,
+                # Sprint 19 — Streaming Speech Pipeline
+                SpeechPartial, SpeechPartialUpdated, ReferenceCandidate,
+                # Sprint 20 — Semantic Understanding Engine
+                IntentCandidate, SemanticInferenceCompleted,
+                SemanticResolutionCompleted,
+                # Sprint 21 — Sermon Memory Engine
+                SermonContextUpdated, SermonBookChanged,
+                SermonChapterChanged, SermonTopicChanged,
             ]:
                 root.bus.subscribe(evt, self._on_event)
         self._subscribed = True

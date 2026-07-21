@@ -77,6 +77,11 @@ class GpuInfo:
         vram_mb: VRAM em megabytes (0 se desconhecido).
         cuda_support: suporte a CUDA ("full", "partial", "none").
         cuda_version: versão do CUDA detectada (None se não disponível).
+        directml_support: suporte a DirectML (True se onnxruntime-directml
+            instalado e GPU suporta DirectX 12).
+        rocm_support: suporte a ROCm (True se hip/ROCm instalado —
+            tipicamente Linux apenas).
+        driver_version: versão do driver (None se desconhecido).
     """
 
     name: str
@@ -84,6 +89,9 @@ class GpuInfo:
     vram_mb: int
     cuda_support: CudaSupport
     cuda_version: str | None = None
+    directml_support: bool = False
+    rocm_support: bool = False
+    driver_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -117,12 +125,36 @@ class HardwareProfile:
         return any(g.vendor == "nvidia" for g in self.gpus)
 
     @property
+    def has_amd_gpu(self) -> bool:
+        """True se há ao menos uma GPU AMD."""
+        return any(g.vendor == "amd" for g in self.gpus)
+
+    @property
+    def has_intel_gpu(self) -> bool:
+        """True se há ao menos uma GPU Intel."""
+        return any(g.vendor == "intel" for g in self.gpus)
+
+    @property
     def has_cuda(self) -> bool:
         """True se CUDA está funcionalmente disponível (GPU NVIDIA + libs)."""
         return any(
             g.vendor == "nvidia" and g.cuda_support in ("full", "partial")
             for g in self.gpus
         )
+
+    @property
+    def has_directml(self) -> bool:
+        """True se DirectML está disponível (onnxruntime-directml + GPU DX12).
+
+        Sprint 19.1 — GPU Runtime & Hardware Acceleration.
+        DirectML funciona com AMD, Intel e NVIDIA no Windows via DirectX 12.
+        """
+        return any(g.directml_support for g in self.gpus)
+
+    @property
+    def has_rocm(self) -> bool:
+        """True se ROCm está disponível (tipicamente Linux + AMD)."""
+        return any(g.rocm_support for g in self.gpus)
 
     @property
     def primary_gpu(self) -> GpuInfo | None:
@@ -138,6 +170,11 @@ class HardwareProfile:
     def total_vram_mb(self) -> int:
         """VRAM total de todas as GPUs NVIDIA."""
         return sum(g.vram_mb for g in self.gpus if g.vendor == "nvidia")
+
+    @property
+    def total_vram_all_gpus_mb(self) -> int:
+        """VRAM total de todas as GPUs (qualquer vendor)."""
+        return sum(g.vram_mb for g in self.gpus)
 
 
 @dataclass(frozen=True)
@@ -337,24 +374,247 @@ class HardwareDetector:
         Ordem de detecção:
         1. NVIDIA via nvidia-smi (mais confiável para VRAM e CUDA)
         2. NVIDIA via ctranslate2 (confirma CUDA funcional)
-        3. Fallback: sem GPU detectada
+        3. AMD/Intel via WMI (Windows) ou sysfs (Linux)
+        4. Verificar DirectML (onnxruntime-directml)
+        5. Verificar ROCm (Linux)
         """
         gpus: list[GpuInfo] = []
+        seen_names: set[str] = set()
 
         # 1. nvidia-smi (fornece nome + VRAM)
         nvidia_gpus = HardwareDetector._detect_nvidia_via_smi()
         gpus.extend(nvidia_gpus)
+        seen_names.update(g.name for g in nvidia_gpus)
 
         # 2. Se nvidia-smi não encontrou, tentar ctranslate2
         if not gpus:
             nvidia_ct2 = HardwareDetector._detect_nvidia_via_ctranslate2()
             gpus.extend(nvidia_ct2)
+            seen_names.update(g.name for g in nvidia_ct2)
 
-        # 3. Detectar AMD/Intel (apenas nome, sem CUDA)
-        #    Não crítico para o projeto (STT usa CUDA ou CPU)
-        #    Futuramente: ROCm para AMD
+        # 3. Detectar AMD/Intel via WMI (Windows) ou sysfs (Linux)
+        #    Sprint 19.1 — suporte a GPU AMD via DirectML.
+        other_gpus = HardwareDetector._detect_non_nvidia_gpus()
+        for g in other_gpus:
+            if g.name not in seen_names:
+                gpus.append(g)
+                seen_names.add(g.name)
+
+        # 4. Verificar DirectML (onnxruntime-directml instalado).
+        directml_available = HardwareDetector._check_directml_support()
+
+        # 5. Verificar ROCm (Linux tipicamente).
+        rocm_available = HardwareDetector._check_rocm_support()
+
+        # Aplicar flags DirectML/ROCm às GPUs detectadas.
+        if directml_available or rocm_available:
+            gpus = [
+                GpuInfo(
+                    name=g.name,
+                    vendor=g.vendor,
+                    vram_mb=g.vram_mb,
+                    cuda_support=g.cuda_support,
+                    cuda_version=g.cuda_version,
+                    directml_support=directml_available and g.vendor in ("amd", "intel", "nvidia"),
+                    rocm_support=rocm_available and g.vendor == "amd",
+                    driver_version=g.driver_version,
+                )
+                for g in gpus
+            ]
 
         return tuple(gpus)
+
+    @staticmethod
+    def _detect_non_nvidia_gpus() -> list[GpuInfo]:
+        """Detecta GPUs AMD/Intel (não-NVIDIA).
+
+        No Windows: usa PowerShell Get-CimInstance Win32_VideoController.
+        No Linux: lê /sys/class/drm/*/device/vendor e uevent.
+        """
+        gpus: list[GpuInfo] = []
+        os_name = platform.system().lower()
+
+        if os_name == "windows":
+            gpus = HardwareDetector._detect_gpus_via_wmi()
+        elif os_name == "linux":
+            gpus = HardwareDetector._detect_gpus_via_sysfs()
+
+        return gpus
+
+    @staticmethod
+    def _detect_gpus_via_wmi() -> list[GpuInfo]:
+        """Detecta GPUs via WMI no Windows (PowerShell Get-CimInstance).
+
+        Retorna todas as GPUs (NVIDIA, AMD, Intel) com nome e driver.
+        VRAM do WMI é limitada a 4GB (uint32) — para VRAM real, usar
+        outras fontes. Para AMD, a RX 7600 tem 8GB conhecidos.
+        """
+        import subprocess
+
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 "Get-CimInstance Win32_VideoController | "
+                 "Select-Object Name, AdapterRAM, DriverVersion | "
+                 "Format-List"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                return []
+
+            gpus: list[GpuInfo] = []
+            # Parse output: blocos separados por linha em branco.
+            blocks = result.stdout.strip().split("\n\n")
+            for block in blocks:
+                name = ""
+                adapter_ram = 0
+                driver_version = None
+                for line in block.strip().split("\n"):
+                    line = line.strip()
+                    if line.startswith("Name"):
+                        name = line.split(":", 1)[1].strip()
+                    elif line.startswith("AdapterRAM"):
+                        ram_str = line.split(":", 1)[1].strip()
+                        try:
+                            adapter_ram = int(ram_str)
+                        except ValueError:
+                            adapter_ram = 0
+                    elif line.startswith("DriverVersion"):
+                        driver_version = line.split(":", 1)[1].strip()
+
+                if not name:
+                    continue
+
+                vendor = HardwareDetector._infer_vendor_from_name(name)
+                # VRAM do WMI é uint32 (max 4GB) — para GPUs > 4GB,
+                # usar valores conhecidos ou outras fontes.
+                vram_mb = HardwareDetector._resolve_vram_mb(name, adapter_ram)
+
+                gpus.append(GpuInfo(
+                    name=name,
+                    vendor=vendor,
+                    vram_mb=vram_mb,
+                    cuda_support="none" if vendor != "nvidia" else "full",
+                    cuda_version=None,
+                    driver_version=driver_version,
+                ))
+
+            return gpus
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
+            logger.debug("WMI GPU detection failed: %s", e)
+            return []
+
+    @staticmethod
+    def _detect_gpus_via_sysfs() -> list[GpuInfo]:
+        """Detecta GPUs via sysfs no Linux."""
+        gpus: list[GpuInfo] = []
+        import glob
+        try:
+            for card_path in glob.glob("/sys/class/drm/card*/device/uevent"):
+                try:
+                    with open(card_path, "r") as f:
+                        content = f.read()
+                    # Parse vendor ID e name.
+                    vendor_id = ""
+                    name = ""
+                    for line in content.split("\n"):
+                        if line.startswith("PCI_ID="):
+                            vendor_id = line.split("=")[1].split(":")[0].lower()
+                        elif line.startswith("PCI_NAME="):
+                            name = line.split("=", 1)[1].strip()
+                    if not name:
+                        continue
+                    vendor = {"10de": "nvidia", "1002": "amd",
+                              "8086": "intel"}.get(vendor_id, "unknown")
+                    gpus.append(GpuInfo(
+                        name=name,
+                        vendor=vendor,
+                        vram_mb=0,  # sysfs não dá VRAM facilmente
+                        cuda_support="none" if vendor != "nvidia" else "full",
+                    ))
+                except (IOError, OSError):
+                    continue
+        except Exception as e:
+            logger.debug("sysfs GPU detection failed: %s", e)
+        return gpus
+
+    @staticmethod
+    def _infer_vendor_from_name(name: str) -> GpuVendor:
+        """Infere o fabricante a partir do nome da GPU."""
+        name_lower = name.lower()
+        if "nvidia" in name_lower or "geforce" in name_lower or "rtx" in name_lower or "gtx" in name_lower or "quadro" in name_lower:
+            return "nvidia"
+        if "amd" in name_lower or "radeon" in name_lower or "rx " in name_lower:
+            return "amd"
+        if "intel" in name_lower or "arc" in name_lower or "iris" in name_lower or "uhd" in name_lower:
+            return "intel"
+        if "apple" in name_lower or "m1" in name_lower or "m2" in name_lower or "m3" in name_lower:
+            return "apple"
+        return "unknown"
+
+    @staticmethod
+    def _resolve_vram_mb(name: str, adapter_ram: int) -> int:
+        """Resolve VRAM em MB. O WMI retorna AdapterRAM como uint32 (max 4GB).
+
+        Para GPUs conhecidas com > 4GB, usar valor conhecido.
+        Caso contrário, usar AdapterRAM (limitado a 4GB).
+        """
+        name_lower = name.lower()
+        # AdapterRAM é em bytes (uint32), converter para MB.
+        wmi_mb = int(adapter_ram / (1024 * 1024)) if adapter_ram > 0 else 0
+
+        # Tabela de VRAM conhecida para GPUs comuns > 4GB.
+        # O WMI não consegue reportar > 4GB devido a limitação uint32.
+        known_vram = {
+            "rx 7600": 8192,        # AMD RX 7600 = 8GB
+            "rx 7600 xt": 16384,    # AMD RX 7600 XT = 16GB
+            "rx 7700 xt": 12288,    # AMD RX 7700 XT = 12GB
+            "rx 7800 xt": 16384,    # AMD RX 7800 XT = 16GB
+            "rx 7900 gre": 16384,
+            "rx 7900 xt": 20480,
+            "rx 7900 xtx": 24576,
+            "rtx 4060": 8192,
+            "rtx 4060 ti": 8192,
+            "rtx 4070": 12288,
+            "rtx 4070 ti": 12288,
+            "rtx 4080": 16384,
+            "rtx 4090": 24576,
+        }
+        for key, vram in known_vram.items():
+            if key in name_lower:
+                return vram
+
+        # Se AdapterRAM reporta ~4GB (uint32 overflow), tentar via
+        # outras fontes. Por ora, retornar o que temos.
+        return wmi_mb
+
+    @staticmethod
+    def _check_directml_support() -> bool:
+        """Verifica se DirectML está disponível via onnxruntime-directml.
+
+        Sprint 19.1 — GPU Runtime & Hardware Acceleration.
+        DirectML funciona no Windows com GPUs AMD/Intel/NVIDIA via DirectX 12.
+        """
+        try:
+            import onnxruntime as ort
+            providers = ort.get_available_providers()
+            return "DmlExecutionProvider" in providers
+        except ImportError:
+            return False
+        except Exception as e:
+            logger.debug("DirectML check failed: %s", e)
+            return False
+
+    @staticmethod
+    def _check_rocm_support() -> bool:
+        """Verifica se ROCm está disponível (tipicamente Linux + AMD)."""
+        # ROCm no Windows é muito limitado (apenas HIP SDK, não para inferência).
+        if platform.system().lower() != "linux":
+            return False
+        rocm_smi = shutil.which("rocm-smi")
+        return rocm_smi is not None
 
     @staticmethod
     def _detect_nvidia_via_smi() -> list[GpuInfo]:

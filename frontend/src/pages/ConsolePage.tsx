@@ -23,7 +23,7 @@ import {
   RecognitionPanel,
   ResultPanel,
 } from "@/components/console";
-import { TranscriptPanel, ReferencePanel, VersePresentationPanel } from "@/components/operational";
+import { TranscriptPanel, ReferencePanel, VersePresentationPanel, SemanticPanel, SermonMemoryPanel } from "@/components/operational";
 import { useAutoStartPipeline } from "@/hooks";
 import { useOperationState } from "@/contexts/OperationContext";
 
@@ -54,6 +54,10 @@ export function ConsolePage() {
           <ReferencePanel />
           {/* Sprint 18 — Apresentação automática no Holyrics */}
           <VersePresentationPanel />
+          {/* Sprint 20 — Semantic Engine */}
+          <SemanticPanel />
+          {/* Sprint 21 — Sermon Memory */}
+          <SermonMemoryPanel />
         </div>
 
         {/* Coluna lateral: Pipeline + Reconhecimento + Resultado */}

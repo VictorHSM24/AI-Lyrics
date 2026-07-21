@@ -165,6 +165,14 @@ class CompositionRoot:
     searcher: Any = None  # Searcher or None
     holyrics_client: Any = None  # HolyricsClient or None
 
+    # Sprint 19 — Streaming Speech Pipeline
+    ring_buffer: Any = None  # RingBuffer or None
+    sliding_window: Any = None  # SlidingWindow or None
+    stt_executor: Any = None  # STTExecutor or None
+    streaming_stt: Any = None  # StreamingSTTService or None
+    incremental_parser: Any = None  # IncrementalBiblicalParser or None
+    streaming_metrics: Any = None  # StreamingPipelineMetrics or None
+
 
 # ---------------------------------------------------------------------------
 # Factory — cria o CompositionRoot.
@@ -377,6 +385,110 @@ def create_composition_root() -> CompositionRoot:
             "Sprint 18: VersePresentationService initialization failed: %s", e
         )
 
+    # Sprint 19 — Streaming Speech Pipeline.
+    # RingBuffer + SlidingWindow + STTExecutor + StreamingSTTService +
+    # IncrementalBiblicalParser.
+    # Reusa stt_instance já carregada (Sprint 16) — não duplica modelo em RAM.
+    ring_buffer = None
+    sliding_window = None
+    stt_executor = None
+    streaming_stt = None
+    incremental_parser = None
+    try:
+        if stt_instance is not None and audio_config is not None:
+            from microfone.ring_buffer import RingBuffer
+            from microfone.sliding_window import SlidingWindow
+            from microfone.stt_executor import STTExecutor
+            from microfone.streaming_stt_service import StreamingSTTService
+            from pipeline.incremental_parser import IncrementalBiblicalParser
+
+            # STTExecutor — serializa acesso ao Whisper entre
+            # SpeechWorker (segmentos finais) e StreamingSTT (parciais).
+            stt_executor = STTExecutor(stt=stt_instance)
+
+            # RingBuffer — últimos 20s de áudio, thread-safe.
+            ring_buffer = RingBuffer(
+                sample_rate=int(audio_sr),
+                channels=int(audio_ch),
+                duration_seconds=20.0,
+            )
+
+            # StreamingSTTService — transcreve janelas e publica
+            # SpeechPartial / SpeechPartialUpdated.
+            streaming_stt = StreamingSTTService(
+                executor=stt_executor,
+                bus=bus,
+                session_id=session.session_id,
+                sample_rate=int(audio_sr),
+            )
+            streaming_stt.start()
+
+            # SlidingWindow — extrai 6s a cada 400ms, independente do VAD.
+            sliding_window = SlidingWindow(
+                ring_buffer=ring_buffer,
+                window_seconds=6.0,
+                update_interval_ms=400,
+                on_window=streaming_stt.on_window,
+            )
+            sliding_window.start()
+
+            # IncrementalBiblicalParser — consome SpeechPartial e publica
+            # ReferenceCandidate / ReferenceDetected.
+            # Reusa parser_books já carregado (Sprint 17) se disponível.
+            try:
+                parser_books_s19 = parser_books  # do bloco Sprint 17
+            except NameError:
+                from parser.books import load_parser_books
+                parser_books_s19 = load_parser_books("config/books.json")
+
+            incremental_parser = IncrementalBiblicalParser(
+                books=parser_books_s19,
+                bus=bus,
+                session_id=session.session_id,
+            )
+            incremental_parser.start()
+
+            # Sprint 19 — Coletor de métricas de latência.
+            from pipeline.streaming_metrics import StreamingPipelineMetrics
+            streaming_metrics = StreamingPipelineMetrics(
+                ring_buffer=ring_buffer,
+                sliding_window=sliding_window,
+                stt_executor=stt_executor,
+                streaming_stt=streaming_stt,
+                incremental_parser=incremental_parser,
+            )
+
+            # Conectar AudioCaptureService ao RingBuffer — além do
+            # SpeechPipeline (VAD) existente. O callback _on_audio_data
+            # do SpeechPipeline não é alterado; adicionamos um segundo
+            # callback via set_on_audio_data? Não — o AudioCaptureService
+            # suporta apenas um callback. Em vez disso, interceptamos no
+            # SpeechPipeline: quando ele recebe áudio, repassa ao
+            # RingBuffer. Mas isso modificaria o SpeechPipeline.
+            #
+            # Alternativa: o AudioCaptureService tem set_on_frame() para
+            # AudioFrame (metadados) e set_on_audio_data() para áudio raw.
+            # Para não modificar o SpeechPipeline, adicionamos um hook
+            # no AudioCaptureService que permite múltiplos listeners.
+            # Por ora, registramos o RingBuffer via atributo adicional
+            # no audio_capture — a fiação real será feita no startup
+            # do servidor, onde o AudioCaptureService.start() é chamado.
+            audio_capture._ring_buffer = ring_buffer
+
+            logger.info(
+                "Sprint 19: Streaming Speech Pipeline started "
+                "(ring_buffer=20s, window=6s/400ms, incremental_parser=on)."
+            )
+        else:
+            logger.warning(
+                "Sprint 19: STT or audio config unavailable — "
+                "streaming pipeline disabled."
+            )
+    except Exception as e:
+        logger.warning(
+            "Sprint 19: Streaming pipeline initialization failed: %s", e
+        )
+
     system_service = SystemPresentationService(
         log_dir=_config_value(config, "log", "path") or "logs",
         cache_dir="cache",
@@ -420,6 +532,13 @@ def create_composition_root() -> CompositionRoot:
         verse_presentation_service=verse_presentation_service,
         searcher=searcher_instance,
         holyrics_client=holyrics_client_instance,
+        # Sprint 19 — Streaming Speech Pipeline
+        ring_buffer=ring_buffer,
+        sliding_window=sliding_window,
+        stt_executor=stt_executor,
+        streaming_stt=streaming_stt,
+        incremental_parser=incremental_parser,
+        streaming_metrics=streaming_metrics,
     )
 
 

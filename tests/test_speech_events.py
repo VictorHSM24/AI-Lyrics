@@ -140,7 +140,7 @@ class TestSpeechEvents(unittest.TestCase):
                       "SpeechTranscribing", "SpeechTranscribed"]:
             self.assertIn(name, names)
         # 15 originais + 5 Sprint 16 + 3 Sprint 17 + 4 Sprint 18 = 27
-        self.assertEqual(len(types), 27)
+        self.assertEqual(len(types), 30)  # Sprint 19: +3 (SpeechPartial, SpeechPartialUpdated, ReferenceCandidate)
 
 
 if __name__ == "__main__":

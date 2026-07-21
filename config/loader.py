@@ -102,10 +102,33 @@ def _build_stt(data: dict[str, Any]) -> STTConfig:
     beam_size = data.get("beam_size", 1)
     vad_filter = data.get("vad_filter", False)
     cpu_threads = data.get("cpu_threads", 0)
-    valid_backends = {"faster-whisper"}
+    gpu_memory_limit_mb = data.get("gpu_memory_limit_mb", 0)
+    # Sprint 19.1: backends estendidos.
+    valid_backends = {
+        "faster-whisper",  # legacy
+        "auto",            # Sprint 19.1: seleção automática
+        "cuda",
+        "directml",
+        "rocm",
+        "cpu",
+    }
     if str(backend) not in valid_backends:
         raise ConfigError(
             f"invalid stt.backend '{backend}' (valid: {sorted(valid_backends)})"
+        )
+    # Sprint 19.1: validar device e compute_type.
+    valid_devices = {"auto", "cpu", "cuda", "directml", "rocm"}
+    if str(device) not in valid_devices:
+        raise ConfigError(
+            f"invalid stt.device '{device}' (valid: {sorted(valid_devices)})"
+        )
+    valid_compute_types = {
+        "auto", "float16", "int8_float16", "int8", "float32",
+    }
+    if str(compute_type) not in valid_compute_types:
+        raise ConfigError(
+            f"invalid stt.compute_type '{compute_type}' "
+            f"(valid: {sorted(valid_compute_types)})"
         )
     return STTConfig(
         model=str(model),
@@ -118,6 +141,7 @@ def _build_stt(data: dict[str, Any]) -> STTConfig:
         beam_size=int(beam_size),
         vad_filter=bool(vad_filter),
         cpu_threads=int(cpu_threads),
+        gpu_memory_limit_mb=int(gpu_memory_limit_mb),
     )
 
 

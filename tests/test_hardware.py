@@ -250,10 +250,13 @@ class TestHardwareDetector:
         assert ram == 0
 
     def test_detect_gpus_no_nvidia_smi(self) -> None:
-        """Sem nvidia-smi e sem ctranslate2 → sem GPUs."""
+        """Sem nvidia-smi, sem ctranslate2, sem outras GPUs → sem GPUs."""
         with patch("shutil.which", return_value=None):
             with patch.object(HardwareDetector, "_check_cuda_support", return_value=("none", None)):
-                gpus = HardwareDetector._detect_gpus()
+                with patch.object(HardwareDetector, "_detect_non_nvidia_gpus", return_value=[]):
+                    with patch.object(HardwareDetector, "_check_directml_support", return_value=False):
+                        with patch.object(HardwareDetector, "_check_rocm_support", return_value=False):
+                            gpus = HardwareDetector._detect_gpus()
         assert gpus == ()
 
     def test_detect_gpus_via_smi(self) -> None:
@@ -267,7 +270,10 @@ class TestHardwareDetector:
         with patch("shutil.which", return_value="/usr/bin/nvidia-smi"):
             with patch("subprocess.run", return_value=mock_result):
                 with patch.object(HardwareDetector, "_check_cuda_support", return_value=("full", "12")):
-                    gpus = HardwareDetector._detect_gpus()
+                    with patch.object(HardwareDetector, "_detect_non_nvidia_gpus", return_value=[]):
+                        with patch.object(HardwareDetector, "_check_directml_support", return_value=False):
+                            with patch.object(HardwareDetector, "_check_rocm_support", return_value=False):
+                                gpus = HardwareDetector._detect_gpus()
 
         assert len(gpus) == 1
         assert gpus[0].name == "NVIDIA GeForce RTX 4060"
@@ -286,7 +292,10 @@ class TestHardwareDetector:
         with patch("shutil.which", return_value="/usr/bin/nvidia-smi"):
             with patch("subprocess.run", return_value=mock_result):
                 with patch.object(HardwareDetector, "_check_cuda_support", return_value=("full", "12")):
-                    gpus = HardwareDetector._detect_gpus()
+                    with patch.object(HardwareDetector, "_detect_non_nvidia_gpus", return_value=[]):
+                        with patch.object(HardwareDetector, "_check_directml_support", return_value=False):
+                            with patch.object(HardwareDetector, "_check_rocm_support", return_value=False):
+                                gpus = HardwareDetector._detect_gpus()
 
         assert len(gpus) == 2
         assert gpus[0].vram_mb == 8192
@@ -296,7 +305,10 @@ class TestHardwareDetector:
         """nvidia-smi falha → ctranslate2 confirma CUDA → GPU sem nome/VRAM."""
         with patch("shutil.which", return_value=None):
             with patch.object(HardwareDetector, "_check_cuda_support", return_value=("full", "12")):
-                gpus = HardwareDetector._detect_gpus()
+                with patch.object(HardwareDetector, "_detect_non_nvidia_gpus", return_value=[]):
+                    with patch.object(HardwareDetector, "_check_directml_support", return_value=False):
+                        with patch.object(HardwareDetector, "_check_rocm_support", return_value=False):
+                            gpus = HardwareDetector._detect_gpus()
 
         assert len(gpus) == 1
         assert gpus[0].vendor == "nvidia"

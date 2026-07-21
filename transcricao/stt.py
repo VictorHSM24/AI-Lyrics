@@ -479,13 +479,15 @@ class STT:
         # Criar ou usar backend fornecido
         if backend is not None:
             self._backend = backend
-        elif config.backend == "faster-whisper":
-            self._backend = FasterWhisperBackend(config)
         else:
-            raise STTError(
-                f"unsupported STT backend: '{config.backend}'. "
-                f"Supported: 'faster-whisper'"
-            )
+            self._backend = STT._create_backend(config)
+
+        # Sprint 19.1 — Envolver backend GPU com BackendFallbackManager.
+        # Backends GPU (DirectML, CUDA, ROCm) são envolvidos para permitir
+        # fallback automático para CPU após N falhas consecutivas.
+        # Backends CPU não são envolvidos (não há para onde cair).
+        if backend is None and STT._is_gpu_backend(self._backend):
+            self._backend = STT._wrap_with_fallback(self._backend, config)
 
         # Carregar modelo
         load_start = time.monotonic()
@@ -498,6 +500,107 @@ class STT:
             self._metrics.gpu_fallback = (
                 self._backend.actual_device != config.device
             )
+
+    @staticmethod
+    def _is_gpu_backend(backend: STTBackend) -> bool:
+        """Verifica se um backend é GPU (requer fallback)."""
+        backend_name = getattr(backend, "backend_name", "")
+        device = getattr(backend, "actual_device", "cpu")
+        return (
+            "directml" in backend_name
+            or "cuda" in backend_name
+            or "rocm" in backend_name
+            or device in ("directml", "cuda", "rocm")
+        )
+
+    @staticmethod
+    def _wrap_with_fallback(
+        gpu_backend: STTBackend, config: STTConfig
+    ) -> STTBackend:
+        """Envolve um backend GPU com BackendFallbackManager.
+
+        Cria uma factory para o CPU backend que será usado se fallback
+        for disparado. A factory cria um FasterWhisperBackend com
+        compute_type=int8 (estável em CPU).
+        """
+        from transcricao.backend_fallback import BackendFallbackManager
+        from dataclasses import replace
+
+        # Factory: cria CPU backend (FasterWhisperBackend com int8).
+        def cpu_factory() -> STTBackend:
+            cpu_config = replace(
+                config,
+                device="cpu",
+                compute_type="int8",
+                backend="faster-whisper",
+            )
+            return FasterWhisperBackend(cpu_config)
+
+        return BackendFallbackManager(
+            gpu_backend=gpu_backend,
+            cpu_backend_factory=cpu_factory,
+            max_consecutive_failures=3,
+        )
+
+    @staticmethod
+    def _create_backend(config: STTConfig) -> STTBackend:
+        """Cria o backend apropriado com base na config e hardware.
+
+        Sprint 19.1 — GPU Runtime & Hardware Acceleration:
+          Usa BackendSelector para escolher entre CPU/CUDA/DirectML/ROCm.
+          Mantém compatibilidade com config.backend="faster-whisper"
+          (legacy) mapeando para CPU/CUDA conforme device.
+
+        Args:
+            config: STTConfig com backend, device, compute_type.
+
+        Returns:
+            Instância de STTBackend (FasterWhisperBackend ou DirectMLBackend).
+        """
+        # Compatibilidade legacy: "faster-whisper" significa CPU ou CUDA.
+        # Sprint 19.1: novos valores "auto", "directml", "rocm" também.
+        backend_str = config.backend.lower()
+
+        if backend_str == "faster-whisper":
+            # Legacy: decidir entre CPU/CUDA pelo device.
+            if config.device == "cuda":
+                backend_str = "cuda"
+            else:
+                backend_str = "cpu"
+
+        # Usar BackendSelector para validar e resolver compute_type.
+        from transcricao.backend_selector import BackendSelector, BackendSelectionError
+        try:
+            info = BackendSelector.select(
+                requested_backend=backend_str,
+                requested_compute_type=config.compute_type,
+            )
+        except BackendSelectionError as e:
+            raise STTError(f"backend selection failed: {e}") from e
+
+        logger.info(
+            "STT: backend selected = %s (device=%s, compute=%s, reason=%s)",
+            info.backend_type, info.device, info.compute_type, info.reason,
+        )
+
+        # Instanciar backend concreto.
+        if info.backend_type == "directml":
+            from transcricao.directml_backend import DirectMLBackend
+            return DirectMLBackend(
+                model_name=config.model,
+                compute_type=info.compute_type,
+                device_id=0,
+            )
+
+        # CPU e CUDA usam FasterWhisperBackend (ctranslate2).
+        # Criar STTConfig ajustada com device/compute_type resolvidos.
+        from dataclasses import replace
+        resolved_config = replace(
+            config,
+            device=info.device if info.backend_type != "cpu" else "cpu",
+            compute_type=info.compute_type,
+        )
+        return FasterWhisperBackend(resolved_config)
 
     def transcribe(self, segment: SpeechSegment) -> STTResult:
         """Transcreve um SpeechSegment em texto.

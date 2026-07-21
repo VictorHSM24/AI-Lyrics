@@ -351,12 +351,17 @@ const SPEECH_EVENTS = new Set([
   "SpeechSegmentCreated",
   "SpeechTranscribing",
   "SpeechTranscribed",
+  // Sprint 19 — Streaming Speech Pipeline
+  "SpeechPartial",
+  "SpeechPartialUpdated",
 ]);
 
 const REFERENCE_EVENTS = new Set([
   "ReferenceDetected",
   "ReferenceInvalid",
   "IntentUnknown",
+  // Sprint 19 — Streaming: candidato a referência (incremental)
+  "ReferenceCandidate",
 ]);
 
 // Sprint 18 — Automatic Verse Presentation
@@ -365,6 +370,21 @@ const VERSE_PRESENTATION_EVENTS = new Set([
   "VerseResolved",
   "VersePresented",
   "VersePresentationFailed",
+]);
+
+// Sprint 20 — Semantic Understanding Engine
+const SEMANTIC_EVENTS = new Set([
+  "IntentCandidate",
+  "SemanticInferenceCompleted",
+  "SemanticResolutionCompleted",
+]);
+
+// Sprint 21 — Sermon Memory Engine
+const SERMON_EVENTS = new Set([
+  "SermonContextUpdated",
+  "SermonBookChanged",
+  "SermonChapterChanged",
+  "SermonTopicChanged",
 ]);
 
 /**
@@ -398,6 +418,12 @@ export function dispatchDomainHandlers(
   }
   if (VERSE_PRESENTATION_EVENTS.has(dto.event_type)) {
     handleVersePresentationEvent(dto, stores);
+  }
+  if (SEMANTIC_EVENTS.has(dto.event_type)) {
+    handleSemanticEvent(dto, stores);
+  }
+  if (SERMON_EVENTS.has(dto.event_type)) {
+    handleSermonEvent(dto, stores);
   }
 }
 
@@ -484,6 +510,10 @@ export function handleReferenceEvent(
  * SpeechSegmentCreated → (apenas log, sem mudança de estado)
  * SpeechTranscribing  → transcribing=true
  * SpeechTranscribed   → transcribing=false, adiciona entrada ao histórico
+ *
+ * Sprint 19 — Streaming Speech Pipeline:
+ * SpeechPartial       → atualiza partialText (área Parcial)
+ * SpeechPartialUpdated → atualiza partialText (área Parcial)
  */
 export function handleSpeechEvent(
   dto: EventDTO,
@@ -551,6 +581,27 @@ export function handleSpeechEvent(
         partialText: "",
       });
       devLog.bridge(`SpeechTranscribed → text="${text.slice(0, 50)}..." latency=${latencyMs}ms`);
+      break;
+    }
+
+    // Sprint 19 — Streaming: transcrição parcial (área Parcial).
+    case "SpeechPartial": {
+      const text = str(dto.payload, "text");
+      stores.transcript.set({
+        ...baseState,
+        partialText: text,
+      });
+      devLog.bridge(`SpeechPartial → partialText="${text.slice(0, 50)}..."`);
+      break;
+    }
+
+    case "SpeechPartialUpdated": {
+      const text = str(dto.payload, "text");
+      stores.transcript.set({
+        ...baseState,
+        partialText: text,
+      });
+      devLog.bridge(`SpeechPartialUpdated → partialText="${text.slice(0, 50)}..."`);
       break;
     }
 
@@ -785,5 +836,323 @@ export function handleAudioEvent(
     }
     default:
       return;
+  }
+}
+
+// ============================================================
+// Semantic (Sprint 20) — camada de compreensão semântica.
+//
+// Eventos:
+//   SemanticInferenceCompleted → atualiza currentInference + history
+//   IntentCandidate            → armazena candidatos (para depuração)
+//   SemanticResolutionCompleted → atualiza currentResolution + history
+// ============================================================
+
+interface SemanticCandidateDTO {
+  book: string;
+  chapter: number;
+  verse: number;
+  confidence: number;
+  reason: string;
+}
+
+function parseCandidates(jsonStr: string): SemanticCandidateDTO[] {
+  if (!jsonStr) return [];
+  try {
+    const parsed = JSON.parse(jsonStr);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((c) => c && typeof c === "object").map((c) => ({
+      book: typeof c.book === "string" ? c.book : "",
+      chapter: typeof c.chapter === "number" ? c.chapter : 0,
+      verse: typeof c.verse === "number" ? c.verse : 0,
+      confidence: typeof c.confidence === "number" ? c.confidence : 0,
+      reason: typeof c.reason === "string" ? c.reason : "",
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export function handleSemanticEvent(
+  dto: EventDTO,
+  stores: StoreRegistry,
+): void {
+  const correlationId = dto.meta.correlation_id;
+  const timestamp = dto.meta.timestamp;
+
+  switch (dto.event_type) {
+    case "SemanticInferenceCompleted": {
+      const entry = {
+        id: correlationId,
+        contextText: str(dto.payload, "context_text"),
+        intent: str(dto.payload, "intent"),
+        candidates: [], // IntentCandidate traz os candidatos; aqui só telemetria
+        inferenceMs: num(dto.payload, "inference_ms"),
+        provider: str(dto.payload, "provider"),
+        model: str(dto.payload, "model"),
+        cached: bool(dto.payload, "cached"),
+        error: str(dto.payload, "error"),
+        contextHash: str(dto.payload, "context_hash"),
+        timestamp,
+      };
+      const prev = stores.semantic.current?.data;
+      const prevHistory = prev?.inferenceHistory ?? [];
+      stores.semantic.set({
+        currentInference: entry,
+        currentResolution: prev?.currentResolution ?? null,
+        inferenceHistory: [entry, ...prevHistory].slice(0, 30),
+        resolutionHistory: prev?.resolutionHistory ?? [],
+      });
+      devLog.bridge(
+        `SemanticInferenceCompleted → intent="${entry.intent}" ` +
+        `provider=${entry.provider} cached=${entry.cached} ` +
+        `ms=${entry.inferenceMs} err="${entry.error}"`,
+      );
+      break;
+    }
+
+    case "IntentCandidate": {
+      // Complementa a última inferência com os candidatos reais.
+      const prev = stores.semantic.current?.data;
+      const candidates = parseCandidates(str(dto.payload, "candidates_json"));
+      if (prev?.currentInference && prev.currentInference.id === correlationId) {
+        stores.semantic.set({
+          ...prev,
+          currentInference: {
+            ...prev.currentInference,
+            candidates,
+          },
+        });
+      }
+      devLog.bridge(
+        `IntentCandidate → ${candidates.length} candidato(s) ` +
+        `provider=${str(dto.payload, "provider")}`,
+      );
+      break;
+    }
+
+    case "SemanticResolutionCompleted": {
+      const entry = {
+        id: correlationId,
+        resolved: bool(dto.payload, "resolved"),
+        chosenBook: str(dto.payload, "chosen_book"),
+        chosenChapter: num(dto.payload, "chosen_chapter"),
+        chosenVerse: num(dto.payload, "chosen_verse"),
+        chosenConfidence: num(dto.payload, "chosen_confidence"),
+        reason: str(dto.payload, "reason"),
+        numCandidatesIn: num(dto.payload, "num_candidates_in"),
+        numCandidatesValid: num(dto.payload, "num_candidates_valid"),
+        skippedDueToParser: bool(dto.payload, "skipped_due_to_parser"),
+        timestamp,
+      };
+      const prev = stores.semantic.current?.data;
+      const prevHistory = prev?.resolutionHistory ?? [];
+      stores.semantic.set({
+        currentInference: prev?.currentInference ?? null,
+        currentResolution: entry,
+        inferenceHistory: prev?.inferenceHistory ?? [],
+        resolutionHistory: [entry, ...prevHistory].slice(0, 30),
+      });
+      devLog.bridge(
+        `SemanticResolutionCompleted → resolved=${entry.resolved} ` +
+        `reason="${entry.reason}" ` +
+        `chosen=${entry.chosenBook} ${entry.chosenChapter}:${entry.chosenVerse} ` +
+        `conf=${entry.chosenConfidence.toFixed(2)}`,
+      );
+      break;
+    }
+
+    default:
+      break;
+  }
+}
+
+// ============================================================
+// Sermon (Sprint 21) — memória contínua da pregação.
+//
+// Eventos:
+//   SermonContextUpdated  → atualiza contexto atual
+//   SermonBookChanged     → adiciona mudança de livro
+//   SermonChapterChanged  → adiciona mudança de capítulo
+//   SermonTopicChanged    → adiciona mudança de tema
+// ============================================================
+
+interface SermonEntityDTO {
+  name: string;
+  weight: number;
+  mention_count: number;
+  first_seen: string;
+  last_seen: string;
+}
+
+interface SermonTopicDTO {
+  name: string;
+  weight: number;
+  mention_count: number;
+  first_seen: string;
+  last_seen: string;
+}
+
+interface SermonReferenceDTO {
+  book: string;
+  chapter: number;
+  verse: number;
+  reference_str: string;
+  detected_at: string;
+  source: string;
+}
+
+interface SermonContextDTO {
+  current_book: string | null;
+  current_chapter: number | null;
+  probable_theme: string | null;
+  entities: SermonEntityDTO[];
+  recent_topics: SermonTopicDTO[];
+  recent_references: SermonReferenceDTO[];
+  confidence: number;
+  updated_at: string;
+  sermon_started_at: string;
+  total_updates: number;
+}
+
+interface SermonChangeEventLike {
+  type: "book" | "chapter" | "topic";
+  previous: string;
+  next: string;
+  timestamp: number;
+}
+
+function parseSermonContext(jsonStr: string): SermonContextDTO | null {
+  if (!jsonStr) return null;
+  try {
+    const parsed = JSON.parse(jsonStr);
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed as SermonContextDTO;
+  } catch {
+    return null;
+  }
+}
+
+export function handleSermonEvent(
+  dto: EventDTO,
+  stores: StoreRegistry,
+): void {
+  const timestamp = dto.meta.timestamp;
+
+  switch (dto.event_type) {
+    case "SermonContextUpdated": {
+      const ctx = parseSermonContext(str(dto.payload, "context_json"));
+      if (!ctx) {
+        devLog.bridge(`SermonContextUpdated → invalid context_json`);
+        break;
+      }
+      const entry = {
+        currentBook: ctx.current_book ?? null,
+        currentChapter: ctx.current_chapter ?? null,
+        probableTheme: ctx.probable_theme ?? null,
+        entities: (ctx.entities ?? []).map((e) => ({
+          name: e.name,
+          weight: e.weight,
+          mentionCount: e.mention_count,
+          firstSeen: e.first_seen,
+          lastSeen: e.last_seen,
+        })),
+        recentTopics: (ctx.recent_topics ?? []).map((t) => ({
+          name: t.name,
+          weight: t.weight,
+          mentionCount: t.mention_count,
+          firstSeen: t.first_seen,
+          lastSeen: t.last_seen,
+        })),
+        recentReferences: (ctx.recent_references ?? []).map((r) => ({
+          book: r.book,
+          chapter: r.chapter,
+          verse: r.verse,
+          referenceStr: r.reference_str,
+          detectedAt: r.detected_at,
+          source: r.source,
+        })),
+        confidence: ctx.confidence ?? 0,
+        updatedAt: ctx.updated_at,
+        sermonStartedAt: ctx.sermon_started_at,
+        totalUpdates: ctx.total_updates ?? 0,
+        isEmpty: bool(dto.payload, "is_empty"),
+      };
+      const prev = stores.sermon.current?.data;
+      stores.sermon.set({
+        current: entry,
+        changes: prev?.changes ?? [],
+        metrics: prev?.metrics ?? null,
+      });
+      devLog.bridge(
+        `SermonContextUpdated → book=${entry.currentBook ?? "—"} ` +
+        `chapter=${entry.currentChapter ?? "—"} theme="${entry.probableTheme ?? "—"}" ` +
+        `entities=${entry.entities.length} confidence=${entry.confidence.toFixed(2)}`,
+      );
+      break;
+    }
+
+    case "SermonBookChanged": {
+      const prev = stores.sermon.current?.data;
+      const change: SermonChangeEventLike = {
+        type: "book",
+        previous: str(dto.payload, "previous_book"),
+        next: str(dto.payload, "new_book"),
+        timestamp,
+      };
+      const prevChanges = prev?.changes ?? [];
+      stores.sermon.set({
+        current: prev?.current ?? null,
+        changes: [change, ...prevChanges].slice(0, 30),
+        metrics: prev?.metrics ?? null,
+      });
+      devLog.bridge(
+        `SermonBookChanged → "${change.previous}" → "${change.next}"`,
+      );
+      break;
+    }
+
+    case "SermonChapterChanged": {
+      const prev = stores.sermon.current?.data;
+      const change: SermonChangeEventLike = {
+        type: "chapter",
+        previous: String(num(dto.payload, "previous_chapter")),
+        next: String(num(dto.payload, "new_chapter")),
+        timestamp,
+      };
+      const prevChanges = prev?.changes ?? [];
+      stores.sermon.set({
+        current: prev?.current ?? null,
+        changes: [change, ...prevChanges].slice(0, 30),
+        metrics: prev?.metrics ?? null,
+      });
+      devLog.bridge(
+        `SermonChapterChanged → ${change.previous} → ${change.next}`,
+      );
+      break;
+    }
+
+    case "SermonTopicChanged": {
+      const prev = stores.sermon.current?.data;
+      const change: SermonChangeEventLike = {
+        type: "topic",
+        previous: str(dto.payload, "previous_theme"),
+        next: str(dto.payload, "new_theme"),
+        timestamp,
+      };
+      const prevChanges = prev?.changes ?? [];
+      stores.sermon.set({
+        current: prev?.current ?? null,
+        changes: [change, ...prevChanges].slice(0, 30),
+        metrics: prev?.metrics ?? null,
+      });
+      devLog.bridge(
+        `SermonTopicChanged → "${change.previous}" → "${change.next}"`,
+      );
+      break;
+    }
+
+    default:
+      break;
   }
 }

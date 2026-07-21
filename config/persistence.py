@@ -109,9 +109,19 @@ ALLOWED_TOP_KEYS = frozenset({
 # Espelham a validação de config/loader.py para impedir que valores
 # inválidos sejam persistidos em config.overrides.json e quebrem o
 # restart do backend.
-VALID_STT_BACKENDS = frozenset({"faster-whisper"})
-VALID_STT_DEVICES = frozenset({"cpu", "cuda", "auto"})
-VALID_STT_COMPUTE_TYPES = frozenset({"int8", "int8_float16", "float16", "float32"})
+# Sprint 19.1 — estendido para suportar GPU AMD via DirectML e ROCm.
+VALID_STT_BACKENDS = frozenset({
+    "faster-whisper",  # legacy
+    "auto",            # Sprint 19.1: seleção automática
+    "cuda",
+    "directml",
+    "rocm",
+    "cpu",
+})
+VALID_STT_DEVICES = frozenset({"cpu", "cuda", "auto", "directml", "rocm"})
+VALID_STT_COMPUTE_TYPES = frozenset({
+    "int8", "int8_float16", "float16", "float32", "auto",
+})
 VALID_STT_LANGUAGES = frozenset({"pt", "en", "es", "auto"})
 VALID_AUDIO_CHUNK_MS = frozenset({10, 20, 30})
 

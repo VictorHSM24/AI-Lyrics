@@ -1,0 +1,33 @@
+{
+  "model": "small",
+  "language": "pt",
+  "iterations": 3,
+  "audio_duration_s": 10.0,
+  "audio_source": "synthetic",
+  "timestamp": 1784593213.5863721,
+  "directml": {
+    "label": "directml-onnx",
+    "model": "small",
+    "compute_type": "float32",
+    "device": "directml",
+    "load_ms": 13357.763400003023,
+    "first_inference_ms": 18046.134799995343,
+    "text_first": "O someday дер автомоб автомобenlag t attracting prev something something something somethingWhoaWhoaWhoaWhoaWhoa producer señ señ señ señ señ señ señ señ�WhoaWhoa Beverly�WhoaWhoaWhoa largciliationWhoa KRЗЫЗЫЗЫ cause señ señ señ señ Voorוה señ señ señ 소� crease señbits señ señ señ señ señ señ señ señ señ señ señ señ 1933 señWhoa cause 야 pandemic kitty surpass 1933 dominating señ señ señ señ señ RN señ señ señ zombie señ Поэтому señ señ señ señ señ errand señ señ señ señ señ señ señ señ sano circuits señ restrict señ SUPER señ� señ! señ señ thôi Standards collapsed업��만 punt видел restedalez señ señ señ señ prosecitating vìeddar Pandemieaina buckle DHocol señ señ receivers señ señ señ señ JUD señ señ señ � señ señcommerce señ ignorance señеф señ Поэтому señriet señcipl señ señ señ señ señ señ señ señ señ señ señcall señ señ señ señ señéner señ'] señ señ señ señ señ señ señ!!! verder!!! señ! señ señ!! señ señ señ señ señ señ señ señ señ señ señ señ hypertension señ señ señ uniformly señ señ uniformly señ señ uniformly señ señ señ señ señ! señ señ!herher!!!!!erer! independ!ererer!er,er scrambledererer matcher!!erererer!!er!!ld!erererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererererer",
+    "iterations": 3,
+    "times_ms": [
+      17856.73439999664,
+      53401.68730000005,
+      35443.22919999831
+    ],
+    "mean_ms": 35567.216966665,
+    "p95_ms": 51605.841489999875,
+    "rtf": 3.5567216966665,
+    "ram_before_mb": 40.9140625,
+    "ram_after_load_mb": 966.6171875,
+    "ram_final_mb": 1524.62890625,
+    "ram_max_mb": 1730.6640625,
+    "ram_delta_mb": 1483.71484375,
+    "text_sample": "O,&&&&&&&&&!eleriést Kok Kok Kok Kok quietly encoding&OC dane&&&&& salir Be& propor Geoff realistically Be BrunoBre&ЗЫ Be&&&&&&&&& surpass Be&&&&&&&&&&&&&&& get O&&&&&&&&&&nic d&&& ivory'' Dod&ISS Be& porter Beוד'' самогоvingóm vintage'' sympathachte'&óm Be&&&&& đang Be&& 하지annonannonannonannonannonannon classics&&&&&&&&er libertékt disappointed liberté Banger特erarda dismissedeterm Kesieso� Sanahoe parade pam nationalism Canon снова NBCseinłum NBC! em ditño всеugiysis всеission& less&C solo broadcasting bleенный hosp impose��씨 commA Fat historicallyใavilion理 webpage& spoons&ції&product& Southwest&& classification&iblings& Pack& Online& nails& 국&CO& Glo& Pack& Online& nails& Pack& phon behavesなる Disease ScoNa потр caves supervisorENTEsighs masa Bism 크�meter Gor bliss loser>< ATP vertically darle outward insanlar outward Bism spokesmeteraisse bliss reap Bib formulation Oreo 커� scorpalez NXT! therapeut& Ramen!!andid!��마� uniformlyandid Jeder regimes앙ELLI chinese comunqueandidandid& Jeder& regimes hypertension uniformlyandid 식으로 Jeder praticamente앙 uniformly referee&!125&&&!&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&",
+    "vram_note": "DirectML não expõe API para VRAM — usar Gerenciador de Tarefas"
+  }
+}

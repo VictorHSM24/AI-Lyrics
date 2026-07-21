@@ -25,7 +25,7 @@ import { devLog } from "@/utils";
 
 // Re-export useServices for components that need to call services directly.
 export { useServices } from "@/contexts/InfraContext";
-import type { Snapshot, TranscriptEntry, ReferenceEntry, VersePresentationEntry } from "@/stores";
+import type { Snapshot, TranscriptEntry, ReferenceEntry, VersePresentationEntry, SemanticInferenceEntry, SemanticResolutionEntry, SermonContextEntry, SermonChangeEvent } from "@/stores";
 import type {
   AudioDeviceDTO,
   AudioLevelsDTO,
@@ -316,6 +316,71 @@ export function useVersePresentation(): UseVersePresentationResult {
   return {
     current: data?.current ?? null,
     entries: data?.entries ?? [],
+    loading: !snap,
+  };
+}
+
+// ============================================================
+// useSemantic (Sprint 20) — camada de compreensão semântica.
+// Mostra inferências do SemanticEngine e resoluções do
+// ReferenceResolver para depuração.
+// ============================================================
+
+export interface UseSemanticResult {
+  currentInference: SemanticInferenceEntry | null;
+  currentResolution: SemanticResolutionEntry | null;
+  inferenceHistory: SemanticInferenceEntry[];
+  resolutionHistory: SemanticResolutionEntry[];
+  loading: boolean;
+}
+
+export function useSemantic(): UseSemanticResult {
+  const stores = useStores();
+  const snap = useStoreSnapshot(stores.semantic);
+  const data = snap?.data;
+  return {
+    currentInference: data?.currentInference ?? null,
+    currentResolution: data?.currentResolution ?? null,
+    inferenceHistory: data?.inferenceHistory ?? [],
+    resolutionHistory: data?.resolutionHistory ?? [],
+    loading: !snap,
+  };
+}
+
+// ============================================================
+// useSermon (Sprint 21) — memória contínua da pregação.
+// Mostra o SermonContext vivo (livro, capítulo, tema, entidades,
+// referências recentes) e eventos de mudança.
+// ============================================================
+
+export interface UseSermonResult {
+  current: SermonContextEntry | null;
+  changes: SermonChangeEvent[];
+  metrics: {
+    totalUpdates: number;
+    updatesPerMinute: number;
+    bookChanges: number;
+    chapterChanges: number;
+    topicChanges: number;
+    entityExpirations: number;
+    topicExpirations: number;
+    referenceExpirations: number;
+    uptimeSeconds: number;
+    contextAgeSeconds: number;
+    sermonDurationSeconds: number;
+    confidence: number;
+  } | null;
+  loading: boolean;
+}
+
+export function useSermon(): UseSermonResult {
+  const stores = useStores();
+  const snap = useStoreSnapshot(stores.sermon);
+  const data = snap?.data;
+  return {
+    current: data?.current ?? null,
+    changes: data?.changes ?? [],
+    metrics: data?.metrics ?? null,
     loading: !snap,
   };
 }

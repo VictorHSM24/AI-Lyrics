@@ -178,6 +178,78 @@ def _run_semantic_health_check(
     )
 
 
+def _run_semantic_warmup(provider: Any) -> None:
+    """Sprint 21.3 — Etapa 8: aquece o modelo LLM na VRAM/memória.
+
+    Faz uma inferência simples para garantir que o modelo esteja carregado
+    antes da primeira inferência real. Sem warmup, a primeira chamada do
+    SemanticEngine pode demorar ~15s (cold start) e falhar com timeout.
+
+    Evidência Sprint 21.2/21.3:
+      - Sem warmup: primeira inferência demora ~15s (cold start).
+      - Com warmup: inferências subsequentes demoram ~4s (estável).
+
+    Restrições respeitadas:
+      - Não altera timeout.
+      - Não altera prompt do LocalLLMProvider.
+      - Não altera modelo.
+      - Apenas garante que o modelo esteja carregado antes da 1ª chamada real.
+
+    Falhas no warmup são silenciosas — não impedem o AI Lyrics de iniciar.
+    """
+    import json
+    import time
+    import urllib.request
+
+    logger.info(
+        "Sprint 21.3: warming up LLM model '%s' (endpoint=%s)...",
+        provider.model_name, provider.backend.endpoint,
+    )
+
+    backend = provider.backend
+    # Payload mínimo para aquecer o modelo (think: false, poucos tokens).
+    payload = {
+        "model": provider.model_name,
+        "messages": [{"role": "user", "content": "OK"}],
+        "stream": False,
+        "think": False,
+        "options": {"temperature": 0.1, "num_predict": 5},
+    }
+    # Adaptar payload para OpenAIBackend (formato diferente).
+    if backend.name == "openai":
+        payload = {
+            "model": provider.model_name,
+            "messages": [{"role": "user", "content": "OK"}],
+            "stream": False,
+            "temperature": 0.1,
+            "max_tokens": 5,
+        }
+
+    t0 = time.monotonic()
+    try:
+        body = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            backend.endpoint,
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            resp.read()
+        elapsed = time.monotonic() - t0
+        logger.info(
+            "Sprint 21.3: LLM warmup OK — model loaded in %.2fs.",
+            elapsed,
+        )
+    except Exception as e:
+        elapsed = time.monotonic() - t0
+        logger.warning(
+            "Sprint 21.3: LLM warmup failed after %.2fs: %s — "
+            "SemanticEngine will retry on demand.",
+            elapsed, e,
+        )
+
+
 class _SkipComponent(Exception):
     """Sinaliza que um componente deve ser pulado (AI_LYRICS_TEST_MODE)."""
 
@@ -617,16 +689,48 @@ def create_composition_root() -> CompositionRoot:
             from pipeline.events import SemanticProviderUnavailable
 
             # 1. Construir provider conforme config.
-            if semantic_config.provider == "ollama":
+            # Sprint 21.3 — usa Factory para criar o backend correto.
+            # provider=ollama → OllamaBackend (endpoint nativo /api/chat)
+            # provider=openai/lmstudio/vllm → OpenAIBackend (/v1/chat/completions)
+            # Sprint 21.3.1 — import direto do submódulo responsável.
+            # normalize_base_url_for_backend não faz parte da API pública do
+            # pacote semantic (não é exportada pelo __init__.py). Importar
+            # diretamente de semantic.backend_factory torna a dependência
+            # explícita e preserva a API pública do pacote inalterada.
+            from semantic.backend_factory import (
+                BACKEND_ALIASES,
+                create_backend,
+                normalize_base_url_for_backend,
+            )
+
+            provider_name = semantic_config.provider
+            canonical = BACKEND_ALIASES.get(provider_name.lower(), provider_name.lower())
+
+            if canonical == "stub" or provider_name == "stub":
+                semantic_provider = StubProvider()
+                logger.info(
+                    "Sprint 21.3: SemanticEngine using StubProvider (test mode)."
+                )
+            elif canonical == "ollama":
                 oc = semantic_config.ollama
                 if not oc.enabled:
                     logger.warning(
-                        "Sprint 21.1: semantic.ollama.enabled=false — "
+                        "Sprint 21.3: semantic.ollama.enabled=false — "
                         "falling back to StubProvider."
                     )
                     semantic_provider = StubProvider()
                 else:
+                    # Sprint 21.3 — criar backend via Factory.
+                    # OllamaBackend usa endpoint nativo /api/chat (sem /v1).
+                    base_url_native = normalize_base_url_for_backend("ollama", oc.base_url)
+                    backend = create_backend(
+                        provider="ollama",
+                        base_url=base_url_native,
+                        model=oc.model,
+                        api_key=oc.api_key,
+                    )
                     semantic_provider = LocalLLMProvider(
+                        backend=backend,
                         base_url=oc.base_url,
                         model=oc.model,
                         temperature=oc.temperature,
@@ -637,22 +741,52 @@ def create_composition_root() -> CompositionRoot:
                         disable_thinking=oc.disable_thinking,
                     )
                     logger.info(
-                        "Sprint 21.1: SemanticEngine using LocalLLMProvider "
-                        "(model=%s, base_url=%s, disable_thinking=%s, "
+                        "Sprint 21.3: SemanticEngine using LocalLLMProvider+OllamaBackend "
+                        "(model=%s, base_url=%s, endpoint=%s, disable_thinking=%s, "
                         "supports_thinking=%s).",
-                        oc.model, oc.base_url, oc.disable_thinking,
+                        oc.model, base_url_native, backend.endpoint,
+                        oc.disable_thinking,
                         semantic_provider._supports_thinking,
                     )
-            elif semantic_config.provider == "stub":
-                semantic_provider = StubProvider()
-                logger.info(
-                    "Sprint 21.1: SemanticEngine using StubProvider (test mode)."
-                )
+            elif canonical == "openai":
+                # OpenAI-compatible (OpenAI, LM Studio, vLLM, llama.cpp).
+                oc = semantic_config.ollama
+                if not oc.enabled:
+                    logger.warning(
+                        "Sprint 21.3: semantic.ollama.enabled=false — "
+                        "falling back to StubProvider."
+                    )
+                    semantic_provider = StubProvider()
+                else:
+                    base_url_v1 = normalize_base_url_for_backend("openai", oc.base_url)
+                    backend = create_backend(
+                        provider="openai",
+                        base_url=base_url_v1,
+                        model=oc.model,
+                        api_key=oc.api_key,
+                    )
+                    semantic_provider = LocalLLMProvider(
+                        backend=backend,
+                        base_url=oc.base_url,
+                        model=oc.model,
+                        temperature=oc.temperature,
+                        max_tokens=oc.max_tokens,
+                        request_timeout_s=oc.timeout_seconds,
+                        api_key=oc.api_key,
+                        top_p=oc.top_p,
+                        disable_thinking=oc.disable_thinking,
+                    )
+                    logger.info(
+                        "Sprint 21.3: SemanticEngine using LocalLLMProvider+OpenAIBackend "
+                        "(model=%s, base_url=%s, endpoint=%s, disable_thinking=%s).",
+                        oc.model, base_url_v1, backend.endpoint,
+                        oc.disable_thinking,
+                    )
             else:
                 logger.warning(
-                    "Sprint 21.1: unknown semantic.provider=%r — "
+                    "Sprint 21.3: unknown semantic.provider=%r — "
                     "falling back to StubProvider.",
-                    semantic_config.provider,
+                    provider_name,
                 )
                 semantic_provider = StubProvider()
 
@@ -664,6 +798,10 @@ def create_composition_root() -> CompositionRoot:
                     provider=semantic_provider,
                     session_id=session.session_id,
                 )
+                # Sprint 21.3 — Etapa 8: warmup do modelo para evitar cold
+                # start na primeira inferência real.
+                if semantic_provider.is_available():
+                    _run_semantic_warmup(semantic_provider)
 
             # 3. SermonMemoryEngine (Sprint 21) — deve iniciar antes do
             #    SemanticEngine para que o ContextEngine possa consumir
@@ -695,11 +833,20 @@ def create_composition_root() -> CompositionRoot:
                 debounce_ms=semantic_config.debounce_ms,
                 timeout_ms=semantic_config.timeout_ms,
                 enabled=True,
+                # Sprint 21.5 — Streaming Intelligence.
+                min_growth_chars=semantic_config.min_growth_chars,
+                min_append_words=semantic_config.min_append_words,
+                min_interval_ms=semantic_config.min_interval_ms,
             )
             semantic_engine.start()
             logger.info(
-                "Sprint 20: SemanticEngine started (provider=%s, debounce=%dms).",
+                "Sprint 21.5: SemanticEngine started "
+                "(provider=%s, debounce=%dms, min_growth=%d chars, "
+                "min_append=%d words, min_interval=%dms).",
                 semantic_provider.name, semantic_config.debounce_ms,
+                semantic_config.min_growth_chars,
+                semantic_config.min_append_words,
+                semantic_config.min_interval_ms,
             )
 
             # 7. ReferenceResolver — valida candidatos via Searcher e

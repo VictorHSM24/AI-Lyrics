@@ -356,6 +356,93 @@ class _MockHTTPBackend:
         })
 
 
+class _MockLLMBackend:
+    """Mock de LLMBackend (Sprint 21.3) que adapta _MockHTTPBackend.
+
+    Implementa a interface LLMBackend para que os testes existentes
+    possam mockar o backend injetado no LocalLLMProvider.
+    """
+
+    def __init__(self, http_mock: _MockHTTPBackend) -> None:
+        self._http = http_mock
+        # Expor _capability_cache para compatibilidade com OpenAIBackend.
+        from semantic.capability_cache import CapabilityCache
+        self._capability_cache = CapabilityCache()
+
+    @property
+    def name(self) -> str:
+        return "mock-openai"
+
+    @property
+    def endpoint(self) -> str:
+        return "http://mock/chat/completions"
+
+    def is_available(self) -> bool:
+        return True
+
+    def check_model_available(self) -> bool:
+        return True
+
+    def supports_think_parameter(self) -> bool:
+        # Como OpenAIBackend — detecta por tentativa.
+        from semantic.capability_cache import CapabilityState
+        return self._capability_cache.get_state("think") == CapabilityState.SUPPORTED
+
+    def build_payload(self, request) -> dict:
+        # Formato OpenAI.
+        payload = {
+            "model": request.model,
+            "messages": [
+                {"role": "system", "content": request.system_prompt},
+                {"role": "user", "content": request.user_prompt},
+            ],
+            "temperature": request.temperature,
+            "top_p": request.top_p,
+            "max_tokens": request.max_tokens,
+            "stream": False,
+        }
+        if request.disable_thinking and self.supports_think_parameter():
+            payload["think"] = False
+        return payload
+
+    def send_request(self, payload: dict, timeout_s: float):
+        # Delegar para o mock HTTP (que levanta SemanticError ou retorna raw).
+        from semantic.llm_backend import BackendResponse
+        try:
+            raw = self._http.post(payload, timeout_s)
+        except Exception:
+            raise
+        response = self.parse_response(raw)
+        response.http_status = 200
+        response.raw_response = raw
+        response.used_think_parameter = payload.get("think") is False
+        return response
+
+    def parse_response(self, raw: str):
+        from semantic.llm_backend import BackendResponse
+        response = BackendResponse()
+        try:
+            data = json.loads(raw)
+            choice = data.get("choices", [{}])[0]
+            msg = choice.get("message", {})
+            response.content = msg.get("content", "") or ""
+            response.thinking = msg.get("reasoning", "") or msg.get("thinking", "") or ""
+            response.finish_reason = choice.get("finish_reason", "") or ""
+            usage = data.get("usage", {})
+            response.prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
+            response.completion_tokens = int(usage.get("completion_tokens", 0) or 0)
+        except Exception as e:
+            response.error = f"mock parse error: {e}"
+        return response
+
+
+def _make_provider_with_mock(http_mock: _MockHTTPBackend, **kwargs) -> "LocalLLMProvider":
+    """Cria um LocalLLMProvider com backend mock (Sprint 21.3)."""
+    backend = _MockLLMBackend(http_mock)
+    kwargs.setdefault("disable_thinking", True)
+    return LocalLLMProvider(backend=backend, **kwargs)
+
+
 class TestLocalLLMProviderCapabilityDetection:
     """Testes de capability detection no LocalLLMProvider."""
 
@@ -365,11 +452,10 @@ class TestLocalLLMProviderCapabilityDetection:
         backend = _MockHTTPBackend(responses=[
             json.dumps({"choices": [{"message": {"content": '{"intent":"none","candidates":[]}'}}]}),
         ])
-        provider = LocalLLMProvider(
+        provider = _make_provider_with_mock(
+            backend,
             model="qwen3:8b", disable_thinking=True, max_retries=0,
         )
-        # Substituir _http_post pelo mock.
-        provider._http_post = lambda payload, timeout_s: backend.post(payload, timeout_s)
 
         # Antes da primeira chamada: UNKNOWN.
         assert provider._capability_cache.get_state("think") == CapabilityState.UNKNOWN
@@ -397,10 +483,10 @@ class TestLocalLLMProviderCapabilityDetection:
                 json.dumps({"choices": [{"message": {"content": '{"intent":"none","candidates":[]}'}}]}),
             ],
         )
-        provider = LocalLLMProvider(
+        provider = _make_provider_with_mock(
+            backend,
             model="qwen3:8b", disable_thinking=True, max_retries=2,
         )
-        provider._http_post = lambda payload, timeout_s: backend.post(payload, timeout_s)
 
         # Primeira inferência — deve detectar UNSUPPORTED e refazer.
         result = provider.infer(_make_context())
@@ -421,10 +507,10 @@ class TestLocalLLMProviderCapabilityDetection:
             json.dumps({"choices": [{"message": {"content": '{"intent":"none","candidates":[]}'}}]}),
             json.dumps({"choices": [{"message": {"content": '{"intent":"none","candidates":[]}'}}]}),
         ])
-        provider = LocalLLMProvider(
+        provider = _make_provider_with_mock(
+            backend,
             model="qwen3:8b", disable_thinking=True, max_retries=0,
         )
-        provider._http_post = lambda payload, timeout_s: backend.post(payload, timeout_s)
 
         # Primeira chamada — detecta SUPPORTED.
         provider.infer(_make_context())
@@ -448,10 +534,10 @@ class TestLocalLLMProviderCapabilityDetection:
             json.dumps({"choices": [{"message": {"content": '{"intent":"none","candidates":[]}'}}]}),
         ])
         # Nome de modelo totalmente customizado — não está em nenhuma lista.
-        provider = LocalLLMProvider(
+        provider = _make_provider_with_mock(
+            backend,
             model="my-custom-model-v2", disable_thinking=True, max_retries=0,
         )
-        provider._http_post = lambda payload, timeout_s: backend.post(payload, timeout_s)
 
         # Antes: UNKNOWN (não assume False por nome).
         assert provider._capability_cache.get_state("think") == CapabilityState.UNKNOWN
@@ -487,10 +573,10 @@ class TestLocalLLMProviderRecovery:
         backend = _MockHTTPBackend(responses=[
             json.dumps({"choices": [{"message": {"content": content_with_thinking}}]}),
         ])
-        provider = LocalLLMProvider(
+        provider = _make_provider_with_mock(
+            backend,
             model="qwen3:8b", disable_thinking=True, max_retries=0,
         )
-        provider._http_post = lambda payload, timeout_s: backend.post(payload, timeout_s)
 
         result = provider.infer(_make_context())
         # JSON recuperado — intent deve ser show_reference.
@@ -517,10 +603,10 @@ class TestLocalLLMProviderRecovery:
             # Segunda tentativa — resposta limpa.
             json.dumps({"choices": [{"message": {"content": '{"intent":"none","candidates":[]}'}}]}),
         ])
-        provider = LocalLLMProvider(
+        provider = _make_provider_with_mock(
+            backend,
             model="qwen3:8b", disable_thinking=True, max_retries=2,
         )
-        provider._http_post = lambda payload, timeout_s: backend.post(payload, timeout_s)
 
         result = provider.infer(_make_context())
         # Após retry, resposta limpa — intent none.
@@ -539,10 +625,10 @@ class TestLocalLLMProviderRecovery:
             json.dumps({"choices": [{"message": {"content": content_with_thinking}}]}),
             json.dumps({"choices": [{"message": {"content": content_with_thinking}}]}),
         ])
-        provider = LocalLLMProvider(
+        provider = _make_provider_with_mock(
+            backend,
             model="qwen3:8b", disable_thinking=True, max_retries=2,
         )
-        provider._http_post = lambda payload, timeout_s: backend.post(payload, timeout_s)
 
         result = provider.infer(_make_context())
         assert result.intent == "none"
@@ -552,10 +638,10 @@ class TestLocalLLMProviderRecovery:
         backend = _MockHTTPBackend(responses=[
             json.dumps({"choices": [{"message": {"content": '{"intent":"none","candidates":[]}'}}]}),
         ])
-        provider = LocalLLMProvider(
+        provider = _make_provider_with_mock(
+            backend,
             model="qwen3:8b", disable_thinking=True, max_retries=0,
         )
-        provider._http_post = lambda payload, timeout_s: backend.post(payload, timeout_s)
 
         provider.infer(_make_context())
         m = provider.metrics()
@@ -597,10 +683,10 @@ class TestLocalLLMProviderMetrics:
             json.dumps({"choices": [{"message": {"content": '{"intent":"none","candidates":[]}'}}]}),
             json.dumps({"choices": [{"message": {"content": '{"intent":"none","candidates":[]}'}}]}),
         ])
-        provider = LocalLLMProvider(
+        provider = _make_provider_with_mock(
+            backend,
             model="qwen3:8b", disable_thinking=True, max_retries=0,
         )
-        provider._http_post = lambda payload, timeout_s: backend.post(payload, timeout_s)
 
         provider.infer(_make_context())
         provider.infer(_make_context())

@@ -69,6 +69,7 @@ from integracao_holyrics.exceptions import (
 from busca.exceptions import SearchError
 from pipeline.bus import PipelineEventBus
 from pipeline.events import (
+    ReferenceAntecipada,
     ReferenceDetected,
     VersePresentationFailed,
     VersePresented,
@@ -141,6 +142,25 @@ class VersePresentationService:
         self._total_detected = 0
         self._total_presented = 0
         self._total_failed = 0
+        # Sprint 21.4 — Streaming First.
+        # Métricas de antecipação.
+        self._total_anticipations = 0
+        self._total_confirmations = 0
+        self._total_corrections = 0
+
+        # Sprint 21.4 — Streaming First.
+        # Track de antecipações pendentes por correlation_id, para dedup
+        # com ReferenceDetected posterior. Cada entrada guarda o
+        # (book_id, chapter, verse) da referência antecipada que já foi
+        # apresentada no Holyrics. Quando o ReferenceDetected chegar:
+        #   - se match: apenas confirmar (não reapresentar)
+        #   - se não match: corrigir (apresentar a nova)
+        # Lock para thread-safety (ReferenceAntecipada vem da thread do
+        # StreamingSTT; ReferenceDetected pode vir da thread do
+        # SpeechWorker ou da thread do IncrementalParser).
+        import threading
+        self._anticipation_lock = threading.Lock()
+        self._pending_anticipations: dict[str, tuple[int, int, int]] = {}
 
         logger.info(
             "VersePresentationService initialized: version=%s quick=%s",
@@ -153,13 +173,18 @@ class VersePresentationService:
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        """Inscreve no EventBus para receber ReferenceDetected."""
+        """Inscreve no EventBus para receber ReferenceDetected e ReferenceAntecipada."""
         if self._subscribed:
             return
         self._bus.subscribe(ReferenceDetected, self._on_reference_detected)
+        # Sprint 21.4 — Streaming First.
+        # Assinar ReferenceAntecipada para apresentação antecipada durante
+        # a fala, antes do silêncio fechar o segmento.
+        self._bus.subscribe(ReferenceAntecipada, self._on_reference_anticipada)
         self._subscribed = True
         logger.info(
-            "VersePresentationService started — subscribed to ReferenceDetected."
+            "VersePresentationService started — subscribed to "
+            "ReferenceDetected and ReferenceAntecipada."
         )
 
     def stop(self) -> None:
@@ -167,6 +192,10 @@ class VersePresentationService:
         if not self._subscribed:
             return
         self._bus.unsubscribe(ReferenceDetected, self._on_reference_detected)
+        try:
+            self._bus.unsubscribe(ReferenceAntecipada, self._on_reference_anticipada)
+        except Exception:
+            pass
         self._subscribed = False
         logger.info("VersePresentationService stopped.")
 
@@ -174,8 +203,65 @@ class VersePresentationService:
     # Callback do EventBus — ponto de entrada do fluxo.
     # ------------------------------------------------------------------
 
+    def _on_reference_anticipada(self, event: ReferenceAntecipada) -> None:
+        """Recebe ReferenceAntecipada e apresenta antecipadamente (Sprint 21.4).
+
+        Diferente de ReferenceDetected (definitivo), este evento é produzido
+        DURANTE a fala e dispara a apresentação antecipada no Holyrics. A
+        referência pode ser confirmada ou corrigida por um ReferenceDetected
+        posterior (mesma correlation_id).
+
+        Fluxo:
+          1. Resolver versículo no Searcher (igual ao fluxo definitivo).
+          2. Apresentar no Holyrics (show_verse).
+          3. Registrar antecipação pendente para dedup com ReferenceDetected.
+
+        Nota: ReferenceAntecipada tem os mesmos campos usados por
+        _resolve_verse e _present_verse (.book, .chapter, .verse_start,
+        .normalized_text, .meta, .correlation_id), então reusamos os
+        métodos existentes via duck-typing.
+        """
+        self._total_anticipations += 1
+        t0 = time.monotonic()
+
+        logger.info(
+            "ReferenceAntecipada recebida: %s (confidence=%.2f, completeness=%s, corr=%s)",
+            event.normalized_text, event.confidence, event.completeness,
+            event.correlation_id,
+        )
+
+        # Etapa 1 — Resolver versículo no Searcher.
+        # _resolve_verse usa .book, .chapter, .verse_start, .normalized_text
+        # — todos presentes em ReferenceAntecipada.
+        search_result = self._resolve_verse(event)  # type: ignore[arg-type]
+        if search_result is None:
+            # _resolve_verse já publicou VersePresentationFailed.
+            return
+
+        # Etapa 2 — Apresentar no Holyrics.
+        # _present_verse usa .meta, .correlation_id, .normalized_text
+        # — todos presentes em ReferenceAntecipada.
+        self._present_verse(event, search_result, t0)  # type: ignore[arg-type]
+
+        # Etapa 3 — Registrar antecipação pendente para dedup.
+        with self._anticipation_lock:
+            self._pending_anticipations[event.correlation_id] = (
+                search_result.book_id,
+                search_result.chapter,
+                search_result.verse or 0,
+            )
+
     def _on_reference_detected(self, event: ReferenceDetected) -> None:
         """Recebe ReferenceDetected e orquestra resolução + apresentação.
+
+        Sprint 21.4 — Streaming First:
+        Se houver uma antecipação pendente para a mesma correlation_id:
+          - Se a referência for IGUAL: apenas confirmar (não reapresentar).
+            O versículo já está na tela do Holyrics; publicar VersePresented
+            com holyrics_status="confirmed" para registrar no histórico.
+          - Se a referência for DIFERENTE: corrigir (apresentar a nova).
+            O pregador disse "Salmos 23" (antecipada) e depois "Salmos 23:4"
+            (definitiva) — apresentar a definitiva.
 
         Este método é síncrono. Erros são capturados e convertidos em
         VersePresentationFailed — nunca propagam para o EventBus.
@@ -183,6 +269,45 @@ class VersePresentationService:
         self._total_detected += 1
         t0 = time.monotonic()
 
+        # Sprint 21.4 — verificar antecipação pendente.
+        pending_record = None
+        with self._anticipation_lock:
+            pending_record = self._pending_anticipations.pop(
+                event.correlation_id, None,
+            )
+
+        if pending_record is not None:
+            # Há antecipação pendente — resolver para comparar.
+            search_result = self._resolve_verse(event)
+            if search_result is None:
+                return
+
+            anticipated_key = pending_record
+            detected_key = (
+                search_result.book_id,
+                search_result.chapter,
+                search_result.verse or 0,
+            )
+
+            if anticipated_key == detected_key:
+                # Mesma referência — apenas confirmar (não reapresentar).
+                self._confirm_anticipation(event, search_result, t0)
+                return
+            else:
+                # Referência diferente — corrigir.
+                logger.info(
+                    "Sprint 21.4: corrigindo antecipação — "
+                    "antecipada=%s vs definitiva=%s (corr=%s)",
+                    anticipated_key, detected_key, event.correlation_id,
+                )
+                self._total_corrections += 1
+                # Continuar com o fluxo normal para apresentar a nova.
+                self._publish_resolving(event)
+                self._publish_resolved(event, search_result)
+                self._present_verse(event, search_result, t0)
+                return
+
+        # Fluxo normal (sem antecipação prévia).
         # Etapa 1 — Publicar VerseResolving.
         self._publish_resolving(event)
 
@@ -197,6 +322,60 @@ class VersePresentationService:
 
         # Etapa 4 — Apresentar no Holyrics.
         self._present_verse(event, search_result, t0)
+
+    def _confirm_anticipation(
+        self,
+        event: ReferenceDetected,
+        search_result: Any,
+        t0: float,
+    ) -> None:
+        """Confirma uma antecipação sem reapresentar no Holyrics (Sprint 21.4).
+
+        Conforme decisão do usuário: quando o ReferenceDetected tem a MESMA
+        referência da antecipada, apenas confirmar — não chamar
+        HolyricsClient.show_verse() novamente (evita piscar a tela).
+        Publica VersePresented com holyrics_status="confirmed" para
+        registrar no histórico do frontend.
+        """
+        self._total_confirmations += 1
+        total_latency_ms = int((time.monotonic() - t0) * 1000)
+
+        logger.info(
+            "Sprint 21.4: confirmando antecipação — %s (corr=%s, total=%dms, "
+            "sem reapresentar no Holyrics)",
+            search_result.reference, event.correlation_id, total_latency_ms,
+        )
+
+        # Publicar VerseResolved (registra que a referência foi resolvida).
+        self._publish_resolved(event, search_result)
+
+        # Publicar VersePresented com status="confirmed" — sem chamar
+        # Holyrics. O versículo já está na tela da antecipação.
+        meta = EventMetadata.for_next(
+            previous=event.meta,
+            origin="VersePresentationService",
+        )
+        presented = VersePresented(
+            meta=meta,
+            book=search_result.book,
+            book_id=search_result.book_id,
+            chapter=search_result.chapter,
+            verse=search_result.verse,
+            version=self._version,
+            reference=search_result.reference,
+            quick_presentation=self._quick,
+            holyrics_status="confirmed",
+            holyrics_latency_ms=0,
+            total_latency_ms=total_latency_ms,
+        )
+        self._bus.publish(presented)
+        self._total_presented += 1
+        logger.info(
+            "VersePresented (confirmed): %s (total=%dms, correlation=%s)",
+            search_result.reference,
+            total_latency_ms,
+            event.correlation_id,
+        )
 
     # ------------------------------------------------------------------
     # Etapa 2 — Searcher

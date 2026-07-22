@@ -1,0 +1,442 @@
+[
+  {
+    "query": "João 3:16 (explícita)",
+    "expected": "João 3:16",
+    "system_prompt": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referên... [TRUNCATED]",
+    "user_prompt": "Texto atual: João 3:16\n\nResponda apenas com JSON:",
+    "payload_sent": {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referência bíblica (mesmo sem citar livro/capítulo/versículo explicitamente).\n\nExemplos:\n- \"o texto onde Jesus conversa com Nicodemos\" → João 3\n- \"o versículo que fala para guardar o coração\" → Provérbios 4:23\n- \"a passagem do bom pastor\" → João 10\n- \"como vimos anteriormente\" → depende do contexto (usar last_book/last_chapter se disponível)\n\nREGRAS OBRIGATÓRIAS:\n1. Responda APENAS com JSON válido. Nenhum texto adicional. Nenhuma explicação fora do JSON.\n2. Use nomes canônicos dos livros em português (\"João\", \"Provérbios\", \"1 Coríntios\", \"Salmos\").\n3. Se não for uma referência bíblica, retorne {\"intent\": \"none\", \"candidates\": []}.\n4. Liste candidatos em ordem de confiança (maior primeiro).\n5. confidence deve ser um número entre 0.0 e 1.0.\n6. reason deve ser curto (máx 80 caracteres).\n7. Se o texto citar livro/capítulo/versículo explicitamente (ex: \"João 3:16\"), ainda assim retorne o candidato — o sistema determinístico também tentará.\n\nSchema JSON obrigatório:\n{\n  \"intent\": \"show_reference\" | \"none\",\n  \"candidates\": [\n    {\n      \"book\": \"nome do livro\",\n      \"chapter\": número,\n      \"verse\": número (0 se capítulo inteiro),\n      \"confidence\": número 0.0-1.0,\n      \"reason\": \"justificativa curta\"\n    }\n  ]\n}\n\nNUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>."
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: João 3:16\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    },
+    "think_in_payload": true,
+    "http_status": 0,
+    "http_error": "HTTP timeout after 5.0s (Ollama /api/chat)",
+    "http_response_raw": "",
+    "http_time_ms": 7042.227199999616,
+    "raw_content": "",
+    "sanitized_content": "",
+    "had_thinking": false,
+    "thinking_patterns": [],
+    "json_extracted": false,
+    "json_parse_error": "",
+    "json_data": {},
+    "final_intent": "none",
+    "final_candidates": [],
+    "final_inference_ms": 21143,
+    "success": false,
+    "failure_category": "timeout",
+    "failure_detail": "HTTP timeout: HTTP timeout after 5.0s (Ollama /api/chat)"
+  },
+  {
+    "query": "Porque Deus amou o mundo",
+    "expected": "João 3:16",
+    "system_prompt": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referên... [TRUNCATED]",
+    "user_prompt": "Texto atual: Porque Deus amou o mundo de tal maneira.\n\nResponda apenas com JSON:",
+    "payload_sent": {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referência bíblica (mesmo sem citar livro/capítulo/versículo explicitamente).\n\nExemplos:\n- \"o texto onde Jesus conversa com Nicodemos\" → João 3\n- \"o versículo que fala para guardar o coração\" → Provérbios 4:23\n- \"a passagem do bom pastor\" → João 10\n- \"como vimos anteriormente\" → depende do contexto (usar last_book/last_chapter se disponível)\n\nREGRAS OBRIGATÓRIAS:\n1. Responda APENAS com JSON válido. Nenhum texto adicional. Nenhuma explicação fora do JSON.\n2. Use nomes canônicos dos livros em português (\"João\", \"Provérbios\", \"1 Coríntios\", \"Salmos\").\n3. Se não for uma referência bíblica, retorne {\"intent\": \"none\", \"candidates\": []}.\n4. Liste candidatos em ordem de confiança (maior primeiro).\n5. confidence deve ser um número entre 0.0 e 1.0.\n6. reason deve ser curto (máx 80 caracteres).\n7. Se o texto citar livro/capítulo/versículo explicitamente (ex: \"João 3:16\"), ainda assim retorne o candidato — o sistema determinístico também tentará.\n\nSchema JSON obrigatório:\n{\n  \"intent\": \"show_reference\" | \"none\",\n  \"candidates\": [\n    {\n      \"book\": \"nome do livro\",\n      \"chapter\": número,\n      \"verse\": número (0 se capítulo inteiro),\n      \"confidence\": número 0.0-1.0,\n      \"reason\": \"justificativa curta\"\n    }\n  ]\n}\n\nNUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>."
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: Porque Deus amou o mundo de tal maneira.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    },
+    "think_in_payload": true,
+    "http_status": 0,
+    "http_error": "HTTP timeout after 5.0s (Ollama /api/chat)",
+    "http_response_raw": "",
+    "http_time_ms": 7064.99569999869,
+    "raw_content": "",
+    "sanitized_content": "",
+    "had_thinking": false,
+    "thinking_patterns": [],
+    "json_extracted": false,
+    "json_parse_error": "",
+    "json_data": {},
+    "final_intent": "none",
+    "final_candidates": [],
+    "final_inference_ms": 21164,
+    "success": false,
+    "failure_category": "timeout",
+    "failure_detail": "HTTP timeout: HTTP timeout after 5.0s (Ollama /api/chat)"
+  },
+  {
+    "query": "Tudo posso naquele que me fortalece",
+    "expected": "Filipenses 4:13",
+    "system_prompt": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referên... [TRUNCATED]",
+    "user_prompt": "Texto atual: Tudo posso naquele que me fortalece.\n\nResponda apenas com JSON:",
+    "payload_sent": {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referência bíblica (mesmo sem citar livro/capítulo/versículo explicitamente).\n\nExemplos:\n- \"o texto onde Jesus conversa com Nicodemos\" → João 3\n- \"o versículo que fala para guardar o coração\" → Provérbios 4:23\n- \"a passagem do bom pastor\" → João 10\n- \"como vimos anteriormente\" → depende do contexto (usar last_book/last_chapter se disponível)\n\nREGRAS OBRIGATÓRIAS:\n1. Responda APENAS com JSON válido. Nenhum texto adicional. Nenhuma explicação fora do JSON.\n2. Use nomes canônicos dos livros em português (\"João\", \"Provérbios\", \"1 Coríntios\", \"Salmos\").\n3. Se não for uma referência bíblica, retorne {\"intent\": \"none\", \"candidates\": []}.\n4. Liste candidatos em ordem de confiança (maior primeiro).\n5. confidence deve ser um número entre 0.0 e 1.0.\n6. reason deve ser curto (máx 80 caracteres).\n7. Se o texto citar livro/capítulo/versículo explicitamente (ex: \"João 3:16\"), ainda assim retorne o candidato — o sistema determinístico também tentará.\n\nSchema JSON obrigatório:\n{\n  \"intent\": \"show_reference\" | \"none\",\n  \"candidates\": [\n    {\n      \"book\": \"nome do livro\",\n      \"chapter\": número,\n      \"verse\": número (0 se capítulo inteiro),\n      \"confidence\": número 0.0-1.0,\n      \"reason\": \"justificativa curta\"\n    }\n  ]\n}\n\nNUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>."
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: Tudo posso naquele que me fortalece.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    },
+    "think_in_payload": true,
+    "http_status": 0,
+    "http_error": "HTTP timeout after 5.0s (Ollama /api/chat)",
+    "http_response_raw": "",
+    "http_time_ms": 7047.759799999767,
+    "raw_content": "",
+    "sanitized_content": "",
+    "had_thinking": false,
+    "thinking_patterns": [],
+    "json_extracted": false,
+    "json_parse_error": "",
+    "json_data": {},
+    "final_intent": "none",
+    "final_candidates": [],
+    "final_inference_ms": 21162,
+    "success": false,
+    "failure_category": "timeout",
+    "failure_detail": "HTTP timeout: HTTP timeout after 5.0s (Ollama /api/chat)"
+  },
+  {
+    "query": "O Senhor é o meu pastor",
+    "expected": "Salmos 23",
+    "system_prompt": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referên... [TRUNCATED]",
+    "user_prompt": "Texto atual: O Senhor é o meu pastor.\n\nResponda apenas com JSON:",
+    "payload_sent": {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referência bíblica (mesmo sem citar livro/capítulo/versículo explicitamente).\n\nExemplos:\n- \"o texto onde Jesus conversa com Nicodemos\" → João 3\n- \"o versículo que fala para guardar o coração\" → Provérbios 4:23\n- \"a passagem do bom pastor\" → João 10\n- \"como vimos anteriormente\" → depende do contexto (usar last_book/last_chapter se disponível)\n\nREGRAS OBRIGATÓRIAS:\n1. Responda APENAS com JSON válido. Nenhum texto adicional. Nenhuma explicação fora do JSON.\n2. Use nomes canônicos dos livros em português (\"João\", \"Provérbios\", \"1 Coríntios\", \"Salmos\").\n3. Se não for uma referência bíblica, retorne {\"intent\": \"none\", \"candidates\": []}.\n4. Liste candidatos em ordem de confiança (maior primeiro).\n5. confidence deve ser um número entre 0.0 e 1.0.\n6. reason deve ser curto (máx 80 caracteres).\n7. Se o texto citar livro/capítulo/versículo explicitamente (ex: \"João 3:16\"), ainda assim retorne o candidato — o sistema determinístico também tentará.\n\nSchema JSON obrigatório:\n{\n  \"intent\": \"show_reference\" | \"none\",\n  \"candidates\": [\n    {\n      \"book\": \"nome do livro\",\n      \"chapter\": número,\n      \"verse\": número (0 se capítulo inteiro),\n      \"confidence\": número 0.0-1.0,\n      \"reason\": \"justificativa curta\"\n    }\n  ]\n}\n\nNUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>."
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: O Senhor é o meu pastor.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    },
+    "think_in_payload": true,
+    "http_status": 0,
+    "http_error": "HTTP timeout after 5.0s (Ollama /api/chat)",
+    "http_response_raw": "",
+    "http_time_ms": 7048.664000001736,
+    "raw_content": "",
+    "sanitized_content": "",
+    "had_thinking": false,
+    "thinking_patterns": [],
+    "json_extracted": false,
+    "json_parse_error": "",
+    "json_data": {},
+    "final_intent": "none",
+    "final_candidates": [],
+    "final_inference_ms": 21141,
+    "success": false,
+    "failure_category": "timeout",
+    "failure_detail": "HTTP timeout: HTTP timeout after 5.0s (Ollama /api/chat)"
+  },
+  {
+    "query": "Ainda que eu ande pelo vale",
+    "expected": "Salmos 23:4",
+    "system_prompt": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referên... [TRUNCATED]",
+    "user_prompt": "Texto atual: Ainda que eu ande pelo vale da sombra da morte.\n\nResponda apenas com JSON:",
+    "payload_sent": {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referência bíblica (mesmo sem citar livro/capítulo/versículo explicitamente).\n\nExemplos:\n- \"o texto onde Jesus conversa com Nicodemos\" → João 3\n- \"o versículo que fala para guardar o coração\" → Provérbios 4:23\n- \"a passagem do bom pastor\" → João 10\n- \"como vimos anteriormente\" → depende do contexto (usar last_book/last_chapter se disponível)\n\nREGRAS OBRIGATÓRIAS:\n1. Responda APENAS com JSON válido. Nenhum texto adicional. Nenhuma explicação fora do JSON.\n2. Use nomes canônicos dos livros em português (\"João\", \"Provérbios\", \"1 Coríntios\", \"Salmos\").\n3. Se não for uma referência bíblica, retorne {\"intent\": \"none\", \"candidates\": []}.\n4. Liste candidatos em ordem de confiança (maior primeiro).\n5. confidence deve ser um número entre 0.0 e 1.0.\n6. reason deve ser curto (máx 80 caracteres).\n7. Se o texto citar livro/capítulo/versículo explicitamente (ex: \"João 3:16\"), ainda assim retorne o candidato — o sistema determinístico também tentará.\n\nSchema JSON obrigatório:\n{\n  \"intent\": \"show_reference\" | \"none\",\n  \"candidates\": [\n    {\n      \"book\": \"nome do livro\",\n      \"chapter\": número,\n      \"verse\": número (0 se capítulo inteiro),\n      \"confidence\": número 0.0-1.0,\n      \"reason\": \"justificativa curta\"\n    }\n  ]\n}\n\nNUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>."
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: Ainda que eu ande pelo vale da sombra da morte.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    },
+    "think_in_payload": true,
+    "http_status": 0,
+    "http_error": "HTTP timeout after 5.0s (Ollama /api/chat)",
+    "http_response_raw": "",
+    "http_time_ms": 7013.427499994577,
+    "raw_content": "",
+    "sanitized_content": "",
+    "had_thinking": false,
+    "thinking_patterns": [],
+    "json_extracted": false,
+    "json_parse_error": "",
+    "json_data": {},
+    "final_intent": "none",
+    "final_candidates": [],
+    "final_inference_ms": 21128,
+    "success": false,
+    "failure_category": "timeout",
+    "failure_detail": "HTTP timeout: HTTP timeout after 5.0s (Ollama /api/chat)"
+  },
+  {
+    "query": "No princípio criou Deus",
+    "expected": "Gênesis 1:1",
+    "system_prompt": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referên... [TRUNCATED]",
+    "user_prompt": "Texto atual: No princípio criou Deus.\n\nResponda apenas com JSON:",
+    "payload_sent": {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referência bíblica (mesmo sem citar livro/capítulo/versículo explicitamente).\n\nExemplos:\n- \"o texto onde Jesus conversa com Nicodemos\" → João 3\n- \"o versículo que fala para guardar o coração\" → Provérbios 4:23\n- \"a passagem do bom pastor\" → João 10\n- \"como vimos anteriormente\" → depende do contexto (usar last_book/last_chapter se disponível)\n\nREGRAS OBRIGATÓRIAS:\n1. Responda APENAS com JSON válido. Nenhum texto adicional. Nenhuma explicação fora do JSON.\n2. Use nomes canônicos dos livros em português (\"João\", \"Provérbios\", \"1 Coríntios\", \"Salmos\").\n3. Se não for uma referência bíblica, retorne {\"intent\": \"none\", \"candidates\": []}.\n4. Liste candidatos em ordem de confiança (maior primeiro).\n5. confidence deve ser um número entre 0.0 e 1.0.\n6. reason deve ser curto (máx 80 caracteres).\n7. Se o texto citar livro/capítulo/versículo explicitamente (ex: \"João 3:16\"), ainda assim retorne o candidato — o sistema determinístico também tentará.\n\nSchema JSON obrigatório:\n{\n  \"intent\": \"show_reference\" | \"none\",\n  \"candidates\": [\n    {\n      \"book\": \"nome do livro\",\n      \"chapter\": número,\n      \"verse\": número (0 se capítulo inteiro),\n      \"confidence\": número 0.0-1.0,\n      \"reason\": \"justificativa curta\"\n    }\n  ]\n}\n\nNUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>."
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: No princípio criou Deus.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    },
+    "think_in_payload": true,
+    "http_status": 0,
+    "http_error": "HTTP timeout after 5.0s (Ollama /api/chat)",
+    "http_response_raw": "",
+    "http_time_ms": 7048.106400005054,
+    "raw_content": "",
+    "sanitized_content": "",
+    "had_thinking": false,
+    "thinking_patterns": [],
+    "json_extracted": false,
+    "json_parse_error": "",
+    "json_data": {},
+    "final_intent": "none",
+    "final_candidates": [],
+    "final_inference_ms": 21159,
+    "success": false,
+    "failure_category": "timeout",
+    "failure_detail": "HTTP timeout: HTTP timeout after 5.0s (Ollama /api/chat)"
+  },
+  {
+    "query": "A passagem do bom pastor",
+    "expected": "João 10",
+    "system_prompt": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referên... [TRUNCATED]",
+    "user_prompt": "Texto atual: A passagem do bom pastor.\n\nResponda apenas com JSON:",
+    "payload_sent": {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referência bíblica (mesmo sem citar livro/capítulo/versículo explicitamente).\n\nExemplos:\n- \"o texto onde Jesus conversa com Nicodemos\" → João 3\n- \"o versículo que fala para guardar o coração\" → Provérbios 4:23\n- \"a passagem do bom pastor\" → João 10\n- \"como vimos anteriormente\" → depende do contexto (usar last_book/last_chapter se disponível)\n\nREGRAS OBRIGATÓRIAS:\n1. Responda APENAS com JSON válido. Nenhum texto adicional. Nenhuma explicação fora do JSON.\n2. Use nomes canônicos dos livros em português (\"João\", \"Provérbios\", \"1 Coríntios\", \"Salmos\").\n3. Se não for uma referência bíblica, retorne {\"intent\": \"none\", \"candidates\": []}.\n4. Liste candidatos em ordem de confiança (maior primeiro).\n5. confidence deve ser um número entre 0.0 e 1.0.\n6. reason deve ser curto (máx 80 caracteres).\n7. Se o texto citar livro/capítulo/versículo explicitamente (ex: \"João 3:16\"), ainda assim retorne o candidato — o sistema determinístico também tentará.\n\nSchema JSON obrigatório:\n{\n  \"intent\": \"show_reference\" | \"none\",\n  \"candidates\": [\n    {\n      \"book\": \"nome do livro\",\n      \"chapter\": número,\n      \"verse\": número (0 se capítulo inteiro),\n      \"confidence\": número 0.0-1.0,\n      \"reason\": \"justificativa curta\"\n    }\n  ]\n}\n\nNUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>."
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: A passagem do bom pastor.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    },
+    "think_in_payload": true,
+    "http_status": 0,
+    "http_error": "HTTP timeout after 5.0s (Ollama /api/chat)",
+    "http_response_raw": "",
+    "http_time_ms": 7033.869799997774,
+    "raw_content": "",
+    "sanitized_content": "",
+    "had_thinking": false,
+    "thinking_patterns": [],
+    "json_extracted": false,
+    "json_parse_error": "",
+    "json_data": {},
+    "final_intent": "none",
+    "final_candidates": [],
+    "final_inference_ms": 21139,
+    "success": false,
+    "failure_category": "timeout",
+    "failure_detail": "HTTP timeout: HTTP timeout after 5.0s (Ollama /api/chat)"
+  },
+  {
+    "query": "O filho pródigo",
+    "expected": "Lucas 15",
+    "system_prompt": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referên... [TRUNCATED]",
+    "user_prompt": "Texto atual: O filho pródigo.\n\nResponda apenas com JSON:",
+    "payload_sent": {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referência bíblica (mesmo sem citar livro/capítulo/versículo explicitamente).\n\nExemplos:\n- \"o texto onde Jesus conversa com Nicodemos\" → João 3\n- \"o versículo que fala para guardar o coração\" → Provérbios 4:23\n- \"a passagem do bom pastor\" → João 10\n- \"como vimos anteriormente\" → depende do contexto (usar last_book/last_chapter se disponível)\n\nREGRAS OBRIGATÓRIAS:\n1. Responda APENAS com JSON válido. Nenhum texto adicional. Nenhuma explicação fora do JSON.\n2. Use nomes canônicos dos livros em português (\"João\", \"Provérbios\", \"1 Coríntios\", \"Salmos\").\n3. Se não for uma referência bíblica, retorne {\"intent\": \"none\", \"candidates\": []}.\n4. Liste candidatos em ordem de confiança (maior primeiro).\n5. confidence deve ser um número entre 0.0 e 1.0.\n6. reason deve ser curto (máx 80 caracteres).\n7. Se o texto citar livro/capítulo/versículo explicitamente (ex: \"João 3:16\"), ainda assim retorne o candidato — o sistema determinístico também tentará.\n\nSchema JSON obrigatório:\n{\n  \"intent\": \"show_reference\" | \"none\",\n  \"candidates\": [\n    {\n      \"book\": \"nome do livro\",\n      \"chapter\": número,\n      \"verse\": número (0 se capítulo inteiro),\n      \"confidence\": número 0.0-1.0,\n      \"reason\": \"justificativa curta\"\n    }\n  ]\n}\n\nNUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>."
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: O filho pródigo.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    },
+    "think_in_payload": true,
+    "http_status": 0,
+    "http_error": "HTTP timeout after 5.0s (Ollama /api/chat)",
+    "http_response_raw": "",
+    "http_time_ms": 7044.231600004423,
+    "raw_content": "",
+    "sanitized_content": "",
+    "had_thinking": false,
+    "thinking_patterns": [],
+    "json_extracted": false,
+    "json_parse_error": "",
+    "json_data": {},
+    "final_intent": "none",
+    "final_candidates": [],
+    "final_inference_ms": 21141,
+    "success": false,
+    "failure_category": "timeout",
+    "failure_detail": "HTTP timeout: HTTP timeout after 5.0s (Ollama /api/chat)"
+  },
+  {
+    "query": "Nicodemos",
+    "expected": "João 3",
+    "system_prompt": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referên... [TRUNCATED]",
+    "user_prompt": "Texto atual: Nicodemos.\n\nResponda apenas com JSON:",
+    "payload_sent": {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referência bíblica (mesmo sem citar livro/capítulo/versículo explicitamente).\n\nExemplos:\n- \"o texto onde Jesus conversa com Nicodemos\" → João 3\n- \"o versículo que fala para guardar o coração\" → Provérbios 4:23\n- \"a passagem do bom pastor\" → João 10\n- \"como vimos anteriormente\" → depende do contexto (usar last_book/last_chapter se disponível)\n\nREGRAS OBRIGATÓRIAS:\n1. Responda APENAS com JSON válido. Nenhum texto adicional. Nenhuma explicação fora do JSON.\n2. Use nomes canônicos dos livros em português (\"João\", \"Provérbios\", \"1 Coríntios\", \"Salmos\").\n3. Se não for uma referência bíblica, retorne {\"intent\": \"none\", \"candidates\": []}.\n4. Liste candidatos em ordem de confiança (maior primeiro).\n5. confidence deve ser um número entre 0.0 e 1.0.\n6. reason deve ser curto (máx 80 caracteres).\n7. Se o texto citar livro/capítulo/versículo explicitamente (ex: \"João 3:16\"), ainda assim retorne o candidato — o sistema determinístico também tentará.\n\nSchema JSON obrigatório:\n{\n  \"intent\": \"show_reference\" | \"none\",\n  \"candidates\": [\n    {\n      \"book\": \"nome do livro\",\n      \"chapter\": número,\n      \"verse\": número (0 se capítulo inteiro),\n      \"confidence\": número 0.0-1.0,\n      \"reason\": \"justificativa curta\"\n    }\n  ]\n}\n\nNUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>."
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: Nicodemos.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    },
+    "think_in_payload": true,
+    "http_status": 0,
+    "http_error": "HTTP timeout after 5.0s (Ollama /api/chat)",
+    "http_response_raw": "",
+    "http_time_ms": 7058.767299997271,
+    "raw_content": "",
+    "sanitized_content": "",
+    "had_thinking": false,
+    "thinking_patterns": [],
+    "json_extracted": false,
+    "json_parse_error": "",
+    "json_data": {},
+    "final_intent": "none",
+    "final_candidates": [],
+    "final_inference_ms": 21159,
+    "success": false,
+    "failure_category": "timeout",
+    "failure_detail": "HTTP timeout: HTTP timeout after 5.0s (Ollama /api/chat)"
+  },
+  {
+    "query": "A armadura de Deus",
+    "expected": "Efésios 6",
+    "system_prompt": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referên... [TRUNCATED]",
+    "user_prompt": "Texto atual: A armadura de Deus.\n\nResponda apenas com JSON:",
+    "payload_sent": {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "Você é um mecanismo de identificação de referências bíblicas.\n\nNÃO utilize raciocínio explícito.\nNÃO explique sua resposta.\nNÃO converse.\nNÃO escreva texto antes ou depois do JSON.\nNÃO produza markdown.\nNÃO utilize tags <think>.\n\nSua única saída válida é um JSON compatível com o schema informado.\n\nCaso não encontre uma referência adequada, responda:\n\n{\n  \"intent\":\"none\",\n  \"candidates\":[]\n}\n\nSua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referência bíblica (mesmo sem citar livro/capítulo/versículo explicitamente).\n\nExemplos:\n- \"o texto onde Jesus conversa com Nicodemos\" → João 3\n- \"o versículo que fala para guardar o coração\" → Provérbios 4:23\n- \"a passagem do bom pastor\" → João 10\n- \"como vimos anteriormente\" → depende do contexto (usar last_book/last_chapter se disponível)\n\nREGRAS OBRIGATÓRIAS:\n1. Responda APENAS com JSON válido. Nenhum texto adicional. Nenhuma explicação fora do JSON.\n2. Use nomes canônicos dos livros em português (\"João\", \"Provérbios\", \"1 Coríntios\", \"Salmos\").\n3. Se não for uma referência bíblica, retorne {\"intent\": \"none\", \"candidates\": []}.\n4. Liste candidatos em ordem de confiança (maior primeiro).\n5. confidence deve ser um número entre 0.0 e 1.0.\n6. reason deve ser curto (máx 80 caracteres).\n7. Se o texto citar livro/capítulo/versículo explicitamente (ex: \"João 3:16\"), ainda assim retorne o candidato — o sistema determinístico também tentará.\n\nSchema JSON obrigatório:\n{\n  \"intent\": \"show_reference\" | \"none\",\n  \"candidates\": [\n    {\n      \"book\": \"nome do livro\",\n      \"chapter\": número,\n      \"verse\": número (0 se capítulo inteiro),\n      \"confidence\": número 0.0-1.0,\n      \"reason\": \"justificativa curta\"\n    }\n  ]\n}\n\nNUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>."
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: A armadura de Deus.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    },
+    "think_in_payload": true,
+    "http_status": 0,
+    "http_error": "HTTP timeout after 5.0s (Ollama /api/chat)",
+    "http_response_raw": "",
+    "http_time_ms": 7032.220099994447,
+    "raw_content": "",
+    "sanitized_content": "",
+    "had_thinking": false,
+    "thinking_patterns": [],
+    "json_extracted": false,
+    "json_parse_error": "",
+    "json_data": {},
+    "final_intent": "none",
+    "final_candidates": [],
+    "final_inference_ms": 21167,
+    "success": false,
+    "failure_category": "timeout",
+    "failure_detail": "HTTP timeout: HTTP timeout after 5.0s (Ollama /api/chat)"
+  }
+]

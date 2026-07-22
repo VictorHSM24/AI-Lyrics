@@ -219,10 +219,14 @@ def _build_semantic(data: dict[str, Any]) -> SemanticConfig:
         enabled=False, base_url="", api_key="", model="",
         temperature=0.0, top_p=1.0, max_tokens=300, timeout_seconds=10.0,
     )
-    debounce_ms = int(data.get("debounce_ms", 800))
+    debounce_ms = int(data.get("debounce_ms", 400))  # Sprint 21.5 — era 800
     timeout_ms = int(data.get("timeout_ms", 5000))
     min_text_length = int(data.get("min_text_length", 8))
     enabled = bool(data.get("enabled", True))
+    # Sprint 21.5 — Streaming Intelligence.
+    min_growth_chars = int(data.get("min_growth_chars", 20))
+    min_append_words = int(data.get("min_append_words", 3))
+    min_interval_ms = int(data.get("min_interval_ms", 1000))
     if debounce_ms < 0:
         raise ConfigError(f"semantic.debounce_ms must be >= 0, got {debounce_ms}")
     if timeout_ms <= 0:
@@ -231,6 +235,18 @@ def _build_semantic(data: dict[str, Any]) -> SemanticConfig:
         raise ConfigError(
             f"semantic.min_text_length must be >= 0, got {min_text_length}"
         )
+    if min_growth_chars < 0:
+        raise ConfigError(
+            f"semantic.min_growth_chars must be >= 0, got {min_growth_chars}"
+        )
+    if min_append_words < 0:
+        raise ConfigError(
+            f"semantic.min_append_words must be >= 0, got {min_append_words}"
+        )
+    if min_interval_ms < 0:
+        raise ConfigError(
+            f"semantic.min_interval_ms must be >= 0, got {min_interval_ms}"
+        )
     return SemanticConfig(
         provider=provider,
         ollama=ollama,
@@ -238,6 +254,9 @@ def _build_semantic(data: dict[str, Any]) -> SemanticConfig:
         timeout_ms=timeout_ms,
         min_text_length=min_text_length,
         enabled=enabled,
+        min_growth_chars=min_growth_chars,
+        min_append_words=min_append_words,
+        min_interval_ms=min_interval_ms,
     )
 
 

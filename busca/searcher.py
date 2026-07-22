@@ -1265,12 +1265,19 @@ class Searcher:
                 if row is None:
                     return None
 
+                # Sprint 21.3.2 — FTS5 retorna colunas UNINDEXED como strings;
+                # converter para int para manter o contrato de tipos de
+                # SearchResult (chapter: int, verse: int | None). Sem esta
+                # conversão, _format_verse_id() no HolyricsClient falha com
+                # "Unknown format code 'd' for object of type 'str'".
+                verse_val = int(row[3]) if row[3] is not None else None
+
                 return SearchResult(
-                    reference=_build_reference(book_canonical, chapter, row[3]),
+                    reference=_build_reference(book_canonical, chapter, verse_val),
                     book=book_canonical,
                     book_id=book_id,
                     chapter=chapter,
-                    verse=row[3],
+                    verse=verse_val,
                     text=row[4],
                     version=row[5],
                     score=1.0,
@@ -1327,12 +1334,16 @@ class Searcher:
 
         results = []
         for row in rows:
+            # Sprint 21.3.2 — FTS5 retorna colunas UNINDEXED como strings;
+            # converter para int (mesma conversão já feita nos caminhos
+            # híbridos — linhas 979-981 e 1608-1611).
+            verse_val = int(row[3]) if row[3] is not None else None
             results.append(SearchResult(
-                reference=_build_reference(book_canonical, chapter, row[3]),
+                reference=_build_reference(book_canonical, chapter, verse_val),
                 book=book_canonical,
                 book_id=book_id,
                 chapter=chapter,
-                verse=row[3],
+                verse=verse_val,
                 text=row[4],
                 version=row[5],
                 score=1.0,
@@ -1435,14 +1446,19 @@ class Searcher:
         if row is None:
             return []
 
+        # Sprint 21.3.2 — FTS5 retorna colunas UNINDEXED como strings;
+        # converter para int (consistente com os caminhos híbridos).
+        chapter_val = int(row[2]) if row[2] is not None else None
+        verse_val = int(row[3]) if row[3] is not None else None
+
         return [SearchResult(
             reference=_build_reference(
-                book_canonical, row[2], row[3]
+                book_canonical, chapter_val, verse_val
             ),
             book=book_canonical,
             book_id=book_id,
-            chapter=row[2],
-            verse=row[3],
+            chapter=chapter_val,
+            verse=verse_val,
             text=row[4],
             version=row[5],
             score=1.0,

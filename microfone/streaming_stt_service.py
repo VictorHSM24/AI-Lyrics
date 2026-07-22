@@ -76,12 +76,34 @@ class StreamingSTTService:
         session_id: str,
         sample_rate: int = 16000,
         min_text_change: int = 3,
+        min_rms: float = 0.005,
+        min_confidence: float = 0.30,
     ) -> None:
         self._executor = executor
         self._bus = bus
         self._session_id = session_id
         self._sample_rate = sample_rate
         self._min_text_change = min_text_change
+        # Sprint 21.3.2 — anti-alucinação.
+        # Causa raiz das transcrições fantasmas: o StreamingSTT envia
+        # janelas de 6s do RingBuffer que podem ser puro silêncio. O
+        # Whisper (especialmente via DirectML/ONNX, que não suporta
+        # no_speech_threshold nem vad_filter) alucina frases do seu
+        # corpus de treinamento (legendas de TV): "Legenda por Sônia
+        # Ruberti", "Abertura", "A CIDADE NO BRASIL", etc.
+        #
+        # Duas camadas de proteção, ambas atacando a causa raiz:
+        # 1. min_rms: energia mínima do áudio (RMS). Silêncio tem RMS ≈ 0;
+        #    fala tem RMS > 0.01. Se RMS < min_rms, o áudio é silêncio e
+        #    não é enviado ao Whisper — evita alucinação na origem.
+        # 2. min_confidence: confiança mínima do STT. Alucinações têm
+        #    confiança ~0.12-0.20; transcrições legítimas > 0.50. Se
+        #    confidence < min_confidence, o texto é descartado — camada
+        #    extra para alucinações que passam pelo RMS (ex.: ruído de
+        #    fundo com energia suficiente para não ser silêncio, mas
+        #    sem fala real).
+        self._min_rms = min_rms
+        self._min_confidence = min_confidence
 
         # Estado do fluxo parcial atual.
         self._active = False
@@ -98,8 +120,14 @@ class StreamingSTTService:
         self._total_skipped_no_change = 0
         self._total_skipped_empty = 0
         self._total_latency_ms = 0
+        # Sprint 21.3.2 — métricas de anti-alucinação.
+        self._total_skipped_silence = 0
+        self._total_skipped_low_confidence = 0
 
-        logger.info("StreamingSTTService initialized.")
+        logger.info(
+            "StreamingSTTService initialized (min_rms=%.4f, min_confidence=%.2f).",
+            min_rms, min_confidence,
+        )
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -146,6 +174,21 @@ class StreamingSTTService:
         if duration_ms < 1000:
             return
 
+        # Sprint 21.3.2 — filtro de energia (RMS) anti-alucinação.
+        # Causa raiz: o StreamingSTT recebe janelas de 6s do RingBuffer
+        # que podem ser puro silêncio. O Whisper (especialmente via
+        # DirectML/ONNX) alucina frases em silêncio. Calcular RMS do
+        # áudio e pular transcrição se for muito baixo (silêncio).
+        # Fala humana tem RMS tipicamente > 0.01; silêncio ≈ 0.
+        rms = float(np.sqrt(np.mean(audio ** 2)))
+        if rms < self._min_rms:
+            self._total_skipped_silence += 1
+            logger.debug(
+                "StreamingSTT: skipping silence (rms=%.6f < %.6f).",
+                rms, self._min_rms,
+            )
+            return
+
         t0 = time.monotonic()
 
         try:
@@ -167,6 +210,19 @@ class StreamingSTTService:
         # Texto vazio — não publicar.
         if not new_text:
             self._total_skipped_empty += 1
+            return
+
+        # Sprint 21.3.2 — filtro de confiança anti-alucinação.
+        # Alucinações do Whisper em silêncio/ruído têm confiança baixa
+        # (~0.12-0.20). Transcrições legítimas têm confiança > 0.50.
+        # Se a confiança for muito baixa, o texto provavelmente é
+        # alucinação e não deve ser publicado.
+        if result.confidence < self._min_confidence:
+            self._total_skipped_low_confidence += 1
+            logger.debug(
+                "StreamingSTT: skipping low-confidence text (conf=%.3f < %.3f, text=%r).",
+                result.confidence, self._min_confidence, new_text[:60],
+            )
             return
 
         # Primeira transcrição do fluxo — publicar SpeechPartial.
@@ -372,6 +428,15 @@ class StreamingSTTService:
     @property
     def total_skipped_no_change(self) -> int:
         return self._total_skipped_no_change
+
+    # Sprint 21.3.2 — métricas de anti-alucinação.
+    @property
+    def total_skipped_silence(self) -> int:
+        return self._total_skipped_silence
+
+    @property
+    def total_skipped_low_confidence(self) -> int:
+        return self._total_skipped_low_confidence
 
     @property
     def avg_latency_ms(self) -> float:

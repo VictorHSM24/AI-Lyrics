@@ -90,6 +90,8 @@ from pipeline.events import (
     SpeechPartial,
     SpeechPartialUpdated,
     ReferenceCandidate,
+    # Sprint 21.4 — Streaming First (antecipação)
+    ReferenceAntecipada,
     is_operational_event,
     is_pipeline_event,
     is_telemetry_event,
@@ -167,6 +169,8 @@ __all__ = [
     "SpeechPartial",
     "SpeechPartialUpdated",
     "ReferenceCandidate",
+    # Sprint 21.4 — Streaming First (antecipação)
+    "ReferenceAntecipada",
     "is_pipeline_event",
     "is_operational_event",
     "is_telemetry_event",

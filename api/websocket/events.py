@@ -181,6 +181,7 @@ class EventPublisher:
             )
             from pipeline.events import (
                 SpeechPartial, SpeechPartialUpdated, ReferenceCandidate,
+                ReferenceAntecipada,
                 IntentCandidate, SemanticInferenceCompleted,
                 SemanticResolutionCompleted,
                 VerseResolving, VerseResolved, VersePresented,
@@ -204,6 +205,8 @@ class EventPublisher:
                 VersePresentationFailed,
                 # Sprint 19 — Streaming Speech Pipeline
                 SpeechPartial, SpeechPartialUpdated, ReferenceCandidate,
+                # Sprint 21.4 — Streaming First (antecipação)
+                ReferenceAntecipada,
                 # Sprint 20 — Semantic Understanding Engine
                 IntentCandidate, SemanticInferenceCompleted,
                 SemanticResolutionCompleted,

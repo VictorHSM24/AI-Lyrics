@@ -622,6 +622,47 @@ class ReferenceCandidate(OperationalEvent):
     normalized_text: str = ""
 
 
+@dataclass(frozen=True)
+class ReferenceAntecipada(OperationalEvent):
+    """Referência bíblica antecipada detectada durante a fala (Sprint 21.4).
+
+    Emitido pelo IncrementalBiblicalParser quando consome SpeechPartial /
+    SpeechPartialUpdated e identifica uma referência PROVÁVEL com
+    confiança intermediária (>= anticipation_threshold e <
+    detection_threshold). Diferente de ReferenceCandidate (telemetria),
+    este evento dispara a apresentação antecipada no Holyrics via
+    VersePresentationService.
+
+    Diferente de ReferenceDetected (definitivo), este evento:
+      - É produzido DURANTE a fala (antes do silêncio fechar o segmento).
+      - Pode ser CONFIRMADO por um ReferenceDetected posterior (mesma
+        correlation_id e mesma referência) — o VersePresentationService
+        apenas marca is_confirmed=True, sem reapresentar.
+      - Pode ser CORRIGIDO por um ReferenceDetected posterior (mesma
+        correlation_id mas referência diferente, ex.: antecipada em
+        "Salmos 23" e definitiva em "Salmos 23:4") — o
+        VersePresentationService apresenta a nova referência.
+
+    Sprint 21.4 — Unificação do Pipeline de Transcrição (Streaming First).
+
+    Conforme decisão do usuário:
+      - Só é publicado a partir de completeness="chapter" (confidence 0.75).
+        Antecipadas de book-only (0.40) são muito incertas e não disparam
+        apresentação.
+      - correlation_id é o mesmo do SpeechPartial que originou a detecção,
+        permitindo o dedup com ReferenceDetected posterior.
+    """
+
+    book: str = ""
+    book_id: int = 0
+    chapter: int = 0
+    verse_start: int = 0
+    verse_end: int = 0
+    confidence: float = 0.0
+    completeness: str = ""  # "chapter" | "verse"
+    normalized_text: str = ""
+
+
 # ---------------------------------------------------------------------------
 # Sprint 20 — Semantic Understanding Engine
 #
@@ -846,6 +887,8 @@ _ALL_EVENT_TYPES = (
     SpeechPartial,
     SpeechPartialUpdated,
     ReferenceCandidate,
+    # Sprint 21.4 — Streaming First (antecipação)
+    ReferenceAntecipada,
     # Sprint 20 — Semantic Understanding Engine
     IntentCandidate,
     SemanticInferenceCompleted,

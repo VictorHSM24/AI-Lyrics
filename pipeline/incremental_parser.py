@@ -50,6 +50,7 @@ from parser.books import BookResolveResult, ParserBookTable
 from parser.normalizer import Normalizer
 from pipeline.bus import PipelineEventBus
 from pipeline.events import (
+    ReferenceAntecipada,
     ReferenceCandidate,
     ReferenceDetected,
     SpeechPartial,
@@ -72,6 +73,13 @@ _C_BOOK_CHAPTER_VERSE = 0.98
 
 # Threshold para publicar ReferenceDetected (vs ReferenceCandidate).
 _DETECTION_THRESHOLD = 0.90
+
+# Sprint 21.4 — Streaming First.
+# Threshold para publicar ReferenceAntecipada (apresentação antecipada
+# no Holyrics durante a fala, antes do silêncio fechar o segmento).
+# Conforme decisão do usuário: só antecipa a partir de "chapter"
+# (confidence 0.75). Book-only (0.40) é muito incerto.
+_DEFAULT_ANTICIPATION_THRESHOLD = 0.60
 
 # Marcadores de capítulo/versículo por extenso.
 _CHAPTER_EXTENSO = frozenset({"cap", "capitulo", "capitulo:"})
@@ -103,12 +111,18 @@ class IncrementalBiblicalParser:
         session_id: str,
         normalizer: Normalizer | None = None,
         threshold: float = _DETECTION_THRESHOLD,
+        anticipation_threshold: float = _DEFAULT_ANTICIPATION_THRESHOLD,
     ) -> None:
         self._books = books
         self._norm = normalizer or Normalizer()
         self._bus = bus
         self._session_id = session_id
         self._threshold = threshold
+        # Sprint 21.4 — Streaming First.
+        # Threshold para publicar ReferenceAntecipada (apresentação
+        # antecipada no Holyrics durante a fala). Conforme decisão do
+        # usuário: só antecipa a partir de "chapter" (confidence 0.75).
+        self._anticipation_threshold = anticipation_threshold
         self._subscribed = False
 
         # Estado incremental.
@@ -130,13 +144,24 @@ class IncrementalBiblicalParser:
         # Flag: já publicamos ReferenceDetected para este fluxo?
         self._detected_published: bool = False
 
+        # Sprint 21.4 — Flag: já publicamos ReferenceAntecipada para
+        # este fluxo? Evita republicar antecipadas para o mesmo nível
+        # de completude. Resetado quando o fluxo resetta.
+        self._anticipation_published: bool = False
+
         # Métricas.
         self._total_partials_processed = 0
         self._total_candidates_published = 0
         self._total_detected_published = 0
         self._total_latency_ms = 0
+        # Sprint 21.4 — métrica de antecipação.
+        self._total_anticipations_published = 0
 
-        logger.info("IncrementalBiblicalParser initialized.")
+        logger.info(
+            "IncrementalBiblicalParser initialized "
+            "(threshold=%.2f, anticipation_threshold=%.2f).",
+            threshold, anticipation_threshold,
+        )
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -176,6 +201,8 @@ class IncrementalBiblicalParser:
         self._last_completeness = ""
         self._expecting = "book"
         self._detected_published = False
+        # Sprint 21.4 — resetar flag de antecipação.
+        self._anticipation_published = False
         logger.debug("IncrementalBiblicalParser state reset.")
 
     # ------------------------------------------------------------------
@@ -419,10 +446,33 @@ class IncrementalBiblicalParser:
             self._publish_detected(source_event, book, confidence, latency_ms)
             self._detected_published = True
         else:
-            # Publicar ReferenceCandidate.
+            # Publicar ReferenceCandidate (telemetria — sempre).
             self._publish_candidate(
                 source_event, book, confidence, completeness, latency_ms,
             )
+
+            # Sprint 21.4 — Streaming First.
+            # Se confiança >= anticipation_threshold e temos pelo menos
+            # book+chapter (conforme decisão do usuário: não antecipa em
+            # book-only), publicar ReferenceAntecipada para disparar a
+            # apresentação antecipada no Holyrics via
+            # VersePresentationService. Diferente de ReferenceCandidate
+            # (telemetria), ReferenceAntecipada dispara apresentação.
+            #
+            # Só publica uma antecipada por fluxo (para evitar
+            # apresentações múltiplas enquanto o versículo é falado).
+            # Se o versículo completar, o ReferenceDetected acima já
+            # tratou; se não completar, a antecipada de "chapter" é a
+            # apresentação provisória.
+            if (
+                not self._anticipation_published
+                and confidence >= self._anticipation_threshold
+                and completeness in ("chapter", "verse")
+            ):
+                self._publish_anticipation(
+                    source_event, book, confidence, completeness, latency_ms,
+                )
+                self._anticipation_published = True
 
     def _publish_candidate(
         self,
@@ -464,6 +514,56 @@ class IncrementalBiblicalParser:
         logger.info(
             "ReferenceCandidate: %s completeness=%s confidence=%.2f (corr=%s)",
             book.canonical, completeness, confidence, meta.correlation_id,
+        )
+
+    def _publish_anticipation(
+        self,
+        source_event: SpeechPartial | SpeechPartialUpdated,
+        book: Any,
+        confidence: float,
+        completeness: str,
+        latency_ms: int,
+    ) -> None:
+        """Publica ReferenceAntecipada (Sprint 21.4 — Streaming First).
+
+        Diferente de ReferenceCandidate (telemetria), este evento dispara
+        a apresentação antecipada no Holyrics via VersePresentationService.
+        Diferente de ReferenceDetected (definitivo), este evento pode ser
+        confirmado ou corrigido por um ReferenceDetected posterior.
+        """
+        meta = EventMetadata.for_next(
+            previous=EventMetadata(
+                event_id=self._causation_id or source_event.meta.event_id,
+                correlation_id=self._correlation_id or source_event.correlation_id,
+                causation_id=None,
+                session_id=self._session_id,
+                timestamp=source_event.meta.timestamp,
+                origin="StreamingSTTService",
+            ),
+            origin="IncrementalBiblicalParser",
+        )
+        self._causation_id = meta.event_id
+
+        normalized = self._build_normalized(book, self._current_chapter, self._current_verse)
+
+        event = ReferenceAntecipada(
+            meta=meta,
+            book=book.canonical,
+            book_id=book.id,
+            chapter=self._current_chapter or 0,
+            verse_start=self._current_verse or 0,
+            verse_end=self._current_verse or 0,
+            confidence=round(confidence, 4),
+            completeness=completeness,
+            normalized_text=normalized,
+        )
+        self._bus.publish(event)
+        self._total_anticipations_published += 1
+        logger.info(
+            "ReferenceAntecipada: %s completeness=%s confidence=%.2f "
+            "latency=%dms (corr=%s) — apresentação antecipada",
+            book.canonical, completeness, confidence, latency_ms,
+            meta.correlation_id,
         )
 
     def _publish_detected(
@@ -539,6 +639,11 @@ class IncrementalBiblicalParser:
     @property
     def total_detected_published(self) -> int:
         return self._total_detected_published
+
+    # Sprint 21.4 — métrica de antecipação.
+    @property
+    def total_anticipations_published(self) -> int:
+        return self._total_anticipations_published
 
     @property
     def avg_latency_ms(self) -> float:

@@ -396,6 +396,23 @@ class FasterWhisperBackend:
             raise STTError("model not loaded — call load() first")
 
         try:
+            # Sprint 21.3.2 — parâmetros de anti-alucinação.
+            # Causa raiz das transcrições fantasmas: o StreamingSTT envia
+            # janelas de 6s do RingBuffer que podem ser puro silêncio.
+            # Sem VAD filter (config: vad_filter=false), o Whisper processa
+            # o silêncio e alucina frases do seu corpus de treinamento
+            # (legendas de TV, podcasts): "Legenda por Sônia Ruberti",
+            # "Abertura", "A CIDADE NO BRASIL", etc.
+            #
+            # Parâmetros adicionados (defaults do faster-whisper, explícitos):
+            # - no_speech_threshold=0.6: probabilidade de "não-fala" acima
+            #   da qual o segmento é descartado.
+            # - log_prob_threshold=-1.0: média dos logprobs abaixo da qual
+            #   o texto é descartado.
+            # - hallucination_silence_threshold=2.0: detecta frames de
+            #   silêncio >= 2s na saída e suprime a geração de alucinações
+            #   nessas regiões. Funciona mesmo com vad_filter=false (atua
+            #   na saída pós-transcrição).
             segments_iter, info = self._model.transcribe(
                 audio,
                 language=language,
@@ -403,6 +420,9 @@ class FasterWhisperBackend:
                 vad_filter=vad_filter,
                 chunk_length=chunk_length,
                 condition_on_previous_text=False,
+                no_speech_threshold=0.6,
+                log_prob_threshold=-1.0,
+                hallucination_silence_threshold=2.0,
             )
             # Consumir o iterador (faster-whisper é lazy)
             segments = list(segments_iter)

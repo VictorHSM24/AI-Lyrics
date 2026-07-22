@@ -123,17 +123,29 @@ class SemanticConfig:
         ollama: configuração específica do Ollama (usada quando
             provider == "ollama").
         debounce_ms: debounce antes de invocar o LLM após SpeechPartialUpdated.
+            Sprint 21.5 — reduzido de 800ms para 400ms. Agora o gatilho
+            principal é o crescimento significativo, não o debounce.
         timeout_ms: timeout da inferência semântica.
         min_text_length: mínimo de caracteres para invocar o LLM.
         enabled: kill switch global para a camada semântica.
+        min_growth_chars: Sprint 21.5 — mínimo de caracteres novos desde
+            a última inferência para disparar durante fala contínua.
+        min_append_words: Sprint 21.5 — mínimo de palavras novas desde
+            a última inferência (filtra filler).
+        min_interval_ms: Sprint 21.5 — intervalo mínimo entre chamadas
+            (rate limit).
     """
 
     provider: str
     ollama: OllamaConfig
-    debounce_ms: int = 800
+    debounce_ms: int = 400  # Sprint 21.5 — era 800, agora 400
     timeout_ms: int = 5000
     min_text_length: int = 8
     enabled: bool = True
+    # Sprint 21.5 — Streaming Intelligence.
+    min_growth_chars: int = 20
+    min_append_words: int = 3
+    min_interval_ms: int = 1000
 
 
 @dataclass(frozen=True)

@@ -133,7 +133,14 @@ class TestReferenceEvents(unittest.TestCase):
         for name in ["ReferenceDetected", "ReferenceInvalid", "IntentUnknown"]:
             self.assertIn(name, names)
         # 15 originais + 5 Sprint 16 + 3 Sprint 17 + 4 Sprint 18 = 27
-        self.assertEqual(len(all_event_types()), 30)  # Sprint 19: +3 events
+        # Sprint 19: +3 (SpeechPartial, SpeechPartialUpdated, ReferenceCandidate)
+        # Sprint 20: +3 (IntentCandidate, SemanticInferenceCompleted, SemanticResolutionCompleted)
+        # Sprint 21: +4 (SermonContextUpdated, SermonBookChanged, SermonChapterChanged, SermonTopicChanged)
+        # Sprint 21.1: +1 (SemanticProviderUnavailable)
+        # Sprint 21.4: +1 (ReferenceAntecipada)
+        self.assertEqual(len(all_event_types()), 39)
+        # Sprint 21.4 — Streaming First.
+        self.assertIn("ReferenceAntecipada", names)
 
 
 if __name__ == "__main__":

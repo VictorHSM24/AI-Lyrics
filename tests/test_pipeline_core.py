@@ -197,13 +197,15 @@ class TestPipelineEvents(unittest.TestCase):
         )
 
     def test_all_event_types_count(self):
-        """Deve haver 27 tipos de evento (15 + 5 Sprint 16 + 3 Sprint 17 + 4 Sprint 18)."""
+        """Deve haver 39 tipos de evento (Sprint 21.4: +1 ReferenceAntecipada)."""
         types = all_event_types()
-        self.assertEqual(len(types), 30)  # Sprint 19: +3 events
+        # 15 + 5 Sprint 16 + 3 Sprint 17 + 4 Sprint 18 + 3 Sprint 19
+        # + 3 Sprint 20 + 4 Sprint 21 + 1 Sprint 21.1 + 1 Sprint 21.4 = 39
+        self.assertEqual(len(types), 39)
 
     def test_all_event_type_names(self):
         names = all_event_type_names()
-        self.assertEqual(len(names), 30)  # Sprint 19: +3 events
+        self.assertEqual(len(names), 39)
         self.assertIn("SpeechSegmentReceived", names)
         self.assertIn("PipelineError", names)
         # Sprint 16 — Continuous Speech Pipeline

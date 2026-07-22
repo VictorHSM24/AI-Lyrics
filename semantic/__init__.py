@@ -51,6 +51,15 @@ from semantic.capability_cache import (
     CapabilityState,
     is_think_rejection_error,
 )
+# Sprint 21.3 — Arquitetura Multi-Backend.
+from semantic.llm_backend import (
+    LLMBackend,
+    BackendRequest,
+    BackendResponse,
+)
+from semantic.ollama_backend import OllamaBackend
+from semantic.openai_backend import OpenAIBackend
+from semantic.backend_factory import create_backend, BACKEND_ALIASES
 
 __all__ = [
     "SemanticCandidate",
@@ -71,4 +80,12 @@ __all__ = [
     "CapabilityResult",
     "CapabilityState",
     "is_think_rejection_error",
+    # Sprint 21.3
+    "LLMBackend",
+    "BackendRequest",
+    "BackendResponse",
+    "OllamaBackend",
+    "OpenAIBackend",
+    "create_backend",
+    "BACKEND_ALIASES",
 ]

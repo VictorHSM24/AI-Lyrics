@@ -100,7 +100,21 @@ def main() -> int:
 
         threading.Thread(target=_open_after_delay, daemon=True).start()
 
-    # Importa e roda uvicorn com a app FastAPI.
+    # Importa a app FastAPI explicitamente (não por string) para garantir
+    # que o PyInstaller resolva o módulo api.app no bundle em tempo de
+    # import, evitando o erro "Could not import module api.app" que
+    # ocorre quando uvicorn tenta importlib em runtime.
+    try:
+        from api.app import app  # noqa: E402
+    except ImportError as e:
+        logger.error(
+            "Não foi possível importar api.app: %s. "
+            "Verifique se o bundle PyInstaller inclui o pacote api.",
+            e,
+        )
+        return 1
+
+    # Importa uvicorn após a app (garante que api.app está resolvível).
     try:
         import uvicorn
     except ImportError:
@@ -108,8 +122,10 @@ def main() -> int:
         return 1
 
     logger.info("Iniciando AI Lyrics em http://%s:%d", host, port)
+    # Passa o objeto app diretamente (não a string "api.app:app") para
+    # evitar import dinâmico em runtime no bundle PyInstaller.
     uvicorn.run(
-        "api.app:app",
+        app,
         host=host,
         port=port,
         log_level="info",

@@ -22,7 +22,11 @@
 
 import os
 import sys
-from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
+from PyInstaller.utils.hooks import (
+    collect_data_files,
+    collect_dynamic_libs,
+    collect_submodules,
+)
 
 block_cipher = None
 
@@ -88,6 +92,45 @@ if os.path.exists(frontend_dist):
             project_datas.append((src, dst))
 
 # -------------------------------------------------------------------
+# Coleta automática de submódulos do projeto (Sprint 23.0 fix)
+# -------------------------------------------------------------------
+# Em vez de manter uma lista manual de hiddenimports por pacote, usa
+# collect_submodules() para descobrir automaticamente TODOS os
+# submódulos de cada pacote do projeto. Isso garante que novos
+# módulos adicionados no futuro sejam incluídos no bundle sem
+# necessidade de editar este .spec.
+#
+# "api.app" é incluído automaticamente por collect_submodules("api"),
+# mas é listado explicitamente abaixo como garantia adicional, já
+# que é o ponto de entrada da aplicação FastAPI importado por main.py.
+
+project_hiddenimports = (
+    collect_submodules('api')
+    + collect_submodules('busca')
+    + collect_submodules('config')
+    + collect_submodules('context')
+    + collect_submodules('core')
+    # estado: collect_submodules falha por import circular pré-existente
+    # (estado/__init__.py importa de estado.state que reimporta o pacote).
+    # Listado manualmente — apenas 2 módulos no pacote.
+    + ['estado', 'estado.state']
+    + collect_submodules('evaluation')
+    + collect_submodules('feedback')
+    + collect_submodules('integracao_holyrics')
+    + collect_submodules('intelligence')
+    + collect_submodules('knowledge')
+    + collect_submodules('llm')
+    + collect_submodules('microfone')
+    + collect_submodules('parser')
+    + collect_submodules('pipeline')
+    + collect_submodules('presentation')
+    + collect_submodules('semantic')
+    + collect_submodules('sermon')
+    + collect_submodules('telemetry')
+    + collect_submodules('transcricao')
+)
+
+# -------------------------------------------------------------------
 # Analysis
 # -------------------------------------------------------------------
 
@@ -97,6 +140,7 @@ a = Analysis(
     binaries=pysilero_libs + sounddevice_libs,
     datas=pysilero_datas + sounddevice_datas + st_datas + project_datas,
     hiddenimports=[
+        # Extensões nativas e dependências críticas.
         'pysilero_vad',
         'pysilero_vad.silero_vad',
         'sounddevice',
@@ -106,6 +150,7 @@ a = Analysis(
         'requests',
         'json',
         'sqlite3',
+        # uvicorn: submódulos necessários para uvicorn.run(app, ...).
         'uvicorn',
         'uvicorn.logging',
         'uvicorn.loops',
@@ -117,25 +162,15 @@ a = Analysis(
         'uvicorn.protocols.websockets.auto',
         'uvicorn.lifespan',
         'uvicorn.lifespan.on',
+        # FastAPI + Pydantic.
         'fastapi',
         'pydantic',
-        # Pacotes do projeto (para garantir import em bundle).
-        'api',
-        'api.wizard',
-        'busca',
-        'config',
-        'core',
-        'integracao_holyrics',
-        'knowledge',
-        'microfone',
-        'parser',
-        'pipeline',
-        'presentation',
-        'semantic',
-        'sermon',
-        'telemetry',
-        'transcricao',
-    ],
+        # Ponto de entrada da aplicação FastAPI (importado explicitamente
+        # por main.py via `from api.app import app`). Incluído também via
+        # collect_submodules("api") acima, mas repetido aqui como garantia
+        # explícita para evitar o erro "Could not import module api.app".
+        'api.app',
+    ] + project_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

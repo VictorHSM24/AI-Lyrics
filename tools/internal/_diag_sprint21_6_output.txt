@@ -1,0 +1,1675 @@
+======================================================================
+Sprint 21.6 — Validação Final da Inferência Semântica
+Engenharia de Prompt
+======================================================================
+Data: 2026-07-25 09:41:07
+Modelo: qwen3:8b-q4_K_M (Ollama local)
+Frases: 6
+Experimentos: 4
+
+>> Warmup do modelo...
+   Warmup OK em 2.4s
+
+
+██████████████████████████████████████████████████████████████████████
+█ EXPERIMENTO: 1 — Baseline (implementação atual)
+██████████████████████████████████████████████████████████████████████
+
+────────────────────────────────────────────────────────────
+Frase 1: 'O Senhor é meu pastor.'
+recent_text: ''
+
+  ── USER PROMPT ──
+    Texto atual: O Senhor é meu pastor.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+        }
+      ]
+    }
+    
+    NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 1826 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: O Senhor é meu pastor.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=4035) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "Salmos",
+          "chapter": 23,
+          "verse": 1,
+          "confidence": 0.95,
+          "reason": "frase conhecida como início do salmo 23"
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 1
+      [0] Salmos 23:1 conf=0.95 reason='frase conhecida como início do salmo 23'
+
+────────────────────────────────────────────────────────────
+Frase 2: 'Porque Deus amou o mundo.'
+recent_text: 'O Senhor é meu pastor.'
+
+  ── USER PROMPT ──
+    Fala recente: O Senhor é meu pastor.
+    Texto atual: Porque Deus amou o mundo.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+        }
+      ]
+    }
+    
+    NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 1826 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Fala recente: O Senhor é meu pastor.\nTexto atual: Porque Deus amou o mundo.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=5368) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "Salmos",
+          "chapter": 23,
+          "verse": 1,
+          "confidence": 0.95,
+          "reason": "Frase característica do Salmo 23"
+        },
+        {
+          "book": "João",
+          "chapter": 3,
+          "verse": 16,
+          "confidence": 0.85,
+          "reason": "Frase característica do versículo João 3:16"
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 2
+      [0] Salmos 23:1 conf=0.95 reason='Frase característica do Salmo 23'
+      [1] João 3:16 conf=0.85 reason='Frase característica do versículo João 3:16'
+
+────────────────────────────────────────────────────────────
+Frase 3: 'Ainda que eu ande pelo vale da sombra da morte.'
+recent_text: 'Porque Deus amou o mundo.'
+
+  ── USER PROMPT ──
+    Fala recente: Porque Deus amou o mundo.
+    Texto atual: Ainda que eu ande pelo vale da sombra da morte.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+        }
+      ]
+    }
+    
+    NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 1826 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Fala recente: Porque Deus amou o mundo.\nTexto atual: Ainda que eu ande pelo vale da sombra da morte.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=2636) ──
+    {
+      "intent": "none",
+      "candidates": []
+    }
+
+  ── PARSER OK ──
+    intent: none
+    candidates: 0
+
+────────────────────────────────────────────────────────────
+Frase 4: 'Tudo posso naquele que me fortalece.'
+recent_text: 'Ainda que eu ande pelo vale da sombra da morte.'
+
+  ── USER PROMPT ──
+    Fala recente: Ainda que eu ande pelo vale da sombra da morte.
+    Texto atual: Tudo posso naquele que me fortalece.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+        }
+      ]
+    }
+    
+    NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 1826 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Fala recente: Ainda que eu ande pelo vale da sombra da morte.\nTexto atual: Tudo posso naquele que me fortalece.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=5279) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "Salmos",
+          "chapter": 23,
+          "verse": 4,
+          "confidence": 0.95,
+          "reason": "Frase correspondente ao salmo 23"
+        },
+        {
+          "book": "Gálatas",
+          "chapter": 6,
+          "verse": 9,
+          "confidence": 0.75,
+          "reason": "Frase correspondente ao versículo 9"
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 2
+      [0] Salmos 23:4 conf=0.95 reason='Frase correspondente ao salmo 23'
+      [1] Gálatas 6:9 conf=0.75 reason='Frase correspondente ao versículo 9'
+
+────────────────────────────────────────────────────────────
+Frase 5: 'A armadura de Deus.'
+recent_text: 'Tudo posso naquele que me fortalece.'
+
+  ── USER PROMPT ──
+    Fala recente: Tudo posso naquele que me fortalece.
+    Texto atual: A armadura de Deus.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+        }
+      ]
+    }
+    
+    NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 1826 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Fala recente: Tudo posso naquele que me fortalece.\nTexto atual: A armadura de Deus.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=4139) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "Filipenses",
+          "chapter": 4,
+          "verse": 13,
+          "confidence": 0.95,
+          "reason": "menção direta a fortalecimento e armadura de Deus"
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 1
+      [0] Filipenses 4:13 conf=0.95 reason='menção direta a fortalecimento e armadura de Deus'
+
+────────────────────────────────────────────────────────────
+Frase 6: 'Provérbios 15:14'
+recent_text: 'A armadura de Deus.'
+
+  ── USER PROMPT ──
+    Fala recente: A armadura de Deus.
+    Texto atual: Provérbios 15:14
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+        }
+      ]
+    }
+    
+    NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 1826 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Fala recente: A armadura de Deus.\nTexto atual: Provérbios 15:14\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=4115) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "Provérbios",
+          "chapter": 15,
+          "verse": 14,
+          "confidence": 1.0,
+          "reason": "Texto atual menciona Provérbios 15:14"
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 1
+      [0] Provérbios 15:14 conf=1.00 reason='Texto atual menciona Provérbios 15:14'
+
+██████████████████████████████████████████████████████████████████████
+█ EXPERIMENTO: 2 — Sem recent_text
+██████████████████████████████████████████████████████████████████████
+
+────────────────────────────────────────────────────────────
+Frase 1: 'O Senhor é meu pastor.'
+recent_text: ''
+
+  ── USER PROMPT ──
+    Texto atual: O Senhor é meu pastor.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+        }
+      ]
+    }
+    
+    NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 1826 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: O Senhor é meu pastor.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=4028) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "Salmos",
+          "chapter": 23,
+          "verse": 1,
+          "confidence": 0.95,
+          "reason": "frase conhecida como início do salmo 23"
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 1
+      [0] Salmos 23:1 conf=0.95 reason='frase conhecida como início do salmo 23'
+
+────────────────────────────────────────────────────────────
+Frase 2: 'Porque Deus amou o mundo.'
+recent_text: 'O Senhor é meu pastor.'
+
+  ── USER PROMPT ──
+    Texto atual: Porque Deus amou o mundo.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+        }
+      ]
+    }
+    
+    NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 1826 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: Porque Deus amou o mundo.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=3993) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "João",
+          "chapter": 3,
+          "verse": 16,
+          "confidence": 0.95,
+          "reason": "Frase conhecida como João 3:16"
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 1
+      [0] João 3:16 conf=0.95 reason='Frase conhecida como João 3:16'
+
+────────────────────────────────────────────────────────────
+Frase 3: 'Ainda que eu ande pelo vale da sombra da morte.'
+recent_text: 'Porque Deus amou o mundo.'
+
+  ── USER PROMPT ──
+    Texto atual: Ainda que eu ande pelo vale da sombra da morte.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+        }
+      ]
+    }
+    
+    NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 1826 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: Ainda que eu ande pelo vale da sombra da morte.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=4011) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "Salmos",
+          "chapter": 23,
+          "verse": 4,
+          "confidence": 0.95,
+          "reason": "frase conhecida do salmo 23"
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 1
+      [0] Salmos 23:4 conf=0.95 reason='frase conhecida do salmo 23'
+
+────────────────────────────────────────────────────────────
+Frase 4: 'Tudo posso naquele que me fortalece.'
+recent_text: 'Ainda que eu ande pelo vale da sombra da morte.'
+
+  ── USER PROMPT ──
+    Texto atual: Tudo posso naquele que me fortalece.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+        }
+      ]
+    }
+    
+    NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 1826 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: Tudo posso naquele que me fortalece.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=4210) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "Filipenses",
+          "chapter": 4,
+          "verse": 13,
+          "confidence": 0.95,
+          "reason": "Frase conhecida como 'Tudo posso naquele que me fortalece'"
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 1
+      [0] Filipenses 4:13 conf=0.95 reason="Frase conhecida como 'Tudo posso naquele que me fortalece'"
+
+────────────────────────────────────────────────────────────
+Frase 5: 'A armadura de Deus.'
+recent_text: 'Tudo posso naquele que me fortalece.'
+
+  ── USER PROMPT ──
+    Texto atual: A armadura de Deus.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+        }
+      ]
+    }
+    
+    NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 1826 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: A armadura de Deus.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=4000) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "Efésios",
+          "chapter": 6,
+          "verse": 11,
+          "confidence": 0.95,
+          "reason": "menção direta à armadura de Deus"
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 1
+      [0] Efésios 6:11 conf=0.95 reason='menção direta à armadura de Deus'
+
+────────────────────────────────────────────────────────────
+Frase 6: 'Provérbios 15:14'
+recent_text: 'A armadura de Deus.'
+
+  ── USER PROMPT ──
+    Texto atual: Provérbios 15:14
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+        }
+      ]
+    }
+    
+    NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 1826 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: Provérbios 15:14\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=4076) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "Provérbios",
+          "chapter": 15,
+          "verse": 14,
+          "confidence": 1.0,
+          "reason": "Menção explícita do livro, capítulo e versículo."
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 1
+      [0] Provérbios 15:14 conf=1.00 reason='Menção explícita do livro, capítulo e versículo.'
+
+██████████████████████████████████████████████████████████████████████
+█ EXPERIMENTO: 3 — recent_text como contexto secundário
+██████████████████████████████████████████████████████████████████████
+
+────────────────────────────────────────────────────────────
+Frase 1: 'O Senhor é meu pastor.'
+recent_text: ''
+
+  ── USER PROMPT ──
+    Texto atual: O Senhor é meu pastor.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+    
+    CONTEXTO SECUNDÁRIO:
+    A seção "Fala recente" serve apenas para desambiguar referências incompletas.
+    Identifique a referência exclusivamente do "Texto atual".
+    Nunca escolha um candidato apenas por causa da fala recente.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 2045 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: O Senhor é meu pastor.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=4043) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "Salmos",
+          "chapter": 23,
+          "verse": 1,
+          "confidence": 0.95,
+          "reason": "menção direta ao Senhor como pastor"
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 1
+      [0] Salmos 23:1 conf=0.95 reason='menção direta ao Senhor como pastor'
+
+────────────────────────────────────────────────────────────
+Frase 2: 'Porque Deus amou o mundo.'
+recent_text: 'O Senhor é meu pastor.'
+
+  ── USER PROMPT ──
+    Fala recente: O Senhor é meu pastor.
+    Texto atual: Porque Deus amou o mundo.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+    
+    CONTEXTO SECUNDÁRIO:
+    A seção "Fala recente" serve apenas para desambiguar referências incompletas.
+    Identifique a referência exclusivamente do "Texto atual".
+    Nunca escolha um candidato apenas por causa da fala recente.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 2045 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Fala recente: O Senhor é meu pastor.\nTexto atual: Porque Deus amou o mundo.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=2625) ──
+    {
+      "intent": "none",
+      "candidates": []
+    }
+
+  ── PARSER OK ──
+    intent: none
+    candidates: 0
+
+────────────────────────────────────────────────────────────
+Frase 3: 'Ainda que eu ande pelo vale da sombra da morte.'
+recent_text: 'Porque Deus amou o mundo.'
+
+  ── USER PROMPT ──
+    Fala recente: Porque Deus amou o mundo.
+    Texto atual: Ainda que eu ande pelo vale da sombra da morte.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+    
+    CONTEXTO SECUNDÁRIO:
+    A seção "Fala recente" serve apenas para desambiguar referências incompletas.
+    Identifique a referência exclusivamente do "Texto atual".
+    Nunca escolha um candidato apenas por causa da fala recente.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 2045 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Fala recente: Porque Deus amou o mundo.\nTexto atual: Ainda que eu ande pelo vale da sombra da morte.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=2625) ──
+    {
+      "intent": "none",
+      "candidates": []
+    }
+
+  ── PARSER OK ──
+    intent: none
+    candidates: 0
+
+────────────────────────────────────────────────────────────
+Frase 4: 'Tudo posso naquele que me fortalece.'
+recent_text: 'Ainda que eu ande pelo vale da sombra da morte.'
+
+  ── USER PROMPT ──
+    Fala recente: Ainda que eu ande pelo vale da sombra da morte.
+    Texto atual: Tudo posso naquele que me fortalece.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+    
+    CONTEXTO SECUNDÁRIO:
+    A seção "Fala recente" serve apenas para desambiguar referências incompletas.
+    Identifique a referência exclusivamente do "Texto atual".
+    Nunca escolha um candidato apenas por causa da fala recente.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 2045 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Fala recente: Ainda que eu ande pelo vale da sombra da morte.\nTexto atual: Tudo posso naquele que me fortalece.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=4053) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "Salmos",
+          "chapter": 23,
+          "verse": 4,
+          "confidence": 0.95,
+          "reason": "Conexão com o contexto da fala recente"
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 1
+      [0] Salmos 23:4 conf=0.95 reason='Conexão com o contexto da fala recente'
+
+────────────────────────────────────────────────────────────
+Frase 5: 'A armadura de Deus.'
+recent_text: 'Tudo posso naquele que me fortalece.'
+
+  ── USER PROMPT ──
+    Fala recente: Tudo posso naquele que me fortalece.
+    Texto atual: A armadura de Deus.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+    
+    CONTEXTO SECUNDÁRIO:
+    A seção "Fala recente" serve apenas para desambiguar referências incompletas.
+    Identifique a referência exclusivamente do "Texto atual".
+    Nunca escolha um candidato apenas por causa da fala recente.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 2045 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Fala recente: Tudo posso naquele que me fortalece.\nTexto atual: A armadura de Deus.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=4017) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "Filipenses",
+          "chapter": 4,
+          "verse": 13,
+          "confidence": 0.95,
+          "reason": "menção direta à armadura de Deus"
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 1
+      [0] Filipenses 4:13 conf=0.95 reason='menção direta à armadura de Deus'
+
+────────────────────────────────────────────────────────────
+Frase 6: 'Provérbios 15:14'
+recent_text: 'A armadura de Deus.'
+
+  ── USER PROMPT ──
+    Fala recente: A armadura de Deus.
+    Texto atual: Provérbios 15:14
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+    
+    CONTEXTO SECUNDÁRIO:
+    A seção "Fala recente" serve apenas para desambiguar referências incompletas.
+    Identifique a referência exclusivamente do "Texto atual".
+    Nunca escolha um candidato apenas por causa da fala recente.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 2045 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Fala recente: A armadura de Deus.\nTexto atual: Provérbios 15:14\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=4078) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "Provérbios",
+          "chapter": 15,
+          "verse": 14,
+          "confidence": 1.0,
+          "reason": "Texto atual menciona diretamente o livro e versículo."
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 1
+      [0] Provérbios 15:14 conf=1.00 reason='Texto atual menciona diretamente o livro e versículo.'
+
+██████████████████████████████████████████████████████████████████████
+█ EXPERIMENTO: 4 — Ordem invertida (Texto atual antes de Fala recente)
+██████████████████████████████████████████████████████████████████████
+
+────────────────────────────────────────────────────────────
+Frase 1: 'O Senhor é meu pastor.'
+recent_text: ''
+
+  ── USER PROMPT ──
+    Texto atual: O Senhor é meu pastor.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+        }
+      ]
+    }
+    
+    NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 1826 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: O Senhor é meu pastor.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=4075) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "Salmos",
+          "chapter": 23,
+          "verse": 1,
+          "confidence": 0.95,
+          "reason": "frase conhecida como início do salmo 23"
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 1
+      [0] Salmos 23:1 conf=0.95 reason='frase conhecida como início do salmo 23'
+
+────────────────────────────────────────────────────────────
+Frase 2: 'Porque Deus amou o mundo.'
+recent_text: 'O Senhor é meu pastor.'
+
+  ── USER PROMPT ──
+    Texto atual: Porque Deus amou o mundo.
+    Fala recente: O Senhor é meu pastor.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+        }
+      ]
+    }
+    
+    NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 1826 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: Porque Deus amou o mundo.\nFala recente: O Senhor é meu pastor.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=5214) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "João",
+          "chapter": 3,
+          "verse": 16,
+          "confidence": 0.95,
+          "reason": "Menciona amor de Deus ao mundo"
+        },
+        {
+          "book": "Salmos",
+          "chapter": 23,
+          "verse": 1,
+          "confidence": 0.85,
+          "reason": "Fala sobre o Senhor como pastor"
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 2
+      [0] João 3:16 conf=0.95 reason='Menciona amor de Deus ao mundo'
+      [1] Salmos 23:1 conf=0.85 reason='Fala sobre o Senhor como pastor'
+
+────────────────────────────────────────────────────────────
+Frase 3: 'Ainda que eu ande pelo vale da sombra da morte.'
+recent_text: 'Porque Deus amou o mundo.'
+
+  ── USER PROMPT ──
+    Texto atual: Ainda que eu ande pelo vale da sombra da morte.
+    Fala recente: Porque Deus amou o mundo.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+        }
+      ]
+    }
+    
+    NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 1826 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: Ainda que eu ande pelo vale da sombra da morte.\nFala recente: Porque Deus amou o mundo.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=5246) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "Salmos",
+          "chapter": 23,
+          "verse": 4,
+          "confidence": 0.95,
+          "reason": "Menciona vale da sombra da morte"
+        },
+        {
+          "book": "João",
+          "chapter": 3,
+          "verse": 16,
+          "confidence": 0.85,
+          "reason": "Menciona mundo e amor de Deus"
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 2
+      [0] Salmos 23:4 conf=0.95 reason='Menciona vale da sombra da morte'
+      [1] João 3:16 conf=0.85 reason='Menciona mundo e amor de Deus'
+
+────────────────────────────────────────────────────────────
+Frase 4: 'Tudo posso naquele que me fortalece.'
+recent_text: 'Ainda que eu ande pelo vale da sombra da morte.'
+
+  ── USER PROMPT ──
+    Texto atual: Tudo posso naquele que me fortalece.
+    Fala recente: Ainda que eu ande pelo vale da sombra da morte.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+        }
+      ]
+    }
+    
+    NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 1826 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: Tudo posso naquele que me fortalece.\nFala recente: Ainda que eu ande pelo vale da sombra da morte.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=5296) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "Salmos",
+          "chapter": 23,
+          "verse": 4,
+          "confidence": 0.95,
+          "reason": "Menciona vale da sombra da morte"
+        },
+        {
+          "book": "Romanos",
+          "chapter": 8,
+          "verse": 37,
+          "confidence": 0.85,
+          "reason": "Fala sobre nada poder separar do amor"
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 2
+      [0] Salmos 23:4 conf=0.95 reason='Menciona vale da sombra da morte'
+      [1] Romanos 8:37 conf=0.85 reason='Fala sobre nada poder separar do amor'
+
+────────────────────────────────────────────────────────────
+Frase 5: 'A armadura de Deus.'
+recent_text: 'Tudo posso naquele que me fortalece.'
+
+  ── USER PROMPT ──
+    Texto atual: A armadura de Deus.
+    Fala recente: Tudo posso naquele que me fortalece.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+        }
+      ]
+    }
+    
+    NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 1826 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: A armadura de Deus.\nFala recente: Tudo posso naquele que me fortalece.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=5433) ──
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "Filipenses",
+          "chapter": 4,
+          "verse": 13,
+          "confidence": 0.95,
+          "reason": "Fala sobre fortalecimento e capacidade de tudo"
+        },
+        {
+          "book": "Romanos",
+          "chapter": 15,
+          "verse": 13,
+          "confidence": 0.75,
+          "reason": "Menciona fortalecimento e esperança"
+        }
+      ]
+    }
+
+  ── PARSER OK ──
+    intent: show_reference
+    candidates: 2
+      [0] Filipenses 4:13 conf=0.95 reason='Fala sobre fortalecimento e capacidade de tudo'
+      [1] Romanos 15:13 conf=0.75 reason='Menciona fortalecimento e esperança'
+
+────────────────────────────────────────────────────────────
+Frase 6: 'Provérbios 15:14'
+recent_text: 'A armadura de Deus.'
+
+  ── USER PROMPT ──
+    Texto atual: Provérbios 15:14
+    Fala recente: A armadura de Deus.
+    
+    Responda apenas com JSON:
+
+  ── SYSTEM PROMPT (primeiras 5 e últimas 5 linhas) ──
+    Você é um mecanismo de identificação de referências bíblicas.
+    
+    NÃO utilize raciocínio explícito.
+    NÃO explique sua resposta.
+    NÃO converse.
+    [...]
+        }
+      ]
+    }
+    
+    NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>.
+
+  ── PAYLOAD ──
+    {
+      "model": "qwen3:8b-q4_K_M",
+      "messages": [
+        {
+          "role": "system",
+          "content": "[SYSTEM PROMPT — 1826 chars]"
+        },
+        {
+          "role": "user",
+          "content": "Texto atual: Provérbios 15:14\nFala recente: A armadura de Deus.\n\nResponda apenas com JSON:"
+        }
+      ],
+      "stream": false,
+      "options": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "num_predict": 300
+      },
+      "think": false
+    }
+
+  ── RESPOSTA RAW (http_ms=2659) ──
+    {
+      "intent": "none",
+      "candidates": []
+    }
+
+  ── PARSER OK ──
+    intent: none
+    candidates: 0
+
+
+======================================================================
+RELATÓRIO FINAL — Sprint 21.6
+======================================================================
+
+1. TABELA COMPARATIVA
+----------------------------------------------------------------------
+Experimento                | Intent | Candidato Principal | Qualquer Candidato | Conf Média | Tempo Médio
+---------------------------|--------|---------------------|--------------------|----------- |------------
+1. Baseline                | 5/6 (83%) | 2/6 (33%)           | 3/6 (50%)          | 0.96       | 4262ms
+2. Sem recent_text         | 6/6 (100%) | 6/6 (100%)           | 6/6 (100%)          | 0.96       | 4052ms
+3. recent_text secundário  | 4/6 (67%) | 2/6 (33%)           | 2/6 (33%)          | 0.96       | 3573ms
+4. Ordem invertida         | 5/6 (83%) | 3/6 (50%)           | 3/6 (50%)          | 0.95       | 4653ms
+
+2. DETALHES POR FRASE E EXPERIMENTO
+----------------------------------------------------------------------
+
+Frase: 'O Senhor é meu pastor.' (esperado: Salmos 23:1)
+  Baseline     | intent=show_reference | primário=Salmos 23:1 (0.95) | 4035ms
+  Sem recent   | intent=show_reference | primário=Salmos 23:1 (0.95) | 4028ms
+  Secundário   | intent=show_reference | primário=Salmos 23:1 (0.95) | 4042ms
+  Invertido    | intent=show_reference | primário=Salmos 23:1 (0.95) | 4074ms
+
+Frase: 'Porque Deus amou o mundo.' (esperado: João 3:16)
+  Baseline     | intent=show_reference | primário=Salmos 23:1 (0.95) | 5368ms
+  Sem recent   | intent=show_reference | primário=João 3:16 (0.95) | 3992ms
+  Secundário   | intent=none | primário=— | 2625ms
+  Invertido    | intent=show_reference | primário=João 3:16 (0.95) | 5213ms
+
+Frase: 'Ainda que eu ande pelo vale da sombra da morte.' (esperado: Salmos 23:4)
+  Baseline     | intent=none | primário=— | 2636ms
+  Sem recent   | intent=show_reference | primário=Salmos 23:4 (0.95) | 4011ms
+  Secundário   | intent=none | primário=— | 2625ms
+  Invertido    | intent=show_reference | primário=Salmos 23:4 (0.95) | 5246ms
+
+Frase: 'Tudo posso naquele que me fortalece.' (esperado: Filipenses 4:13)
+  Baseline     | intent=show_reference | primário=Salmos 23:4 (0.95) | 5279ms
+  Sem recent   | intent=show_reference | primário=Filipenses 4:13 (0.95) | 4210ms
+  Secundário   | intent=show_reference | primário=Salmos 23:4 (0.95) | 4053ms
+  Invertido    | intent=show_reference | primário=Salmos 23:4 (0.95) | 5295ms
+
+Frase: 'A armadura de Deus.' (esperado: Efésios 6)
+  Baseline     | intent=show_reference | primário=Filipenses 4:13 (0.95) | 4139ms
+  Sem recent   | intent=show_reference | primário=Efésios 6:11 (0.95) | 3999ms
+  Secundário   | intent=show_reference | primário=Filipenses 4:13 (0.95) | 4017ms
+  Invertido    | intent=show_reference | primário=Filipenses 4:13 (0.95) | 5433ms
+
+Frase: 'Provérbios 15:14' (esperado: Provérbios 15:14)
+  Baseline     | intent=show_reference | primário=Provérbios 15:14 (1.00) | 4115ms
+  Sem recent   | intent=show_reference | primário=Provérbios 15:14 (1.00) | 4075ms
+  Secundário   | intent=show_reference | primário=Provérbios 15:14 (1.00) | 4078ms
+  Invertido    | intent=none | primário=— | 2658ms
+
+3. MÉTRICAS DETALHADAS
+----------------------------------------------------------------------
+
+  1. Baseline:
+    Intent correto: 5/6 (83.3%)
+    Candidato principal correto: 2/6 (33.3%)
+    Candidato correto em qualquer posição: 3/6 (50.0%)
+    Confiança média do candidato primário: 0.96
+    Tempo médio de inferência: 4262ms
+      'O Senhor é meu pastor.' → intent=show_reference prim=Salmos 23:1 ok_prim=True ok_any=True (esperado=Salmos 23:1) 4035ms
+      'Porque Deus amou o mundo.' → intent=show_reference prim=Salmos 23:1 ok_prim=False ok_any=True (esperado=João 3:16) 5368ms
+      'Ainda que eu ande pelo vale da sombra da' → intent=none prim=— ok_prim=False ok_any=False (esperado=Salmos 23:4) 2636ms
+      'Tudo posso naquele que me fortalece.' → intent=show_reference prim=Salmos 23:4 ok_prim=False ok_any=False (esperado=Filipenses 4:13) 5279ms
+      'A armadura de Deus.' → intent=show_reference prim=Filipenses 4:13 ok_prim=False ok_any=False (esperado=Efésios 6) 4139ms
+      'Provérbios 15:14' → intent=show_reference prim=Provérbios 15:14 ok_prim=True ok_any=True (esperado=Provérbios 15:14) 4115ms
+
+  2. Sem recent_text:
+    Intent correto: 6/6 (100.0%)
+    Candidato principal correto: 6/6 (100.0%)
+    Candidato correto em qualquer posição: 6/6 (100.0%)
+    Confiança média do candidato primário: 0.96
+    Tempo médio de inferência: 4052ms
+      'O Senhor é meu pastor.' → intent=show_reference prim=Salmos 23:1 ok_prim=True ok_any=True (esperado=Salmos 23:1) 4028ms
+      'Porque Deus amou o mundo.' → intent=show_reference prim=João 3:16 ok_prim=True ok_any=True (esperado=João 3:16) 3992ms
+      'Ainda que eu ande pelo vale da sombra da' → intent=show_reference prim=Salmos 23:4 ok_prim=True ok_any=True (esperado=Salmos 23:4) 4011ms
+      'Tudo posso naquele que me fortalece.' → intent=show_reference prim=Filipenses 4:13 ok_prim=True ok_any=True (esperado=Filipenses 4:13) 4210ms
+      'A armadura de Deus.' → intent=show_reference prim=Efésios 6:11 ok_prim=True ok_any=True (esperado=Efésios 6) 3999ms
+      'Provérbios 15:14' → intent=show_reference prim=Provérbios 15:14 ok_prim=True ok_any=True (esperado=Provérbios 15:14) 4075ms
+
+  3. recent_text secundário:
+    Intent correto: 4/6 (66.7%)
+    Candidato principal correto: 2/6 (33.3%)
+    Candidato correto em qualquer posição: 2/6 (33.3%)
+    Confiança média do candidato primário: 0.96
+    Tempo médio de inferência: 3573ms
+      'O Senhor é meu pastor.' → intent=show_reference prim=Salmos 23:1 ok_prim=True ok_any=True (esperado=Salmos 23:1) 4042ms
+      'Porque Deus amou o mundo.' → intent=none prim=— ok_prim=False ok_any=False (esperado=João 3:16) 2625ms
+      'Ainda que eu ande pelo vale da sombra da' → intent=none prim=— ok_prim=False ok_any=False (esperado=Salmos 23:4) 2625ms
+      'Tudo posso naquele que me fortalece.' → intent=show_reference prim=Salmos 23:4 ok_prim=False ok_any=False (esperado=Filipenses 4:13) 4053ms
+      'A armadura de Deus.' → intent=show_reference prim=Filipenses 4:13 ok_prim=False ok_any=False (esperado=Efésios 6) 4017ms
+      'Provérbios 15:14' → intent=show_reference prim=Provérbios 15:14 ok_prim=True ok_any=True (esperado=Provérbios 15:14) 4078ms
+
+  4. Ordem invertida:
+    Intent correto: 5/6 (83.3%)
+    Candidato principal correto: 3/6 (50.0%)
+    Candidato correto em qualquer posição: 3/6 (50.0%)
+    Confiança média do candidato primário: 0.95
+    Tempo médio de inferência: 4653ms
+      'O Senhor é meu pastor.' → intent=show_reference prim=Salmos 23:1 ok_prim=True ok_any=True (esperado=Salmos 23:1) 4074ms
+      'Porque Deus amou o mundo.' → intent=show_reference prim=João 3:16 ok_prim=True ok_any=True (esperado=João 3:16) 5213ms
+      'Ainda que eu ande pelo vale da sombra da' → intent=show_reference prim=Salmos 23:4 ok_prim=True ok_any=True (esperado=Salmos 23:4) 5246ms
+      'Tudo posso naquele que me fortalece.' → intent=show_reference prim=Salmos 23:4 ok_prim=False ok_any=False (esperado=Filipenses 4:13) 5295ms
+      'A armadura de Deus.' → intent=show_reference prim=Filipenses 4:13 ok_prim=False ok_any=False (esperado=Efésios 6) 5433ms
+      'Provérbios 15:14' → intent=none prim=— ok_prim=False ok_any=False (esperado=Provérbios 15:14) 2658ms

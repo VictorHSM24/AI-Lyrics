@@ -1,0 +1,68 @@
+=== Warm-up BibleRetriever ===
+Versions discovered: ['ACF', 'ARA', 'ARC', 'JFAA', 'NAA', 'NTLH', 'NVT']
+Total versions: 7
+Total verses indexed: 217725
+Unique verses: 31122
+Init time: 1594.4ms
+
+=== Query: 'O Senhor te abençoe e te guarde' ===
+Retrieved 5 candidates in 65.2ms
+  1. Números 6:24 (score=1.000, versions=7, best=1.000)
+     [ACF] score=1.000 text='O SENHOR te abençoe e te guarde;'
+     [ARA] score=1.000 text='O SENHOR te abençoe e te guarde;'
+  2. Salmos 134:3 (score=0.992, versions=5, best=0.999)
+     [ARA] score=0.999 text='De Sião te abençoe o SENHOR, criador do céu e da terra!'
+     [ACF] score=0.999 text='O SENHOR que fez o céu e a terra te abençoe desde Sião.'
+  3. Deuteronômio 5:12 (score=0.906, versions=2, best=0.999)
+     [NTLH] score=0.999 text='— “Guarde o sábado, que é um dia santo, como eu, o SENHOR De'
+     [NAA] score=0.999 text='— “Guarde o dia de sábado, para o santificar, como o SENHOR,'
+  4. 1 Samuel 23:21 (score=0.906, versions=2, best=0.999)
+     [NTLH] score=0.999 text='Saul respondeu: — Que o SENHOR abençoe vocês por serem tão b'
+     [NVT] score=0.999 text='“Que o SENHOR os abençoe!”, disse Saul. “Finalmente alguém s'
+  5. Romanos 12:14 (score=0.878, versions=1, best=0.999)
+     [NTLH] score=0.999 text='Peçam que Deus abençoe os que perseguem vocês. Sim, peçam qu'
+
+=== Query: 'Porque Deus amou o mundo de tal maneira' ===
+Retrieved 1 candidates in 13.4ms
+  1. João 3:16 (score=0.993, versions=5, best=1.000)
+     [NAA] score=1.000 text='Porque Deus amou o mundo de tal maneira que deu o seu Filho '
+     [ACF] score=1.000 text='Porque Deus amou o mundo de tal maneira que deu o seu Filho '
+
+=== Query: 'O Senhor é meu pastor nada me faltará' ===
+Retrieved 1 candidates in 17.2ms
+  1. Salmos 23:1 (score=1.000, versions=7, best=1.000)
+     [ACF] score=1.000 text='O SENHOR é o meu pastor, nada me faltará.'
+     [ARA] score=1.000 text='O SENHOR é o meu pastor; nada me faltará.'
+
+=== Query: 'No princípio criou Deus os céus e a terra' ===
+Retrieved 1 candidates in 19.7ms
+  1. Gênesis 1:1 (score=1.000, versions=6, best=1.000)
+     [ACF] score=1.000 text='NO princípio criou Deus os céus e a terra.'
+     [ARA] score=1.000 text='No princípio, criou Deus os céus e a terra.'
+
+=== Query: 'Tudo posso naquele que me fortalece' ===
+Retrieved 5 candidates in 10.6ms
+  1. Filipenses 4:13 (score=0.993, versions=5, best=1.000)
+     [ARA] score=1.000 text='tudo posso naquele que me fortalece.'
+     [NAA] score=1.000 text='Tudo posso naquele que me fortalece.'
+  2. Provérbios 31:17 (score=0.992, versions=5, best=0.999)
+     [ARA] score=0.999 text='Cinge os lombos de força e fortalece os braços.'
+     [ARC] score=0.999 text='Cinge os lombos de força e fortalece os braços.'
+  3. Isaías 3:7 (score=0.906, versions=2, best=0.999)
+     [ARC] score=0.999 text='naquele dia, levantará este a voz dizendo: Não posso ser méd'
+     [ACF] score=0.998 text='Naquele dia levantará este a sua voz, dizendo: Não posso ser'
+  4. 1 Coríntios 14:4 (score=0.878, versions=1, best=1.000)
+     [NVT] score=1.000 text='Quem fala em línguas fortalece a si mesmo, mas quem profetiz'
+  5. Salmos 119:28 (score=0.878, versions=1, best=0.999)
+     [NVT] score=0.999 text='Minha alma chora de tristeza; fortalece-me com tua palavra.'
+
+=== Teste específico: Números 6:24 ===
+Retrieved in 65.7ms
+  Encontrado: Números 6:24 (score=1.000)
+    [ACF] score=1.000 text='O SENHOR te abençoe e te guarde;'
+    [ARA] score=1.000 text='O SENHOR te abençoe e te guarde;'
+    [ARC] score=1.000 text='O SENHOR te abençoe e te guarde;'
+    [JFAA] score=1.000 text='O Senhor te abençoe e te guarde;'
+    [NAA] score=1.000 text='“O SENHOR os abençoe e os guarde;'
+    [NTLH] score=1.000 text='“Que o SENHOR os abençoe e os guarde;'
+    [NVT] score=0.999 text='‘Que o SENHOR o abençoe e o proteja.'

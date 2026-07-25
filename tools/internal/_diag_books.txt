@@ -1,0 +1,6 @@
+vale da sombra da morte | norm=vale da sombra da morte | book=Daniel conf=1.0
+todas as coisas cooperam para o bem daqueles que amam a deus | norm=todas as coisas cooperam para o bem daqueles que amam a deus | book=None conf=None
+a fe e a certeza das coisas que se esperam | norm=a fe e a certeza das coisas que se esperam | book=None conf=None
+tudo posso naquele que me fortalece | norm=tudo posso naquele que me fortalece | book=None conf=None
+boa noite igreja | norm=boa noite igreja | book=None conf=None
+amen irmaos | norm=amen irmaos | book=None conf=None

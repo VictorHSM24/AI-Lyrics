@@ -3,7 +3,13 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# Artefatos de build (não versionar binários)
+# Sprint 23.0 — Build artifacts (OneDir + installer)
+dist/
+dist-installer/
+build/
+*.spec.bak
+
+# Artefatos de build (não versionar binários gerados por build_embeddings.py)
 data/bible.pt-br.sqlite
 data/bible.embeddings.npy
 data/state.json
@@ -28,6 +34,10 @@ frontend/dist/
 frontend/vite.config.js
 frontend/vite.config.d.ts
 
+# Ferramentas internas — outputs temporários
+tools/internal/__pycache__/
+tools/internal/*.pyc
+
 # Arquivos temporários de teste/output (raiz e frontend)
 pytest_*.txt
 vitest_*.txt
@@ -41,3 +51,9 @@ vitest_arch*.txt
 vitest_final*.txt
 vitest_real*.txt
 vitest_console*.txt
+
+# Sprint 23.0 — Ruído removido do repo (não deve voltar)
+config.zip
+repomix-output.xml
+data/bible.pt-br.sqlite.bak
+

@@ -1,2 +1,0 @@
-﻿ELAPSED: 2.9259572s
-{"model":"qwen3:8b-q4_K_M","created_at":"2026-07-25T13:27:19.0728438Z","message":{"role":"assistant","content":"{\"intent\": \"show_reference\", \"candidates\": [\"O Senhor e meu pastor.\", \"O Senhor é o meu pastor\"]}"},"done":true,"done_reason":"stop","total_duration":849649900,"load_duration":159765500,"prompt_eval_count":61,"prompt_eval_duration":27098000,"eval_count":28,"eval_duration":659594000}

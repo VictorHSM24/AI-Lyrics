@@ -1,0 +1,348 @@
+Sprint 22.1 — Auditoria Arquitetural do Pipeline Semântico
+Contexto
+
+Após a implementação da Sprint 22.0 (BibleRetriever + RAG Local), foram observados comportamentos que sugerem que o pipeline semântico não está operando conforme a arquitetura projetada.
+
+Antes de qualquer alteração de código, troca de modelo LLM ou ajuste de prompts, é necessário realizar uma auditoria completa do fluxo de execução para identificar exatamente onde o pipeline diverge do comportamento esperado.
+
+Esta Sprint não implementará novas funcionalidades.
+
+O objetivo é produzir um diagnóstico técnico detalhado.
+
+Problemas observados
+1. SemanticEngine aparentemente depende de palavras-comando
+
+Durante diversos testes reais foi observado o seguinte comportamento:
+
+Quando o pregador diz apenas:
+
+"Portanto, vão e façam discípulos de todas as nações"
+
+nenhuma inferência semântica é executada.
+
+Entretanto, quando a frase passa a ser:
+
+"Coloca o versículo, portanto vão e façam discípulos de todas as nações"
+
+a LLM é acionada e a referência é encontrada.
+
+O mesmo comportamento ocorreu com outras referências.
+
+Hipótese:
+
+O SemanticEngine pode estar sendo executado apenas quando existe um Intent gerado pelo BiblicalNLU (show_reference), e não para qualquer fala bíblica.
+
+Caso isso seja confirmado, isso representa uma divergência importante do objetivo do projeto.
+
+O AI Lyrics deve compreender automaticamente referências bíblicas durante um sermão, sem depender de comandos explícitos.
+
+2. BibleRetriever aparentemente não está sendo utilizado em todas as inferências
+
+Embora o startup confirme:
+
+BibleRetriever carregado
+modo RAG ativo
+
+o encerramento registra:
+
+retrieves=0
+candidates=0
+
+Isso pode significar uma das possibilidades:
+
+BibleRetriever nunca foi chamado;
+foi chamado por outro caminho sem contabilização;
+o contador possui defeito;
+existe bypass para o pipeline antigo.
+
+Determinar exatamente qual hipótese é verdadeira.
+
+3. Persistência indevida do contexto
+
+Durante vários testes observou-se comportamento semelhante a:
+
+Referência correta:
+
+Números 6
+
+Próximas inferências:
+
+Números 11
+
+Números 18
+
+Números 27
+
+mesmo quando o texto falado claramente pertence a outro livro.
+
+Hipóteses:
+
+SermonMemory está contaminando o prompt.
+ContextEngine está enviando contexto excessivo.
+ReferenceResolver está reaproveitando referência anterior.
+Prompt RAG induz ancoragem.
+LLM está priorizando contexto sobre candidatos.
+
+Determinar exatamente onde essa persistência nasce.
+
+Não assumir que seja culpa da LLM.
+
+Objetivos da auditoria
+
+Mapear completamente o fluxo:
+
+SpeechPartial
+
+↓
+
+IncrementalParser
+
+↓
+
+BiblicalNLU
+
+↓
+
+SemanticEngine
+
+↓
+
+BibleRetriever
+
+↓
+
+PromptBuilder
+
+↓
+
+LLM
+
+↓
+
+ReferenceResolver
+
+↓
+
+SermonMemory
+
+↓
+
+VersePresentation
+
+Para cada etapa responder:
+
+foi executada?
+quando?
+por quê?
+quem a acionou?
+quem decidiu não executá-la?
+Verificações obrigatórias
+A. Acionamento do SemanticEngine
+
+Responder objetivamente:
+
+O SemanticEngine é executado:
+
+para toda SpeechPartial?
+
+ou
+
+somente quando existe um Intent específico?
+
+Localizar exatamente no código qualquer condição semelhante a:
+
+if intent != SHOW_REFERENCE:
+    return
+
+ou qualquer filtro equivalente.
+
+Caso exista:
+
+informar arquivo;
+linha;
+impacto arquitetural.
+B. Acionamento do BibleRetriever
+
+Confirmar:
+
+Em cada inferência:
+
+retrieve() foi chamado?
+quantas vezes?
+quanto tempo levou?
+quantos candidatos retornou?
+
+Caso não tenha sido chamado:
+
+explicar exatamente por quê.
+
+C. Pipeline RAG
+
+Confirmar para cada inferência:
+
+Speech
+
+↓
+
+Retriever
+
+↓
+
+Top-K
+
+↓
+
+Prompt
+
+↓
+
+LLM
+
+ou
+
+Speech
+
+↓
+
+LLM direta
+
+Não assumir.
+
+Confirmar por evidências.
+
+D. Construção do Prompt
+
+Para cada inferência registrada:
+
+mostrar exatamente:
+
+texto enviado;
+candidatos RAG enviados;
+contexto enviado;
+recent_text;
+SermonMemory;
+histórico.
+
+Determinar se o prompt favorece excessivamente o último livro utilizado.
+
+E. SermonMemory
+
+Auditar:
+
+quando atualiza;
+quem atualiza;
+quando limpa;
+quando expira;
+quando influencia nova inferência.
+
+Verificar se referências antigas continuam sendo enviadas mesmo quando o assunto mudou completamente.
+
+F. ReferenceResolver
+
+Verificar se existe qualquer comportamento semelhante a:
+
+não encontrei candidato
+
+↓
+
+manter último livro
+
+ou
+
+intent none
+
+↓
+
+usar última referência
+
+ou
+
+fallback para contexto anterior
+
+Caso exista, localizar exatamente.
+
+G. BibleRetriever
+
+Auditar:
+
+consulta SQL;
+score;
+agregação;
+top_k;
+agrupamento de traduções;
+candidatos descartados.
+
+Confirmar que realmente utiliza todas as versões:
+
+ACF
+ARA
+ARC
+JFAA
+NAA
+NTLH
+NVT
+H. Telemetria
+
+Verificar se todos os eventos abaixo são registrados:
+
+início da inferência;
+retrieve iniciado;
+retrieve concluído;
+candidatos;
+prompt;
+resposta RAW;
+parser;
+resolver;
+publicação;
+atualização do SermonMemory.
+
+Identificar pontos cegos da telemetria.
+
+Experimentos obrigatórios
+
+Executar auditoria para pelo menos estes cenários:
+
+Caso 1
+João 3:16
+
+sem comando
+Caso 2
+João 3:16
+
+com
+
+"coloca o versículo"
+Caso 3
+Mateus 28:19
+
+sem comando
+Caso 4
+Números 6:24
+
+sem comando
+Caso 5
+Romanos 8:31
+
+sem comando
+
+Comparar todas as etapas do pipeline.
+
+Resultado esperado
+
+Ao final da Sprint deverá existir um relatório contendo:
+
+diagrama completo do pipeline executado;
+quais componentes realmente participaram de cada inferência;
+quem decide quando a LLM é chamada;
+quem decide quando o BibleRetriever é chamado;
+se existe dependência de palavras-comando;
+se existe contaminação do SermonMemory;
+se existe ancoragem causada pelo prompt;
+se existe fallback indevido para referências anteriores;
+se o contador do BibleRetriever está correto;
+lista de todos os desvios encontrados entre a arquitetura planejada e a arquitetura realmente executada.
+Importante
+
+Não implemente nenhuma correção nesta Sprint.
+
+O objetivo é produzir um diagnóstico técnico completo, baseado em evidências do código e da telemetria, identificando a causa-raiz de cada comportamento observado e propondo as correções em ordem de prioridade para a Sprint seguinte.

@@ -45,6 +45,8 @@ from microfone.stt_executor import STTExecutor
 from pipeline.bus import PipelineEventBus
 from pipeline.events import SpeechPartial, SpeechPartialUpdated
 from pipeline.metadata import EventMetadata
+# Sprint 21.9 — Telemetria de observabilidade (não altera comportamento).
+from telemetry import hooks as telemetry_hooks
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +189,13 @@ class StreamingSTTService:
                 "StreamingSTT: skipping silence (rms=%.6f < %.6f).",
                 rms, self._min_rms,
             )
+            # Sprint 21.9 — telemetria.
+            telemetry_hooks.stt_window(
+                correlation_id=self._current_correlation_id,
+                audio_duration_ms=duration_ms,
+                rms=rms,
+                skipped_silence=True,
+            )
             return
 
         t0 = time.monotonic()
@@ -210,6 +219,17 @@ class StreamingSTTService:
         # Texto vazio — não publicar.
         if not new_text:
             self._total_skipped_empty += 1
+            # Sprint 21.9 — telemetria.
+            telemetry_hooks.stt_window(
+                correlation_id=self._current_correlation_id,
+                audio_duration_ms=duration_ms,
+                rms=rms,
+                skipped_empty=True,
+                transcribed=True,
+                confidence=result.confidence,
+                latency_ms=latency_ms,
+                language=self._current_language,
+            )
             return
 
         # Sprint 21.3.2 — filtro de confiança anti-alucinação.
@@ -223,6 +243,18 @@ class StreamingSTTService:
                 "StreamingSTT: skipping low-confidence text (conf=%.3f < %.3f, text=%r).",
                 result.confidence, self._min_confidence, new_text[:60],
             )
+            # Sprint 21.9 — telemetria.
+            telemetry_hooks.stt_window(
+                correlation_id=self._current_correlation_id,
+                audio_duration_ms=duration_ms,
+                rms=rms,
+                skipped_low_confidence=True,
+                transcribed=True,
+                text=new_text,
+                confidence=result.confidence,
+                latency_ms=latency_ms,
+                language=self._current_language,
+            )
             return
 
         # Primeira transcrição do fluxo — publicar SpeechPartial.
@@ -235,6 +267,17 @@ class StreamingSTTService:
                 timestamp,
             )
             self._current_text = new_text
+            # Sprint 21.9 — telemetria.
+            telemetry_hooks.stt_window(
+                correlation_id=self._current_correlation_id,
+                audio_duration_ms=duration_ms,
+                rms=rms,
+                transcribed=True,
+                text=new_text,
+                confidence=result.confidence,
+                latency_ms=latency_ms,
+                language=self._current_language,
+            )
             return
 
         # Transcrição subsequente — comparar com texto anterior.
@@ -243,6 +286,18 @@ class StreamingSTTService:
         # Se não há mudança significativa, não publicar.
         if len(appended.strip()) < self._min_text_change:
             self._total_skipped_no_change += 1
+            # Sprint 21.9 — telemetria.
+            telemetry_hooks.stt_window(
+                correlation_id=self._current_correlation_id,
+                audio_duration_ms=duration_ms,
+                rms=rms,
+                skipped_no_change=True,
+                transcribed=True,
+                text=new_text,
+                confidence=result.confidence,
+                latency_ms=latency_ms,
+                language=self._current_language,
+            )
             return
 
         # Publicar SpeechPartialUpdated.
@@ -342,6 +397,16 @@ class StreamingSTTService:
             "SpeechPartial: %r (confidence=%.2f, latency=%dms, corr=%s)",
             text[:80], confidence, latency_ms, meta.correlation_id,
         )
+        # Sprint 21.9 — telemetria.
+        telemetry_hooks.stt_partial_published(
+            correlation_id=meta.correlation_id,
+            text=text,
+            confidence=confidence,
+            latency_ms=latency_ms,
+            audio_duration_ms=audio_duration_ms,
+            language=self._current_language,
+            is_update=False,
+        )
 
     def _publish_partial_updated(
         self,
@@ -387,6 +452,19 @@ class StreamingSTTService:
             "latency=%dms, corr=%s)",
             appended_text[:60], full_text[:80], confidence,
             latency_ms, meta.correlation_id,
+        )
+        # Sprint 21.9 — telemetria.
+        telemetry_hooks.stt_partial_published(
+            correlation_id=meta.correlation_id,
+            text=full_text,
+            confidence=confidence,
+            latency_ms=latency_ms,
+            audio_duration_ms=audio_duration_ms,
+            language=self._current_language,
+            is_update=True,
+            appended_text=appended_text,
+            full_text=full_text,
+            growth_chars=len(appended_text),
         )
 
     # ------------------------------------------------------------------

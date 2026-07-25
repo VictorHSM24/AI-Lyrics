@@ -160,12 +160,22 @@ class SermonContext:
         current_chapter: capítulo atual ou None.
         probable_theme: tema provável ("Novo nascimento") ou None.
         entities: entidades reconhecidas (ordenadas por peso decrescente).
-        recent_topics: temas recentes (ordenados por peso decrescente).
+        recent_topics: temas recentes (ordenadas por peso decrescente).
         recent_references: referências bíblicas recentes (mais recente primeiro).
         confidence: confiança geral do contexto [0.0, 1.0].
         updated_at: timestamp UTC da última atualização.
         sermon_started_at: timestamp UTC do início do sermão.
         total_updates: número total de atualizações.
+        current_book_confidence: Sprint 22.2 — confiança específica do
+            current_book [0.0, 1.0]. Diferente de `confidence` (que mede
+            o contexto geral), este campo mede quão fortemente o
+            SermonMemory acredita que o pregador ainda está no
+            current_book. Inicia em 0.0, sobe para ~0.8 quando uma
+            ReferenceDetected confirma o livro, e deve decair quando
+            inferências consecutivas apontam para outro livro (Sprint
+            22.3 implementará a heurística dinâmica completa; por ora,
+            infraestrutura mínima: campo é setado em _apply_reference e
+            lido pela ContextPolicy/ContextEngine).
     """
 
     current_book: str | None = None
@@ -178,6 +188,8 @@ class SermonContext:
     updated_at: datetime = field(default_factory=_now_utc)
     sermon_started_at: datetime = field(default_factory=_now_utc)
     total_updates: int = 0
+    # Sprint 22.2 — confiança específica do current_book.
+    current_book_confidence: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -191,6 +203,7 @@ class SermonContext:
             "updated_at": self.updated_at.isoformat(),
             "sermon_started_at": self.sermon_started_at.isoformat(),
             "total_updates": self.total_updates,
+            "current_book_confidence": round(self.current_book_confidence, 4),
         }
 
     @property

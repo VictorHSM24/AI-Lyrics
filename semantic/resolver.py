@@ -31,6 +31,8 @@ from pipeline.events import (
 )
 from pipeline.metadata import EventMetadata
 from semantic.types import SemanticCandidate
+# Sprint 21.9 — Telemetria de observabilidade (não altera comportamento).
+from telemetry import hooks as telemetry_hooks
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +109,15 @@ class ReferenceResolver:
         # 1. Desserializar candidatos.
         candidates = self._deserialize_candidates(event.candidates_json)
         if not candidates:
+            # Sprint 21.9 — telemetria.
+            telemetry_hooks.resolver_decision(
+                correlation_id=event.meta.correlation_id,
+                candidates_in=[],
+                candidates_valid=[],
+                chosen=None,
+                reason="no_candidates",
+                min_confidence=self._min_confidence,
+            )
             self._publish_resolution(
                 event, resolved=False, reason="no_candidates",
                 num_in=0, num_valid=0,
@@ -119,6 +130,15 @@ class ReferenceResolver:
             logger.debug(
                 "ReferenceResolver: parser already resolved correlation_id=%s, skipping",
                 event.meta.correlation_id,
+            )
+            # Sprint 21.9 — telemetria.
+            telemetry_hooks.resolver_decision(
+                correlation_id=event.meta.correlation_id,
+                candidates_in=[c.to_dict() for c in candidates],
+                candidates_valid=[],
+                chosen=None,
+                reason="parser_already_resolved",
+                min_confidence=self._min_confidence,
             )
             self._publish_resolution(
                 event, resolved=False, reason="parser_already_resolved",
@@ -142,6 +162,15 @@ class ReferenceResolver:
             else:
                 self._total_skipped_low_conf += 1
                 reason = "low_confidence"
+            # Sprint 21.9 — telemetria.
+            telemetry_hooks.resolver_decision(
+                correlation_id=event.meta.correlation_id,
+                candidates_in=[c.to_dict() for c in candidates],
+                candidates_valid=[c.to_dict() for c in valid_candidates],
+                chosen=None,
+                reason=reason,
+                min_confidence=self._min_confidence,
+            )
             self._publish_resolution(
                 event, resolved=False, reason=reason,
                 num_in=len(candidates), num_valid=len(valid_candidates),
@@ -156,6 +185,15 @@ class ReferenceResolver:
         self._total_resolved += 1
 
         # 7. Publicar telemetria de resolução.
+        # Sprint 21.9 — telemetria.
+        telemetry_hooks.resolver_decision(
+            correlation_id=event.meta.correlation_id,
+            candidates_in=[c.to_dict() for c in candidates],
+            candidates_valid=[c.to_dict() for c in valid_candidates],
+            chosen=chosen.to_dict(),
+            reason="highest_confidence",
+            min_confidence=self._min_confidence,
+        )
         self._publish_resolution(
             event, resolved=True, reason="highest_confidence",
             num_in=len(candidates), num_valid=len(valid_candidates),

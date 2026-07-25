@@ -77,6 +77,8 @@ from pipeline.events import (
     VerseResolving,
 )
 from pipeline.metadata import EventMetadata
+# Sprint 21.9 — Telemetria de observabilidade (não altera comportamento).
+from telemetry import hooks as telemetry_hooks
 
 logger = logging.getLogger(__name__)
 
@@ -516,6 +518,18 @@ class VersePresentationService:
             total_latency_ms,
         )
 
+        # Sprint 21.9 — telemetria: apresentação bem-sucedida.
+        telemetry_hooks.holyrics_presentation(
+            correlation_id=event.meta.correlation_id,
+            book=event.book,
+            chapter=event.chapter,
+            verse=event.verse_start,
+            version=self._version,
+            quick_presentation=self._quick,
+            success=True,
+            latency_ms=holyrics_latency_ms,
+        )
+
         self._publish_presented(
             event=event,
             search_result=search_result,
@@ -544,6 +558,19 @@ class VersePresentationService:
             error_message,
             holyrics_latency_ms,
             total_latency_ms,
+        )
+        # Sprint 21.9 — telemetria: falha na apresentação.
+        telemetry_hooks.holyrics_presentation(
+            correlation_id=event.meta.correlation_id,
+            book=event.book,
+            chapter=event.chapter,
+            verse=event.verse_start,
+            version=self._version,
+            quick_presentation=self._quick,
+            success=False,
+            latency_ms=holyrics_latency_ms,
+            error=error_message,
+            stage=error_type,
         )
         self._publish_failure(
             event=event,

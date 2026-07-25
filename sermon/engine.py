@@ -50,6 +50,8 @@ from sermon.types import (
     SermonEntity,
     SermonTopic,
 )
+# Sprint 21.9 — Telemetria de observabilidade (não altera comportamento).
+from telemetry import hooks as telemetry_hooks
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +73,14 @@ _DEFAULT_MAX_REFERENCES = 15
 _DEFAULT_MIN_ENTITY_WEIGHT = 0.05
 _DEFAULT_MIN_TOPIC_WEIGHT = 0.05
 _DEFAULT_CONFIDENCE_DECAY_S = 60.0  # confiança decai 50% a cada 60s sem atualização
+# Sprint 22.2 — confiança específica do current_book (infra mínima).
+# Heurística simples: uma ReferenceDetected que confirma o livro atual
+# reforça a confiança; uma que muda o livro reseta para valor moderado
+# (uma única referência é evidência fraca). Sprint 22.3 implementará
+# decaimento temporal, ajuste por candidatos RAG e migração entre livros.
+_BOOK_CONFIDENCE_INITIAL = 0.50  # confiança ao trocar de livro (1 ref)
+_BOOK_CONFIDENCE_REINFORCE = 0.15  # bump por referência confirmadora
+_BOOK_CONFIDENCE_MAX = 0.90  # teto (várias confirmações)
 
 # Entidades bíblicas comuns para reconhecimento heurístico leve.
 # Não é "mini-LLM" — apenas marcação de menções para alimentar o contexto.
@@ -265,6 +275,9 @@ class SermonMemoryEngine:
         text = text.strip()
 
         with self._lock:
+            # Sprint 21.9 — capturar estado anterior para telemetria.
+            prev_book = self._context.current_book or ""
+            prev_chapter = self._context.current_chapter or 0
             now_ts = time.time()
             # Adicionar ao buffer de texto.
             self._text_buffer.append((now_ts, text))
@@ -300,7 +313,37 @@ class SermonMemoryEngine:
                 updated_at=_now_utc(),
                 sermon_started_at=self._context.sermon_started_at,
                 total_updates=self._metrics["total_updates"],
+                current_book_confidence=self._context.current_book_confidence,
             )
+            # Sprint 21.9 — capturar estado novo para telemetria.
+            new_book = self._context.current_book or ""
+            new_chapter = self._context.current_chapter or 0
+            new_theme = self._context.probable_theme or ""
+            new_num_entities = len(self._context.entities)
+            new_num_topics = len(self._context.recent_topics)
+            new_num_refs = len(self._context.recent_references)
+            new_confidence = self._context.confidence
+            new_total_updates = self._metrics["total_updates"]
+
+        # Sprint 21.9 — telemetria: mudança de estado por processamento de texto.
+        reason = "text_update"
+        if theme_changed:
+            reason = "text_update+theme_changed"
+        telemetry_hooks.sermon_state_change(
+            correlation_id=source_meta.correlation_id,
+            reason=reason,
+            previous_book=prev_book,
+            previous_chapter=prev_chapter,
+            new_book=new_book,
+            new_chapter=new_chapter,
+            probable_theme=new_theme,
+            num_entities=new_num_entities,
+            num_topics=new_num_topics,
+            num_references=new_num_refs,
+            confidence=new_confidence,
+            source="text",
+            total_updates=new_total_updates,
+        )
 
         # Publicar eventos (fora do lock para evitar re-entrada).
         self._publish_update(source_meta)
@@ -404,6 +447,7 @@ class SermonMemoryEngine:
                 updated_at=now,
                 sermon_started_at=self._context.sermon_started_at,
                 total_updates=self._context.total_updates,
+                current_book_confidence=self._context.current_book_confidence,
             )
         return changed
 
@@ -448,6 +492,7 @@ class SermonMemoryEngine:
                 updated_at=now,
                 sermon_started_at=self._context.sermon_started_at,
                 total_updates=self._context.total_updates,
+                current_book_confidence=self._context.current_book_confidence,
             )
         return changed
 
@@ -515,6 +560,7 @@ class SermonMemoryEngine:
             updated_at=now,
             sermon_started_at=self._context.sermon_started_at,
             total_updates=self._context.total_updates,
+            current_book_confidence=self._context.current_book_confidence,
         )
 
     def _decay_and_sort_entities(self) -> list[SermonEntity]:
@@ -571,6 +617,7 @@ class SermonMemoryEngine:
             updated_at=_now_utc(),
             sermon_started_at=self._context.sermon_started_at,
             total_updates=self._context.total_updates,
+            current_book_confidence=self._context.current_book_confidence,
         )
 
     def _maybe_update_theme(self) -> bool:
@@ -600,6 +647,7 @@ class SermonMemoryEngine:
             updated_at=_now_utc(),
             sermon_started_at=self._context.sermon_started_at,
             total_updates=self._context.total_updates,
+            current_book_confidence=self._context.current_book_confidence,
         )
         self._metrics["topic_changes"] += 1
         return True
@@ -643,10 +691,41 @@ class SermonMemoryEngine:
         book_changed = new_book != old_book
         chapter_changed = (new_book == old_book) and (new_chapter != old_chapter)
 
+        # Sprint 22.2 — confiança específica do current_book (infra mínima).
+        # Heurística simples: reforço quando a referência confirma o livro
+        # atual; reset para valor moderado quando o livro muda. Sprint 22.3
+        # implementará decaimento temporal e ajuste por candidatos RAG.
+        old_book_conf = self._context.current_book_confidence
+        if not new_book:
+            new_book_conf = 0.0
+        elif book_changed:
+            new_book_conf = _BOOK_CONFIDENCE_INITIAL
+        else:
+            new_book_conf = min(
+                old_book_conf + _BOOK_CONFIDENCE_REINFORCE,
+                _BOOK_CONFIDENCE_MAX,
+            )
+
         if book_changed:
             self._metrics["book_changes"] += 1
         if chapter_changed:
             self._metrics["chapter_changes"] += 1
+
+        # Sprint 22.2 — telemetria: mudança na confiança do current_book.
+        if new_book_conf != old_book_conf:
+            reason_conf = (
+                "book_changed" if book_changed
+                else "reference_confirmed" if new_book
+                else "cleared"
+            )
+            telemetry_hooks.sermon_book_confidence_change(
+                correlation_id=event.meta.correlation_id,
+                previous_book=old_book or "",
+                new_book=new_book or "",
+                previous_confidence=old_book_conf,
+                new_confidence=new_book_conf,
+                reason=reason_conf,
+            )
 
         self._context = SermonContext(
             current_book=new_book,
@@ -659,6 +738,7 @@ class SermonMemoryEngine:
             updated_at=now,
             sermon_started_at=self._context.sermon_started_at,
             total_updates=self._metrics["total_updates"],
+            current_book_confidence=new_book_conf,
         )
 
         # Publicar eventos de mudança (fora do lock — chamador já tem lock,
@@ -668,6 +748,29 @@ class SermonMemoryEngine:
             self._publish_book_changed(event.meta, old_book or "", new_book)
         if chapter_changed:
             self._publish_chapter_changed(event.meta, new_book, old_chapter or 0, new_chapter or 0)
+
+        # Sprint 21.9 — telemetria: mudança de estado por referência detectada.
+        reason = "reference_detected"
+        if book_changed:
+            reason = "reference_detected+book_changed"
+        elif chapter_changed:
+            reason = "reference_detected+chapter_changed"
+        telemetry_hooks.sermon_state_change(
+            correlation_id=event.meta.correlation_id,
+            reason=reason,
+            previous_book=old_book or "",
+            previous_chapter=old_chapter or 0,
+            new_book=new_book,
+            new_chapter=new_chapter or 0,
+            probable_theme=self._context.probable_theme or "",
+            num_entities=len(self._context.entities),
+            num_topics=len(self._context.recent_topics),
+            num_references=len(self._context.recent_references),
+            confidence=self._context.confidence,
+            source=source,
+            reference_active=f"{new_book} {new_chapter}:{event.verse_start}",
+            total_updates=self._metrics["total_updates"],
+        )
 
     # ------------------------------------------------------------------
     # Publicação de eventos

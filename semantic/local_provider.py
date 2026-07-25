@@ -35,6 +35,8 @@ from semantic.types import (
     SemanticResult,
     SemanticTimeout,
 )
+# Sprint 21.9 — Telemetria de observabilidade (não altera comportamento).
+from telemetry import hooks as telemetry_hooks
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +97,69 @@ Schema JSON obrigatório:
 }
 
 NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários. NUNCA inclua tags <think>."""
+
+
+# Sprint 22.0 — System prompt para modo RAG Local.
+# Sprint 22.2 — Reformulado para tornar explícito o princípio RAG:
+#   BibleRetriever > Texto Atual > Contexto do Sermão.
+# O LLM atua apenas como desambiguador sobre candidatos recuperados
+# da Bíblia local. Não pode inventar referências fora da lista.
+# O contexto do sermão é auxiliar: nunca substitui um candidato
+# claramente superior recuperado da base local.
+_SYSTEM_PROMPT_RAG = """Você é um desambiguador de referências bíblicas.
+
+NÃO utilize raciocínio explícito.
+NÃO explique sua resposta.
+NÃO converse.
+NÃO escreva texto antes ou depois do JSON.
+NÃO produza markdown.
+
+Sua única saída válida é um JSON compatível com o schema informado.
+
+PRINCÍPIO FUNDAMENTAL:
+A lista de candidatos fornecida foi recuperada diretamente da Bíblia
+local. Esses candidatos representam a FONTE OFICIAL de conhecimento
+do sistema. Sua memória paramétrica NÃO deve ser usada para procurar
+outras referências. Você não deve inventar livros, capítulos ou
+versículos que não estão na lista.
+
+Sua tarefa: dado o texto falado por um pregador e a lista de candidatos
+recuperados da Bíblia local, escolher o candidato que melhor corresponde
+ao texto ouvido.
+
+REGRAS OBRIGATÓRIAS:
+1. Responda APENAS com JSON válido. Nenhum texto adicional.
+2. Escolha APENAS um candidato da lista fornecida. NUNCA invente
+   referências que não estão na lista. NUNCA proponha referências
+   fora da lista apresentada.
+3. Se nenhum candidato corresponder ao texto, responda:
+   {"intent": "none", "candidates": []}
+4. Use os mesmos book, chapter e verse do candidato escolhido.
+5. confidence deve ser um número entre 0.0 e 1.0 indicando quão bem o
+   candidato corresponde ao texto ouvido.
+6. reason deve ser curto (máx 80 caracteres).
+7. Utilize prioritariamente os candidatos recuperados da Bíblia local.
+   O contexto do sermão, quando fornecido, é APENAS auxiliar e poderá
+   ser utilizado quando dois ou mais candidatos apresentarem
+   significado equivalente.
+8. NUNCA substitua um candidato claramente superior apenas porque
+   o contexto anterior pertence a outro livro.
+
+Schema JSON obrigatório:
+{
+  "intent": "show_reference" | "none",
+  "candidates": [
+    {
+      "book": "nome do livro (igual ao candidato escolhido)",
+      "chapter": número,
+      "verse": número (0 se capítulo inteiro),
+      "confidence": número 0.0-1.0,
+      "reason": "justificativa curta"
+    }
+  ]
+}
+
+NUNCA inclua campos extras. NUNCA inclua markdown. NUNCA inclua comentários."""
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +343,34 @@ class LocalLLMProvider:
 
         timeout_s = min(timeout_ms / 1000.0, self._request_timeout_s)
         user_prompt = self._build_user_prompt(context)
+        # Sprint 22.0 — selecionar system prompt conforme modo (RAG ou atual).
+        system_prompt = self._select_system_prompt(context)
+
+        # Sprint 21.9 — telemetria: registrar prompt enviado ao LLM.
+        telemetry_hooks.semantic_prompt(
+            correlation_id=getattr(context, "correlation_id", "") or "",
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            context={
+                "current_text": context.current_text,
+                "recent_text": context.recent_text,
+                "last_book": context.last_book,
+                "last_chapter": context.last_chapter,
+                "last_reference": context.last_reference,
+                "sermon_book": context.sermon_book,
+                "sermon_chapter": context.sermon_chapter,
+                "sermon_theme": context.sermon_theme,
+                "sermon_entities": list(context.sermon_entities) if context.sermon_entities else [],
+                "sermon_confidence": context.sermon_confidence,
+                "rag_candidates_count": len(context.rag_candidates),
+                "rag_mode": bool(context.rag_candidates),
+            },
+            model=self._model,
+            temperature=self._temperature,
+            top_p=self._top_p,
+            max_tokens=self._max_tokens,
+            disable_thinking=self._disable_thinking,
+        )
 
         # Sprint 21.3 - Capability detection apenas para OpenAIBackend.
         # OllamaBackend tem capacidade estatica (supports_think_parameter()=True).
@@ -298,7 +391,7 @@ class LocalLLMProvider:
             try:
                 # Construir request padronizado.
                 request = BackendRequest(
-                    system_prompt=_SYSTEM_PROMPT,
+                    system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     model=self._model,
                     temperature=self._temperature,
@@ -336,6 +429,16 @@ class LocalLLMProvider:
                 content = backend_resp.content
                 if not content:
                     # Sem conteudo - pode ser thinking consumiu tudo ou erro.
+                    # Sprint 21.9 — telemetria: resposta vazia.
+                    telemetry_hooks.semantic_llm_response(
+                        correlation_id=getattr(context, "correlation_id", "") or "",
+                        raw_content="",
+                        cleaned_content="",
+                        had_thinking=False,
+                        http_ms=int(backend_resp.http_time_ms),
+                        attempt=attempt,
+                        error=backend_resp.error or "empty content from backend",
+                    )
                     if backend_resp.error:
                         self._record_metric("schema_violation")
                         last_error = SemanticError(backend_resp.error)
@@ -357,6 +460,15 @@ class LocalLLMProvider:
                     )
 
                 cleaned_content = sanitized.content
+                # Sprint 21.9 — telemetria: resposta RAW do LLM.
+                telemetry_hooks.semantic_llm_response(
+                    correlation_id=getattr(context, "correlation_id", "") or "",
+                    raw_content=content,
+                    cleaned_content=cleaned_content,
+                    had_thinking=sanitized.had_thinking,
+                    http_ms=int(backend_resp.http_time_ms),
+                    attempt=attempt,
+                )
                 result = self._parse_and_validate(cleaned_content)
 
                 if sanitized.had_thinking:
@@ -579,7 +691,36 @@ class LocalLLMProvider:
         return int(m.group(1)) if m else 0
 
     def _build_user_prompt(self, context: SemanticContext) -> str:
-        """Constrói o prompt do usuário com contexto (incluindo SermonContext — Sprint 21)."""
+        """Constrói o prompt do usuário com contexto.
+
+        Sprint 22.2 — três variantes conforme a decisão da ContextPolicy:
+        - CONTEXT_OMIT (alta confiança): sem contexto do sermão.
+          Apenas texto ouvido + candidatos + "Escolha o melhor."
+        - CONTEXT_SUMMARY (ambiguidade moderada): contexto resumido
+          (apenas current_book, sem tema/entidades).
+        - CONTEXT_FULL (alta ambiguidade): contexto completo
+          (livro + capítulo + tema + entidades) para desambiguação.
+
+        Se context_decision for None (modo não-RAG ou fallback), usa
+        o comportamento legado (sempre inclui contexto se disponível).
+        """
+        decision = context.context_decision
+        # Modo não-RAG: comportamento legado (Sprint 21).
+        if not context.rag_candidates:
+            return self._build_user_prompt_legacy(context)
+        # Modo RAG sem decisão da ContextPolicy: legado com candidatos.
+        if decision is None:
+            return self._build_user_prompt_legacy(context)
+        # Modo RAG com decisão: escolher variante.
+        include = getattr(decision, "include_context", "full")
+        if include == "omit":
+            return self._build_user_prompt_rag_high_confidence(context)
+        if include == "summary":
+            return self._build_user_prompt_rag_moderate(context)
+        return self._build_user_prompt_rag_high_ambiguity(context)
+
+    def _build_user_prompt_legacy(self, context: SemanticContext) -> str:
+        """Variante legada (Sprint 21 + 22.0) — sempre inclui contexto."""
         lines = []
         # Sprint 21 — usar SermonContext (memória contínua) se disponível.
         if context.sermon_book:
@@ -603,9 +744,142 @@ class LocalLLMProvider:
         if context.recent_text and context.recent_text != context.current_text:
             lines.append(f"Fala recente: {context.recent_text}")
         lines.append(f"Texto atual: {context.current_text}")
+
+        # Sprint 22.0 — Modo RAG Local: incluir candidatos recuperados.
+        if context.rag_candidates:
+            lines.append("")
+            lines.append("Candidatos recuperados da Bíblia local:")
+            for i, cand in enumerate(context.rag_candidates, 1):
+                lines.append(f"\n{i}. {cand.canonical_reference} (score={cand.aggregated_score:.2f})")
+                # Mostrar até 2 versões por candidato para não inflar o prompt.
+                for v in cand.versions[:2]:
+                    text_preview = v.text[:120] if len(v.text) > 120 else v.text
+                    lines.append(f"   [{v.version}] {text_preview}")
+                if cand.num_versions > 2:
+                    lines.append(f"   (e mais {cand.num_versions - 2} versões)")
+            lines.append("")
+            lines.append("Escolha apenas UM candidato da lista acima.")
+            lines.append("Se nenhum corresponder ao texto, responda NONE.")
+            lines.append("NUNCA invente referências fora da lista.")
+            lines.append("")
+            lines.append("Responda apenas com JSON:")
+        else:
+            lines.append("")
+            lines.append("Responda apenas com JSON:")
+        return "\n".join(lines)
+
+    def _build_user_prompt_rag_high_confidence(
+        self, context: SemanticContext
+    ) -> str:
+        """Sprint 22.2 — Variante alta confiança: contexto omitido.
+
+        Candidato dominante recuperado da Bíblia local. O contexto do
+        sermão é omitido para evitar ancoragem indevida. O LLM escolhe
+        apenas pela lista de candidatos.
+        """
+        lines = []
+        if context.recent_text and context.recent_text != context.current_text:
+            lines.append(f"Fala recente: {context.recent_text}")
+        lines.append(f"Texto ouvido: {context.current_text}")
+        lines.append("")
+        lines.append("Candidatos recuperados da Bíblia local (fonte oficial):")
+        for i, cand in enumerate(context.rag_candidates, 1):
+            lines.append(f"\n{i}. {cand.canonical_reference} (score={cand.aggregated_score:.2f})")
+            for v in cand.versions[:2]:
+                text_preview = v.text[:120] if len(v.text) > 120 else v.text
+                lines.append(f"   [{v.version}] {text_preview}")
+            if cand.num_versions > 2:
+                lines.append(f"   (e mais {cand.num_versions - 2} versões)")
+        lines.append("")
+        lines.append("Escolha o melhor candidato da lista acima.")
+        lines.append("NUNCA invente referências fora da lista.")
         lines.append("")
         lines.append("Responda apenas com JSON:")
         return "\n".join(lines)
+
+    def _build_user_prompt_rag_moderate(
+        self, context: SemanticContext
+    ) -> str:
+        """Sprint 22.2 — Variante ambiguidade moderada: contexto resumido.
+
+        Gap moderado entre top1 e top2. Inclui apenas o current_book
+        (sem capítulo, tema ou entidades) como auxílio de desambiguação.
+        """
+        lines = []
+        if context.sermon_book:
+            lines.append(
+                f"Contexto do sermão (auxiliar): pregando em {context.sermon_book}."
+            )
+        if context.recent_text and context.recent_text != context.current_text:
+            lines.append(f"Fala recente: {context.recent_text}")
+        lines.append(f"Texto ouvido: {context.current_text}")
+        lines.append("")
+        lines.append("Candidatos recuperados da Bíblia local (fonte oficial):")
+        for i, cand in enumerate(context.rag_candidates, 1):
+            lines.append(f"\n{i}. {cand.canonical_reference} (score={cand.aggregated_score:.2f})")
+            for v in cand.versions[:2]:
+                text_preview = v.text[:120] if len(v.text) > 120 else v.text
+                lines.append(f"   [{v.version}] {text_preview}")
+            if cand.num_versions > 2:
+                lines.append(f"   (e mais {cand.num_versions - 2} versões)")
+        lines.append("")
+        lines.append("Utilize prioritariamente os candidatos da lista.")
+        lines.append("O contexto do sermão é apenas auxiliar.")
+        lines.append("NUNCA invente referências fora da lista.")
+        lines.append("")
+        lines.append("Responda apenas com JSON:")
+        return "\n".join(lines)
+
+    def _build_user_prompt_rag_high_ambiguity(
+        self, context: SemanticContext
+    ) -> str:
+        """Sprint 22.2 — Variante alta ambiguidade: contexto completo.
+
+        Candidatos próximos ou top1 abaixo do limiar de dominância.
+        Contexto completo incluído (livro + capítulo + tema + entidades)
+        para auxiliar a desambiguação.
+        """
+        lines = []
+        if context.sermon_book:
+            ref = context.sermon_book
+            if context.sermon_chapter > 0:
+                ref += f" {context.sermon_chapter}"
+            lines.append(
+                f"Contexto do sermão (auxiliar para desambiguação): pregando em {ref}."
+            )
+            if context.sermon_theme:
+                lines.append(f"Tema atual: {context.sermon_theme}.")
+            if context.sermon_entities:
+                lines.append(
+                    f"Entidades mencionadas: {', '.join(context.sermon_entities[:5])}."
+                )
+        if context.recent_text and context.recent_text != context.current_text:
+            lines.append(f"Fala recente: {context.recent_text}")
+        lines.append(f"Texto ouvido: {context.current_text}")
+        lines.append("")
+        lines.append("Candidatos recuperados da Bíblia local (fonte oficial):")
+        for i, cand in enumerate(context.rag_candidates, 1):
+            lines.append(f"\n{i}. {cand.canonical_reference} (score={cand.aggregated_score:.2f})")
+            for v in cand.versions[:2]:
+                text_preview = v.text[:120] if len(v.text) > 120 else v.text
+                lines.append(f"   [{v.version}] {text_preview}")
+            if cand.num_versions > 2:
+                lines.append(f"   (e mais {cand.num_versions - 2} versões)")
+        lines.append("")
+        lines.append("Utilize prioritariamente os candidatos da lista.")
+        lines.append("O contexto do sermão pode ajudar a desambiguar.")
+        lines.append("NUNCA substitua um candidato claramente superior")
+        lines.append("apenas pelo contexto do sermão.")
+        lines.append("NUNCA invente referências fora da lista.")
+        lines.append("")
+        lines.append("Responda apenas com JSON:")
+        return "\n".join(lines)
+
+    def _select_system_prompt(self, context: SemanticContext) -> str:
+        """Sprint 22.0 — Seleciona system prompt conforme modo (RAG ou atual)."""
+        if context.rag_candidates:
+            return _SYSTEM_PROMPT_RAG
+        return _SYSTEM_PROMPT
 
     def _parse_and_validate(self, content: str) -> SemanticResult:
         """Parsea e valida rigorosamente o JSON retornado pelo modelo.
@@ -771,6 +1045,23 @@ class StubProvider:
     def infer(self, context: SemanticContext, timeout_ms: int = 5000) -> SemanticResult:
         if self._delay_ms > 0:
             time.sleep(self._delay_ms / 1000.0)
+
+        # Sprint 22.0 — Modo RAG: se há candidatos recuperados, escolher o top.
+        if context.rag_candidates:
+            top = context.rag_candidates[0]
+            return SemanticResult(
+                intent="show_reference",
+                candidates=tuple([SemanticCandidate(
+                    book=top.book,
+                    chapter=top.chapter,
+                    verse=top.verse,
+                    confidence=min(0.95, top.aggregated_score),
+                    reason="rag_top_candidate",
+                )]),
+                inference_ms=self._delay_ms,
+                provider=self.name,
+                model=self.model_name,
+            )
 
         text_lower = context.current_text.lower()
         for pattern, candidates in self._STUB_RESPONSES:

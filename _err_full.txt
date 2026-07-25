@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "C:\Users\USER\Documents\AI Lyrics\_run_diag.py", line 11, in <module>
+    _diag_sprint21_7.main()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\USER\Documents\AI Lyrics\_diag_sprint21_7.py", line 570, in main
+    if delta_primary > 10 and len(regressions) <= 2:
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: main.<locals>.w() got an unexpected keyword argument 'end'

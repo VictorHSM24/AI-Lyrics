@@ -1,0 +1,196 @@
+======================================================================
+Sprint 21.8 — Classificação de Dependência de Contexto
+======================================================================
+Data: 2026-07-25 10:24:23
+Corpus: 201 frases
+>> Warmup...
+   Warmup OK em 12.9s
+
+Executando Estratégia A — Heurística simples...
+  A: accuracy=85.1% precision=81.2% recall=91.0% f1=85.8%
+Executando Estratégia B — Heurística linguística...
+  B: accuracy=93.0% precision=87.7% recall=100.0% f1=93.5%
+Executando Estratégia C — LLM (200 chamadas, ~10min)...
+  C: caso 1/201...
+  C: caso 21/201...
+  C: caso 41/201...
+  C: caso 61/201...
+  C: caso 81/201...
+  C: caso 101/201...
+  C: caso 121/201...
+  C: caso 141/201...
+  C: caso 161/201...
+  C: caso 181/201...
+  C: caso 201/201...
+  C: accuracy=97.0% precision=94.3% recall=100.0% f1=97.1%
+Executando Estratégia D — Híbrida (B + LLM para casos incertos)...
+  D: caso 1/201...
+  D: caso 21/201...
+  D: caso 41/201...
+  D: caso 61/201...
+  D: caso 81/201...
+  D: caso 101/201...
+  D: caso 121/201...
+  D: caso 141/201...
+  D: caso 161/201...
+  D: caso 181/201...
+  D: caso 201/201...
+  D: accuracy=97.0% precision=94.3% recall=100.0% f1=97.1% (LLM calls: 107/201)
+
+Analisando casos ambíguos...
+  'O bom pastor.'
+    A=COMPLETE_REFERENCE(0.70) B=COMPLETE_REFERENCE(0.55) C=COMPLETE_REFERENCE(0.90) D=COMPLETE_REFERENCE(0.83)
+  'A videira verdadeira.'
+    A=COMPLETE_REFERENCE(0.70) B=CONTEXT_DEPENDENT(0.55) C=COMPLETE_REFERENCE(0.90) D=COMPLETE_REFERENCE(0.90)
+  'O pão da vida.'
+    A=COMPLETE_REFERENCE(0.70) B=COMPLETE_REFERENCE(0.55) C=COMPLETE_REFERENCE(0.90) D=COMPLETE_REFERENCE(0.83)
+  'O caminho.'
+    A=CONTEXT_DEPENDENT(0.80) B=CONTEXT_DEPENDENT(0.65) C=CONTEXT_DEPENDENT(0.90) D=CONTEXT_DEPENDENT(0.88)
+  'A porta.'
+    A=CONTEXT_DEPENDENT(0.80) B=CONTEXT_DEPENDENT(0.65) C=CONTEXT_DEPENDENT(0.90) D=CONTEXT_DEPENDENT(0.88)
+  'A luz do mundo.'
+    A=COMPLETE_REFERENCE(0.70) B=COMPLETE_REFERENCE(0.55) C=COMPLETE_REFERENCE(0.90) D=COMPLETE_REFERENCE(0.83)
+  'O Consolador.'
+    A=CONTEXT_DEPENDENT(0.80) B=CONTEXT_DEPENDENT(0.65) C=CONTEXT_DEPENDENT(0.90) D=CONTEXT_DEPENDENT(0.88)
+
+======================================================================
+RELATÓRIO FINAL — Sprint 21.8
+======================================================================
+
+1. DESEMPENHO DE CADA ESTRATÉGIA
+----------------------------------------------------------------------
+Estratégia  | Accuracy | Precision | Recall | F1     | Tempo Médio | LLM Calls
+------------|----------|-----------|--------|--------|-------------|----------
+A (simples) | 85.1%    | 81.2%      | 91.0%   | 85.8%  | 0ms       | 0/201
+B (linguíst.) | 93.0%    | 87.7%      | 100.0%   | 93.5%  | 0ms       | 0/201
+C (LLM)     | 97.0%    | 94.3%      | 100.0%   | 97.1%  | 2325ms       | 201/201
+D (híbrida) | 97.0%    | 94.3%      | 100.0%   | 97.1%  | 2318ms       | 107/201
+
+2. MATRIZES DE CONFUSÃO (positivo = CONTEXT_DEPENDENT)
+----------------------------------------------------------------------
+
+  Estratégia A:
+                    Pred COMPLETE  Pred CONTEXT  Total
+  Real COMPLETE         80 (TN)       21 (FP)     101
+  Real CONTEXT           9 (FN)       91 (TP)     100
+  Total                89             112            201
+
+  Estratégia B:
+                    Pred COMPLETE  Pred CONTEXT  Total
+  Real COMPLETE         87 (TN)       14 (FP)     101
+  Real CONTEXT           0 (FN)      100 (TP)     100
+  Total                87             114            201
+
+  Estratégia C:
+                    Pred COMPLETE  Pred CONTEXT  Total
+  Real COMPLETE         95 (TN)        6 (FP)     101
+  Real CONTEXT           0 (FN)      100 (TP)     100
+  Total                95             106            201
+
+  Estratégia D:
+                    Pred COMPLETE  Pred CONTEXT  Total
+  Real COMPLETE         95 (TN)        6 (FP)     101
+  Real CONTEXT           0 (FN)      100 (TP)     100
+  Total                95             106            201
+
+3. CASOS DE ERRO
+----------------------------------------------------------------------
+
+  Estratégia A — 30 erros:
+    [FP] 'Bem-aventurados os que choram.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.50)
+    [FP] 'Bem-aventurados os mansos.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.50)
+    [FP] 'Bem-aventurados os misericordiosos.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.50)
+    [FP] 'Bem-aventurados os pacificadores.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.50)
+    [FP] 'Amai os vossos inimigos.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.50)
+    [FP] 'Tudo posso naquele que me fortalece.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.70)
+    [FP] 'Revesti-vos do novo homem.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.50)
+    [FP] 'Sede sóbrios e vigilantes.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.70)
+    [FP] 'Ama o teu próximo como a ti mesmo.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.70)
+    [FP] 'Não terás outros deursos diante de mim.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.70)
+    [FP] 'Não matarás.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.80)
+    [FP] 'Sê forte e corajoso.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.50)
+    [FP] 'Buscai-me e vivereis.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.50)
+    [FP] 'Provérbios 15:14' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.80)
+    [FP] 'Salmos 23' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.80)
+    [FP] 'Romanos 8:28' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.80)
+    [FP] 'Filipenses 4:13' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.80)
+    [FP] 'Gênesis 1:1' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.80)
+    [FP] 'Mateus 5:3' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.80)
+    [FP] 'Apocalipse 3:20' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.80)
+    [FP] 'Salmo 91' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.80)
+    [FN] 'Como Paulo disse.' → predito=COMPLETE_REFERENCE esperado=CONTEXT_DEPENDENT (conf=0.70)
+    [FN] 'Como o pastor explicou.' → predito=COMPLETE_REFERENCE esperado=CONTEXT_DEPENDENT (conf=0.70)
+    [FN] 'Como Pedro disse.' → predito=COMPLETE_REFERENCE esperado=CONTEXT_DEPENDENT (conf=0.70)
+    [FN] 'Como João disse.' → predito=COMPLETE_REFERENCE esperado=CONTEXT_DEPENDENT (conf=0.70)
+    [FN] 'Como Isaías disse.' → predito=COMPLETE_REFERENCE esperado=CONTEXT_DEPENDENT (conf=0.70)
+    [FN] 'Como Davi disse.' → predito=COMPLETE_REFERENCE esperado=CONTEXT_DEPENDENT (conf=0.70)
+    [FN] 'Como Moisés disse.' → predito=COMPLETE_REFERENCE esperado=CONTEXT_DEPENDENT (conf=0.70)
+    [FN] 'Como Jesus disse.' → predito=COMPLETE_REFERENCE esperado=CONTEXT_DEPENDENT (conf=0.70)
+    [FN] 'Como o Senhor disse.' → predito=COMPLETE_REFERENCE esperado=CONTEXT_DEPENDENT (conf=0.70)
+
+  Estratégia B — 14 erros:
+    [FP] 'O orgulho vai adiante da ruína.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.60)
+    [FP] 'Bem-aventurados os pobres de espírito.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.55)
+    [FP] 'Bem-aventurados os que choram.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.55)
+    [FP] 'Bem-aventurados os mansos.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.55)
+    [FP] 'Bem-aventurados os limpos de coração.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.55)
+    [FP] 'Bem-aventurados os misericordiosos.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.55)
+    [FP] 'Bem-aventurados os pacificadores.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.55)
+    [FP] 'Amai os vossos inimigos.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.55)
+    [FP] 'Não vos conformeis com este mundo.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.55)
+    [FP] 'Eu sou o que sou.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.55)
+    [FP] 'Não matarás.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.55)
+    [FP] 'Escolhei hoje a quem sirvais.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.55)
+    [FP] 'Sê forte e corajoso.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.55)
+    [FP] 'Como são formosos os pés dos que anunciam o evange' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.60)
+
+  Estratégia C — 6 erros:
+    [FP] 'Porque as coisas que se vêem são temporais.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.90)
+    [FP] 'Deixando toda a malícia e todo o engano.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.90)
+    [FP] 'Sê forte e corajoso.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.90)
+    [FP] 'Porque um menino nos nasceu um filho se nos deu.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.90)
+    [FP] 'Não vos lembreis das coisas passadas.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.90)
+    [FP] 'Como são formosos os pés dos que anunciam o evange' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.90)
+
+  Estratégia D — 6 erros:
+    [FP] 'Porque as coisas que se vêem são temporais.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.90)
+    [FP] 'Deixando toda a malícia e todo o engano.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.90)
+    [FP] 'Sê forte e corajoso.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.90)
+    [FP] 'Porque um menino nos nasceu um filho se nos deu.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.90)
+    [FP] 'Não vos lembreis das coisas passadas.' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.90)
+    [FP] 'Como são formosos os pés dos que anunciam o evange' → predito=CONTEXT_DEPENDENT esperado=COMPLETE_REFERENCE (conf=0.90)
+
+4. CASOS AMBÍGUOS
+----------------------------------------------------------------------
+Texto                    | A            | B            | C            | D
+-------------------------|--------------|--------------|--------------|------------
+O bom pastor.            | COMPLETE_REFERENCE  | COMPLETE_REFERENCE  | COMPLETE_REFERENCE  | COMPLETE_REFERENCE
+A videira verdadeira.    | COMPLETE_REFERENCE  | CONTEXT_DEPENDENT  | COMPLETE_REFERENCE  | COMPLETE_REFERENCE
+O pão da vida.           | COMPLETE_REFERENCE  | COMPLETE_REFERENCE  | COMPLETE_REFERENCE  | COMPLETE_REFERENCE
+O caminho.               | CONTEXT_DEPENDENT  | CONTEXT_DEPENDENT  | CONTEXT_DEPENDENT  | CONTEXT_DEPENDENT
+A porta.                 | CONTEXT_DEPENDENT  | CONTEXT_DEPENDENT  | CONTEXT_DEPENDENT  | CONTEXT_DEPENDENT
+A luz do mundo.          | COMPLETE_REFERENCE  | COMPLETE_REFERENCE  | COMPLETE_REFERENCE  | COMPLETE_REFERENCE
+O Consolador.            | CONTEXT_DEPENDENT  | CONTEXT_DEPENDENT  | CONTEXT_DEPENDENT  | CONTEXT_DEPENDENT
+
+5. SIMULAÇÃO DE PRODUÇÃO
+----------------------------------------------------------------------
+Estratégia recomendada: D (híbrida)
+  Frases → COMPLETE_REFERENCE: 95/201 (47.3%)
+  Frases → CONTEXT_DEPENDENT: 106/201 (52.7%)
+  Taxa de erro do classificador: 3.0%
+  LLM calls necessárias: 107/201 (53.2%)
+  Tempo médio: 0ms (heurística pura) + LLM para 53.2% dos casos
+
+6. RECOMENDAÇÃO ARQUITETURAL
+----------------------------------------------------------------------
+Melhor estratégia por F1: C (F1=97.1%, accuracy=97.0%)
+
+VIÁVEL: O classificador atinge F1 >= 90%%.
+Recomendação: introduzir classificador antes da inferência bíblica.
+
+Impacto esperado na inferência bíblica:
+  Com a estratégia híbrida (D):
+  - 47.3% das frases irão para o pipeline sem recent_text (melhor acurácia)
+  - 52.7% das frases irão para o pipeline com contexto (necessário para desambiguação)
+  - Taxa de erro de classificação: 3.0% (frases enviadas para o pipeline errado)
+  - Custo adicional: 53.2% das frases precisam de chamada ao LLM para classificação

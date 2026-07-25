@@ -134,6 +134,9 @@ class SemanticConfig:
             a última inferência (filtra filler).
         min_interval_ms: Sprint 21.5 — intervalo mínimo entre chamadas
             (rate limit).
+        rag: Sprint 22.2 — limiares da ContextPolicy (priorização RAG).
+        context: Sprint 22.2 — limiares de confiança do SermonMemory
+            para inclusão/ remoção do current_book no prompt.
     """
 
     provider: str
@@ -146,6 +149,53 @@ class SemanticConfig:
     min_growth_chars: int = 20
     min_append_words: int = 3
     min_interval_ms: int = 1000
+    # Sprint 22.2 — Priorização RAG e política de contexto.
+    rag: "RagPolicyConfig | None" = None
+    context: "SermonContextPolicyConfig | None" = None
+
+
+@dataclass(frozen=True)
+class RagPolicyConfig:
+    """Sprint 22.2 — Limiares da ContextPolicy para priorização RAG.
+
+    Princípio: quando há candidato dominante (top1 com score alto e
+    gap grande vs top2), o contexto do sermão é omitido do prompt.
+    O contexto só é incluído para desambiguação entre candidatos
+    próximos.
+
+    Campos:
+        dominant_score: score mínimo do top1 para classificar como
+            "alta confiança" (candidato dominante). Default 0.98.
+        dominant_gap: diferença mínima top1-top2 para classificar
+            como "alta confiança". gap >= dominant_gap → contexto
+            omitido. Default 0.08.
+        ambiguity_gap: diferença abaixo da qual dois candidatos são
+            considerados empatados (alta ambiguidade) → contexto
+            completo incluído. Default 0.03.
+    """
+
+    dominant_score: float = 0.98
+    dominant_gap: float = 0.08
+    ambiguity_gap: float = 0.03
+
+
+@dataclass(frozen=True)
+class SermonContextPolicyConfig:
+    """Sprint 22.2 — Limiares de confiança do SermonMemory.
+
+    Campos:
+        min_confidence: confiança mínima do SermonMemory para incluir
+            current_book no prompt em qualquer nível. Abaixo disso,
+            contexto sempre omitido. Default 0.40.
+        remove_when_confidence_below: limiar abaixo do qual o
+            SermonMemory deve zerar current_book/current_chapter.
+            Sprint 22.3 implementará a heurística dinâmica; por ora,
+            apenas reservado para uso pela infraestrutura mínima.
+            Default 0.25.
+    """
+
+    min_confidence: float = 0.40
+    remove_when_confidence_below: float = 0.25
 
 
 @dataclass(frozen=True)
@@ -227,6 +277,45 @@ class AudioConfig:
 
 
 @dataclass(frozen=True)
+class TelemetryConfig:
+    """Sprint 21.9 — Configuração da telemetria de observabilidade.
+
+    Campos:
+        enabled: se True, habilita a gravação de eventos em .jsonl.
+        output_dir: diretório base para gravação. Será criada uma
+            subpasta session_<timestamp> dentro dele. Se vazio,
+            usa default (~/AI_Lyrics_telemetry).
+    """
+
+    enabled: bool = True
+    output_dir: str = ""
+
+
+@dataclass(frozen=True)
+class KnowledgeConfig:
+    """Sprint 22.0 — Configuração do BibleRetriever (RAG Local).
+
+    Campos:
+        enabled: se True, ativa o modo RAG Local (BibleRetriever →
+            SemanticEngine). Se False, usa o Modo Atual (LLM direto).
+            Permite testes A/B entre as duas arquiteturas.
+        sources_dir: diretório com as bases .sqlite (default: data/sources).
+        top_k: número máximo de candidatos a recuperar e enviar ao LLM.
+        fallback_on_empty: se True, e o BibleRetriever retornar 0
+            candidatos, o SemanticEngine cai para o comportamento
+            atual (LLM direto sem candidatos). Se False, e 0
+            candidatos, o SemanticEngine retorna intent="none".
+        warmup: se True, executa o warm-up do BibleRetriever no startup.
+    """
+
+    enabled: bool = False
+    sources_dir: str = "data/sources"
+    top_k: int = 20
+    fallback_on_empty: bool = True
+    warmup: bool = True
+
+
+@dataclass(frozen=True)
 class Config:
     """Configuração raiz do sistema. Imutável após carregamento."""
 
@@ -242,3 +331,7 @@ class Config:
     audio: AudioConfig | None = None  # opcional (backward-compatible)
     # Sprint 21.1 — Semantic Engine config (opcional p/ backward-compatible).
     semantic: "SemanticConfig | None" = None
+    # Sprint 21.9 — Telemetria de observabilidade (opcional).
+    telemetry: "TelemetryConfig | None" = None
+    # Sprint 22.0 — Bible Knowledge Base RAG Local (opcional).
+    knowledge: "KnowledgeConfig | None" = None

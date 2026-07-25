@@ -144,7 +144,13 @@ class SemanticContext:
         sermon_chapter: capítulo atual do sermão (Sprint 21) ou 0.
         sermon_theme: tema provável do sermão (Sprint 21) ou "".
         sermon_entities: entidades reconhecidas (Sprint 21) — lista de nomes.
-        sermon_confidence: confiança da memória do sermão (Sprint 21).
+        sermon_confidence: confiança geral da memória do sermão (Sprint 21).
+        sermon_book_confidence: Sprint 22.2 — confiança específica do
+            sermon_book [0.0, 1.0]. Diferente de sermon_confidence (que
+            mede o contexto geral), mede quão fortemente o SermonMemory
+            acredita que o pregador ainda está no sermon_book. Usado
+            pela ContextPolicy para decidir se inclui o contexto no
+            prompt (Sprint 22.2).
     """
 
     current_text: str = ""
@@ -160,6 +166,19 @@ class SemanticContext:
     sermon_theme: str = ""
     sermon_entities: tuple[str, ...] = field(default_factory=tuple)
     sermon_confidence: float = 0.0
+    # Sprint 22.2 — confiança específica do sermon_book.
+    sermon_book_confidence: float = 0.0
+    # Sprint 22.0 — RAG Local: candidatos recuperados da Bíblia local.
+    # Lista de BibleCandidate (estrutura imutável do pacote knowledge).
+    # Vazia quando o modo RAG está desabilitado ou não encontrou candidatos.
+    rag_candidates: tuple[Any, ...] = field(default_factory=tuple)
+    # ID de correlação para rastrear a consulta no retriever (Sprint 22.0).
+    correlation_id: str = ""
+    # Sprint 22.2 — decisão da ContextPolicy (quanto do contexto do
+    # sermão incluir no prompt). Any para evitar import circular com
+    # semantic.context_policy. None quando a ContextPolicy não foi
+    # aplicada (modo não-RAG ou fallback).
+    context_decision: Any = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -175,6 +194,15 @@ class SemanticContext:
             "sermon_theme": self.sermon_theme,
             "sermon_entities": list(self.sermon_entities),
             "sermon_confidence": self.sermon_confidence,
+            "sermon_book_confidence": round(self.sermon_book_confidence, 4),
+            "rag_candidates_count": len(self.rag_candidates),
+            "correlation_id": self.correlation_id,
+            "context_decision": (
+                self.context_decision.to_dict()
+                if self.context_decision is not None
+                and hasattr(self.context_decision, "to_dict")
+                else None
+            ),
         }
 
     def context_hash(self) -> str:
@@ -182,9 +210,18 @@ class SemanticContext:
 
         Hash apenas dos campos que afetam a inferência:
         current_text + recent_text + last_book + last_chapter +
-        sermon_book + sermon_chapter + sermon_theme.
+        sermon_book + sermon_chapter + sermon_theme + rag_candidates.
         """
         import hashlib
+        # Sprint 22.0 — incluir rag_candidates no hash, pois afeta o prompt.
+        rag_key = "|".join(
+            getattr(c, "canonical_reference", "") for c in self.rag_candidates
+        )
+        # Sprint 22.2 — incluir a decisão da ContextPolicy, pois afeta
+        # qual variante do prompt é gerada (contexto omitido/resumido/completo).
+        decision_key = ""
+        if self.context_decision is not None:
+            decision_key = getattr(self.context_decision, "include_context", "")
         key = "|".join([
             self.current_text.strip().lower(),
             self.recent_text.strip().lower(),
@@ -193,5 +230,7 @@ class SemanticContext:
             self.sermon_book.strip().lower(),
             str(self.sermon_chapter),
             self.sermon_theme.strip().lower(),
+            rag_key,
+            decision_key,
         ])
         return hashlib.sha256(key.encode("utf-8")).hexdigest()[:32]

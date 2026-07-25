@@ -57,6 +57,8 @@ from pipeline.events import (
     SpeechPartialUpdated,
 )
 from pipeline.metadata import EventMetadata
+# Sprint 21.9 — Telemetria de observabilidade (não altera comportamento).
+from telemetry import hooks as telemetry_hooks
 
 logger = logging.getLogger(__name__)
 
@@ -440,13 +442,47 @@ class IncrementalBiblicalParser:
             return
         self._last_completeness = completeness
 
+        # Sprint 21.9 — telemetria: registrar decisão do parser.
+        corr_id = self._correlation_id or source_event.correlation_id
+        book_name = book.canonical
+        chapter_val = self._current_chapter or 0
+        verse_val = self._current_verse or 0
+
         # Se confiança >= threshold e temos pelo menos book+chapter,
         # publicar ReferenceDetected.
         if confidence >= self._threshold and completeness in ("chapter", "verse"):
+            # Sprint 21.9 — telemetria.
+            telemetry_hooks.parser_event(
+                correlation_id=corr_id,
+                text_processed=self._seen_text,
+                expecting=self._expecting,
+                completeness=completeness,
+                book=book_name,
+                chapter=chapter_val,
+                verse=verse_val,
+                confidence=confidence,
+                decision="publish_detected",
+                published_event="ReferenceDetected",
+                latency_ms=latency_ms,
+            )
             self._publish_detected(source_event, book, confidence, latency_ms)
             self._detected_published = True
         else:
             # Publicar ReferenceCandidate (telemetria — sempre).
+            # Sprint 21.9 — telemetria.
+            telemetry_hooks.parser_event(
+                correlation_id=corr_id,
+                text_processed=self._seen_text,
+                expecting=self._expecting,
+                completeness=completeness,
+                book=book_name,
+                chapter=chapter_val,
+                verse=verse_val,
+                confidence=confidence,
+                decision="publish_candidate",
+                published_event="ReferenceCandidate",
+                latency_ms=latency_ms,
+            )
             self._publish_candidate(
                 source_event, book, confidence, completeness, latency_ms,
             )
@@ -469,6 +505,20 @@ class IncrementalBiblicalParser:
                 and confidence >= self._anticipation_threshold
                 and completeness in ("chapter", "verse")
             ):
+                # Sprint 21.9 — telemetria.
+                telemetry_hooks.parser_event(
+                    correlation_id=corr_id,
+                    text_processed=self._seen_text,
+                    expecting=self._expecting,
+                    completeness=completeness,
+                    book=book_name,
+                    chapter=chapter_val,
+                    verse=verse_val,
+                    confidence=confidence,
+                    decision="publish_antecipada",
+                    published_event="ReferenceAntecipada",
+                    latency_ms=latency_ms,
+                )
                 self._publish_anticipation(
                     source_event, book, confidence, completeness, latency_ms,
                 )

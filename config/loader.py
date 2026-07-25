@@ -21,13 +21,17 @@ from config.models import (
     ConfidenceConfig,
     Config,
     HolyricsConfig,
+    KnowledgeConfig,
     LLMConfig,
     LogConfig,
     OllamaConfig,
+    RagPolicyConfig,
     SearchConfig,
     SemanticConfig,
+    SermonContextPolicyConfig,
     StateConfig,
     STTConfig,
+    TelemetryConfig,
     VadConfig,
 )
 from core.exceptions import ConfigError
@@ -247,6 +251,9 @@ def _build_semantic(data: dict[str, Any]) -> SemanticConfig:
         raise ConfigError(
             f"semantic.min_interval_ms must be >= 0, got {min_interval_ms}"
         )
+    # Sprint 22.2 — sub-seções rag e context (opcionais).
+    rag = _build_rag_policy(data.get("rag", {}))
+    context = _build_sermon_context_policy(data.get("context", {}))
     return SemanticConfig(
         provider=provider,
         ollama=ollama,
@@ -257,6 +264,67 @@ def _build_semantic(data: dict[str, Any]) -> SemanticConfig:
         min_growth_chars=min_growth_chars,
         min_append_words=min_append_words,
         min_interval_ms=min_interval_ms,
+        rag=rag,
+        context=context,
+    )
+
+
+def _build_rag_policy(data: dict[str, Any]) -> RagPolicyConfig:
+    """Sprint 22.2 — Constrói RagPolicyConfig (opcional, com defaults)."""
+    if not data:
+        return RagPolicyConfig()
+    dominant_score = float(data.get("dominant_score", 0.98))
+    dominant_gap = float(data.get("dominant_gap", 0.08))
+    ambiguity_gap = float(data.get("ambiguity_gap", 0.03))
+    if not 0.0 <= dominant_score <= 1.0:
+        raise ConfigError(
+            f"semantic.rag.dominant_score must be in [0,1], got {dominant_score}"
+        )
+    if not 0.0 <= dominant_gap <= 1.0:
+        raise ConfigError(
+            f"semantic.rag.dominant_gap must be in [0,1], got {dominant_gap}"
+        )
+    if not 0.0 <= ambiguity_gap <= 1.0:
+        raise ConfigError(
+            f"semantic.rag.ambiguity_gap must be in [0,1], got {ambiguity_gap}"
+        )
+    if ambiguity_gap > dominant_gap:
+        raise ConfigError(
+            f"semantic.rag.ambiguity_gap ({ambiguity_gap}) must be <= "
+            f"dominant_gap ({dominant_gap})"
+        )
+    return RagPolicyConfig(
+        dominant_score=dominant_score,
+        dominant_gap=dominant_gap,
+        ambiguity_gap=ambiguity_gap,
+    )
+
+
+def _build_sermon_context_policy(
+    data: dict[str, Any],
+) -> SermonContextPolicyConfig:
+    """Sprint 22.2 — Constrói SermonContextPolicyConfig (opcional)."""
+    if not data:
+        return SermonContextPolicyConfig()
+    min_confidence = float(data.get("min_confidence", 0.40))
+    remove_below = float(data.get("remove_when_confidence_below", 0.25))
+    if not 0.0 <= min_confidence <= 1.0:
+        raise ConfigError(
+            f"semantic.context.min_confidence must be in [0,1], got {min_confidence}"
+        )
+    if not 0.0 <= remove_below <= 1.0:
+        raise ConfigError(
+            f"semantic.context.remove_when_confidence_below must be in [0,1], "
+            f"got {remove_below}"
+        )
+    if remove_below > min_confidence:
+        raise ConfigError(
+            f"semantic.context.remove_when_confidence_below ({remove_below}) "
+            f"must be <= min_confidence ({min_confidence})"
+        )
+    return SermonContextPolicyConfig(
+        min_confidence=min_confidence,
+        remove_when_confidence_below=remove_below,
     )
 
 
@@ -352,6 +420,39 @@ def _build_audio(data: dict[str, Any]) -> AudioConfig:
     )
 
 
+def _build_telemetry(data: dict[str, Any]) -> TelemetryConfig:
+    """Sprint 21.9 — Constrói TelemetryConfig (opcional)."""
+    if not isinstance(data, dict):
+        return TelemetryConfig()
+    enabled = bool(data.get("enabled", True))
+    output_dir = str(data.get("output_dir", "") or "")
+    return TelemetryConfig(enabled=enabled, output_dir=output_dir)
+
+
+def _build_knowledge(data: dict[str, Any]) -> KnowledgeConfig:
+    """Sprint 22.0 — Constrói KnowledgeConfig (opcional).
+
+    Defaults seguros: enabled=False (preserva Modo Atual por padrão,
+    permitindo ativação explícita para testes A/B).
+    """
+    if not isinstance(data, dict):
+        return KnowledgeConfig()
+    enabled = bool(data.get("enabled", False))
+    sources_dir = str(data.get("sources_dir", "data/sources") or "data/sources")
+    top_k = int(data.get("top_k", 20))
+    if top_k <= 0:
+        top_k = 20
+    fallback_on_empty = bool(data.get("fallback_on_empty", True))
+    warmup = bool(data.get("warmup", True))
+    return KnowledgeConfig(
+        enabled=enabled,
+        sources_dir=sources_dir,
+        top_k=top_k,
+        fallback_on_empty=fallback_on_empty,
+        warmup=warmup,
+    )
+
+
 def _build_config(data: dict[str, Any]) -> Config:
     """Constrói ``Config`` imutável a partir de dict parseado do YAML."""
     holyrics = _build_holyrics(_require(data, "holyrics", "root"))
@@ -376,6 +477,14 @@ def _build_config(data: dict[str, Any]) -> Config:
     semantic: SemanticConfig | None = None
     if "semantic" in data:
         semantic = _build_semantic(data["semantic"])
+    # Sprint 21.9 — telemetry é opcional (backward-compatible).
+    telemetry: TelemetryConfig | None = None
+    if "telemetry" in data:
+        telemetry = _build_telemetry(data["telemetry"])
+    # Sprint 22.0 — knowledge (RAG Local) é opcional (backward-compatible).
+    knowledge: KnowledgeConfig | None = None
+    if "knowledge" in data:
+        knowledge = _build_knowledge(data["knowledge"])
     return Config(
         holyrics=holyrics,
         stt=stt,
@@ -388,6 +497,8 @@ def _build_config(data: dict[str, Any]) -> Config:
         mode=mode,
         audio=audio,
         semantic=semantic,
+        telemetry=telemetry,
+        knowledge=knowledge,
     )
 
 

@@ -319,11 +319,55 @@ class CompositionRoot:
     sermon_memory_engine: Any = None  # SermonMemoryEngine or None
     reference_resolver: Any = None  # ReferenceResolver or None
     semantic_provider: Any = None  # LocalLLMProvider / StubProvider or None
+    # Sprint 22.0 — BibleRetriever (RAG Local) or None.
+    bible_retriever: Any = None
 
 
 # ---------------------------------------------------------------------------
 # Factory — cria o CompositionRoot.
 # ---------------------------------------------------------------------------
+
+
+def _configure_telemetry(config: Any, *, test_mode: bool = False) -> None:
+    """Sprint 21.9 — configura o TelemetryRecorder global.
+
+    Lê config.telemetry (opcional) e env vars para decidir:
+    - enabled: bool (default True em produção, False em test_mode)
+    - output_dir: str (default ~/AI_Lyrics_telemetry)
+
+    Em test_mode, a telemetria é desabilitada por padrão para não
+    poluir o disco durante testes automatizados.
+    """
+    from telemetry import configure_recorder
+
+    # Decidir se está habilitada.
+    env_disabled = os.environ.get("AILYRICS_TELEMETRY_ENABLED", "").strip() in ("0", "false", "False")
+    telemetry_config = getattr(config, "telemetry", None)
+    if telemetry_config is not None:
+        enabled = bool(getattr(telemetry_config, "enabled", not test_mode))
+    else:
+        enabled = not test_mode
+    if env_disabled:
+        enabled = False
+
+    # Decidir diretório de saída.
+    output_dir = None
+    if telemetry_config is not None:
+        output_dir = getattr(telemetry_config, "output_dir", None) or None
+
+    configure_recorder(output_dir=output_dir, enabled=enabled)
+    if enabled:
+        from telemetry import get_recorder
+        r = get_recorder()
+        if r is not None:
+            logger.info(
+                "Sprint 21.9: telemetry enabled — session dir: %s",
+                r.session_dir,
+            )
+        else:
+            logger.warning("Sprint 21.9: telemetry enabled but recorder is None")
+    else:
+        logger.info("Sprint 21.9: telemetry disabled")
 
 
 def create_composition_root() -> CompositionRoot:
@@ -348,6 +392,13 @@ def create_composition_root() -> CompositionRoot:
         )
     # 1. Carregar config real.
     config = _load_config()
+
+    # Sprint 21.9 — Telemetria de observabilidade.
+    # Configura o recorder global antes de instanciar qualquer componente
+    # do pipeline, para que todos possam registrar eventos desde o início.
+    # Pode ser desabilitado via config (telemetry.enabled=false) ou via
+    # env var AILYRICS_TELEMETRY_ENABLED=0.
+    _configure_telemetry(config, test_mode=test_mode)
 
     # 2. Core
     store = MemoryEventStore()
@@ -469,6 +520,10 @@ def create_composition_root() -> CompositionRoot:
     verse_presentation_service = None
     searcher_instance = None
     holyrics_client_instance = None
+    # Sprint 22.0 — BibleRetriever (declarado aqui para ser visível no
+    # bloco do SemanticEngine abaixo).
+    bible_retriever_instance = None
+    book_table = None
     try:
         if test_mode:
             raise _SkipComponent("AI_LYRICS_TEST_MODE=1")
@@ -545,6 +600,46 @@ def create_composition_root() -> CompositionRoot:
                         default_version,
                         quick,
                     )
+
+            # Sprint 22.0 — BibleRetriever (RAG Local).
+            # Inicializa apenas se knowledge.enabled=True e book_table
+            # estiver disponível (compartilhado com o Searcher).
+            bible_retriever_instance = None
+            knowledge_config = getattr(config, "knowledge", None)
+            if knowledge_config is not None and knowledge_config.enabled:
+                if book_table is None:
+                    logger.warning(
+                        "Sprint 22.0: BibleRetriever disabled — "
+                        "book_table not available."
+                    )
+                else:
+                    try:
+                        from knowledge import warmup_bible_retriever
+                        bible_retriever_instance, br_stats = (
+                            warmup_bible_retriever(
+                                sources_dir=knowledge_config.sources_dir,
+                                book_table=book_table,
+                                top_k_default=knowledge_config.top_k,
+                            )
+                        )
+                        logger.info(
+                            "Sprint 22.0: BibleRetriever warmed up "
+                            "(versions=%d, total_verses=%d, unique=%d, "
+                            "init_time=%.1fms).",
+                            br_stats.total_versions, br_stats.total_verses,
+                            br_stats.unique_verses, br_stats.init_time_ms,
+                        )
+                    except Exception as e_br:
+                        logger.warning(
+                            "Sprint 22.0: BibleRetriever warmup failed: %s — "
+                            "SemanticEngine will use current mode.", e_br,
+                        )
+                        bible_retriever_instance = None
+            else:
+                logger.info(
+                    "Sprint 22.0: BibleRetriever disabled (knowledge.enabled=False) — "
+                    "using current mode (LLM direto)."
+                )
     except _SkipComponent as e:
         logger.info("Sprint 18: skipped (%s).", e)
     except Exception as e:
@@ -824,6 +919,34 @@ def create_composition_root() -> CompositionRoot:
             cache = SemanticCache()
 
             # 6. SemanticEngine.
+            # Sprint 22.0 — passa bible_retriever se disponível.
+            # Sprint 22.2 — passa ContextPolicy se a config tiver rag/context.
+            knowledge_config = getattr(config, "knowledge", None)
+            rag_top_k = (
+                getattr(knowledge_config, "top_k", 20)
+                if knowledge_config is not None else 20
+            )
+            rag_fallback = (
+                getattr(knowledge_config, "fallback_on_empty", True)
+                if knowledge_config is not None else True
+            )
+            # Sprint 22.2 — instanciar ContextPolicy a partir da config.
+            context_policy_instance = None
+            if bible_retriever_instance is not None:
+                from semantic.context_policy import ContextPolicy
+                context_policy_instance = ContextPolicy(
+                    rag=getattr(semantic_config, "rag", None),
+                    context=getattr(semantic_config, "context", None),
+                )
+                logger.info(
+                    "Sprint 22.2: ContextPolicy enabled "
+                    "(dominant_score=%.2f, dominant_gap=%.2f, "
+                    "ambiguity_gap=%.2f, min_confidence=%.2f).",
+                    context_policy_instance.rag_config.dominant_score,
+                    context_policy_instance.rag_config.dominant_gap,
+                    context_policy_instance.rag_config.ambiguity_gap,
+                    context_policy_instance.context_config.min_confidence,
+                )
             semantic_engine = SemanticEngine(
                 bus=bus,
                 provider=semantic_provider,
@@ -837,13 +960,20 @@ def create_composition_root() -> CompositionRoot:
                 min_growth_chars=semantic_config.min_growth_chars,
                 min_append_words=semantic_config.min_append_words,
                 min_interval_ms=semantic_config.min_interval_ms,
+                # Sprint 22.0 — RAG Local.
+                bible_retriever=bible_retriever_instance,
+                rag_top_k=rag_top_k,
+                rag_fallback_on_empty=rag_fallback,
+                # Sprint 22.2 — ContextPolicy.
+                context_policy=context_policy_instance,
             )
             semantic_engine.start()
+            rag_mode = "RAG" if bible_retriever_instance is not None else "current"
             logger.info(
-                "Sprint 21.5: SemanticEngine started "
-                "(provider=%s, debounce=%dms, min_growth=%d chars, "
+                "Sprint 22.0: SemanticEngine started "
+                "(provider=%s, mode=%s, debounce=%dms, min_growth=%d chars, "
                 "min_append=%d words, min_interval=%dms).",
-                semantic_provider.name, semantic_config.debounce_ms,
+                semantic_provider.name, rag_mode, semantic_config.debounce_ms,
                 semantic_config.min_growth_chars,
                 semantic_config.min_append_words,
                 semantic_config.min_interval_ms,
@@ -927,6 +1057,7 @@ def create_composition_root() -> CompositionRoot:
         sermon_memory_engine=sermon_memory_engine,
         reference_resolver=reference_resolver,
         semantic_provider=semantic_provider,
+        bible_retriever=bible_retriever_instance,
     )
 
 

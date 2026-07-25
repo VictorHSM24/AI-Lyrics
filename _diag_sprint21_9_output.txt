@@ -1,0 +1,25 @@
+Session dir: C:\Users\USER\AppData\Local\Temp\sprint21_9_diag_kk28teoy\session_20260725_113450
+
+Arquivos gerados (10):
+  holyrics.jsonl: 1 evento(s)
+  parser.jsonl: 2 evento(s)
+  resolver.jsonl: 1 evento(s)
+  semantic_engine.jsonl: 1 evento(s)
+  semantic_llm_response.jsonl: 1 evento(s)
+  semantic_prompt.jsonl: 1 evento(s)
+  semantic_result.jsonl: 1 evento(s)
+  sermon_memory.jsonl: 1 evento(s)
+  streaming.jsonl: 1 evento(s)
+  stt.jsonl: 1 evento(s)
+
+Todas as 10 categorias esperadas estão presentes.
+
+Amostra de eventos:
+  stt: text='irmãos vamos abrir no evangelho de João capítulo 3', confidence=0.78
+  semantic_prompt: model=qwen3:8b-q4_K_M, user_prompt len=70
+  semantic_result: intent=show_reference, candidates=1
+  resolver: reason=highest_confidence, chosen=João 3:16
+  holyrics: success=True, latency=420ms
+
+Diagnóstico concluído com sucesso.
+Arquivos em: C:\Users\USER\AppData\Local\Temp\sprint21_9_diag_kk28teoy\session_20260725_113450

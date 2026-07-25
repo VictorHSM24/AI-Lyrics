@@ -1,0 +1,105 @@
+2026-07-22 17:57:20,042 [INFO] diag: ======================================================================
+2026-07-22 17:57:20,042 [INFO] diag: Sprint 21.5.2 — Cenário REALISTA de Streaming Incremental
+2026-07-22 17:57:20,043 [INFO] diag: ======================================================================
+2026-07-22 17:57:20,043 [INFO] semantic.engine: SemanticEngine: started (provider=RecordingProvider, model=diag-stub, debounce=800ms, timeout=5000ms, min_growth=20 chars, min_append=3 words, min_interval=1000ms)
+2026-07-22 17:57:20,043 [INFO] diag: 
+######################################################################
+2026-07-22 17:57:20,044 [INFO] diag: # FRASE: 'O Senhor é meu pastor.' (3 incrementos)
+2026-07-22 17:57:20,044 [INFO] diag: # Incrementos: ['O Senhor', 'O Senhor é meu', 'O Senhor é meu pastor.']
+2026-07-22 17:57:20,044 [INFO] diag: ######################################################################
+2026-07-22 17:57:20,045 [INFO] diag:   >> SpeechPartial: 'O Senhor'
+2026-07-22 17:57:20,045 [INFO] diag:   [DECISÃO] NÃO dispara growth | motivos=[growth(8<20), append(2<3)] | growth=8 append=2 elapsed=inf (primeira) debounce_active=False | text='O Senhor'
+2026-07-22 17:57:20,045 [INFO] diag:     → Debounce 800ms agendado (será cancelado pelo próximo evento se a fala continuar)
+2026-07-22 17:57:20,446 [INFO] diag:   >> SpeechPartialUpdated: full='O Senhor é meu' appended='é meu'
+2026-07-22 17:57:20,446 [INFO] diag:   [DECISÃO] NÃO dispara growth | motivos=[growth(14<20)] | growth=14 append=4 elapsed=inf (primeira) debounce_active=True | text='O Senhor é meu'
+2026-07-22 17:57:20,446 [INFO] diag:     → Debounce 800ms agendado (será cancelado pelo próximo evento se a fala continuar)
+2026-07-22 17:57:20,847 [INFO] diag:   >> SpeechPartialUpdated: full='O Senhor é meu pastor.' appended='pastor.'
+2026-07-22 17:57:20,847 [INFO] diag:   [DECISÃO] GROWTH TRIGGER dispara | growth=22(>=20) append=5(>=3) elapsed=inf (primeira)(>=1000ms) | text='O Senhor é meu pastor.'
+2026-07-22 17:57:20,847 [INFO] diag:     >>> LLM CHAMADO com texto='O Senhor é meu pastor.'
+2026-07-22 17:57:20,847 [INFO] diag:   >> Aguardando 1.5s para debounce expirar...
+2026-07-22 17:57:22,348 [INFO] diag: 
+######################################################################
+2026-07-22 17:57:22,348 [INFO] diag: # FRASE: 'Porque Deus amou o mundo.' (3 incrementos)
+2026-07-22 17:57:22,348 [INFO] diag: # Incrementos: ['Porque Deus', 'Porque Deus amou o', 'Porque Deus amou o mundo.']
+2026-07-22 17:57:22,348 [INFO] diag: ######################################################################
+2026-07-22 17:57:22,348 [INFO] diag:   >> SpeechPartial: 'Porque Deus'
+2026-07-22 17:57:22,348 [INFO] diag:   [DECISÃO] NÃO dispara growth | motivos=[growth(11<20), append(2<3)] | growth=11 append=2 elapsed=inf (primeira) debounce_active=False | text='Porque Deus'
+2026-07-22 17:57:22,348 [INFO] diag:     → Debounce 800ms agendado (será cancelado pelo próximo evento se a fala continuar)
+2026-07-22 17:57:22,749 [INFO] diag:   >> SpeechPartialUpdated: full='Porque Deus amou o' appended='amou o'
+2026-07-22 17:57:22,749 [INFO] diag:   [DECISÃO] NÃO dispara growth | motivos=[growth(18<20)] | growth=18 append=4 elapsed=inf (primeira) debounce_active=True | text='Porque Deus amou o'
+2026-07-22 17:57:22,749 [INFO] diag:     → Debounce 800ms agendado (será cancelado pelo próximo evento se a fala continuar)
+2026-07-22 17:57:23,149 [INFO] diag:   >> SpeechPartialUpdated: full='Porque Deus amou o mundo.' appended='mundo.'
+2026-07-22 17:57:23,149 [INFO] diag:   [DECISÃO] GROWTH TRIGGER dispara | growth=25(>=20) append=5(>=3) elapsed=inf (primeira)(>=1000ms) | text='Porque Deus amou o mundo.'
+2026-07-22 17:57:23,150 [INFO] diag:     >>> LLM CHAMADO com texto='Porque Deus amou o mundo.'
+2026-07-22 17:57:23,150 [INFO] diag:   >> Aguardando 1.5s para debounce expirar...
+2026-07-22 17:57:24,650 [INFO] diag: 
+######################################################################
+2026-07-22 17:57:24,650 [INFO] diag: # FRASE: 'Tudo posso naquele que me fortalece.' (3 incrementos)
+2026-07-22 17:57:24,650 [INFO] diag: # Incrementos: ['Tudo posso', 'Tudo posso naquele que', 'Tudo posso naquele que me fortalece.']
+2026-07-22 17:57:24,650 [INFO] diag: ######################################################################
+2026-07-22 17:57:24,650 [INFO] diag:   >> SpeechPartial: 'Tudo posso'
+2026-07-22 17:57:24,651 [INFO] diag:   [DECISÃO] NÃO dispara growth | motivos=[growth(10<20), append(2<3)] | growth=10 append=2 elapsed=inf (primeira) debounce_active=False | text='Tudo posso'
+2026-07-22 17:57:24,651 [INFO] diag:     → Debounce 800ms agendado (será cancelado pelo próximo evento se a fala continuar)
+2026-07-22 17:57:25,051 [INFO] diag:   >> SpeechPartialUpdated: full='Tudo posso naquele que' appended='naquele que'
+2026-07-22 17:57:25,051 [INFO] diag:   [DECISÃO] GROWTH TRIGGER dispara | growth=22(>=20) append=4(>=3) elapsed=inf (primeira)(>=1000ms) | text='Tudo posso naquele que'
+2026-07-22 17:57:25,051 [INFO] diag:     >>> LLM CHAMADO com texto='Tudo posso naquele que'
+2026-07-22 17:57:25,452 [INFO] diag:   >> SpeechPartialUpdated: full='Tudo posso naquele que me fortalece.' appended='me fortalece.'
+2026-07-22 17:57:25,452 [INFO] diag:   [DECISÃO] NÃO dispara growth | motivos=[rate_limit(401ms<1000ms), growth(14<20), append(2<3)] | growth=14 append=2 elapsed=401ms debounce_active=False | text='Tudo posso naquele que me fortalece.'
+2026-07-22 17:57:25,452 [INFO] diag:     → Debounce 800ms agendado (será cancelado pelo próximo evento se a fala continuar)
+2026-07-22 17:57:25,453 [INFO] diag:   >> Aguardando 1.5s para debounce expirar...
+2026-07-22 17:57:26,254 [INFO] diag:     >>> LLM CHAMADO com texto='Tudo posso naquele que me fortalece.'
+2026-07-22 17:57:26,953 [INFO] diag: 
+######################################################################
+2026-07-22 17:57:26,953 [INFO] diag: # FRASE: 'Ainda que eu ande pelo vale da sombra da morte.' (4 incrementos)
+2026-07-22 17:57:26,953 [INFO] diag: # Incrementos: ['Ainda que eu', 'Ainda que eu ande pelo', 'Ainda que eu ande pelo vale da', 'Ainda que eu ande pelo vale da sombra da morte.']
+2026-07-22 17:57:26,953 [INFO] diag: ######################################################################
+2026-07-22 17:57:26,953 [INFO] diag:   >> SpeechPartial: 'Ainda que eu'
+2026-07-22 17:57:26,953 [INFO] diag:   [DECISÃO] NÃO dispara growth | motivos=[growth(12<20)] | growth=12 append=3 elapsed=inf (primeira) debounce_active=False | text='Ainda que eu'
+2026-07-22 17:57:26,953 [INFO] diag:     → Debounce 800ms agendado (será cancelado pelo próximo evento se a fala continuar)
+2026-07-22 17:57:27,354 [INFO] diag:   >> SpeechPartialUpdated: full='Ainda que eu ande pelo' appended='ande pelo'
+2026-07-22 17:57:27,354 [INFO] diag:   [DECISÃO] GROWTH TRIGGER dispara | growth=22(>=20) append=5(>=3) elapsed=inf (primeira)(>=1000ms) | text='Ainda que eu ande pelo'
+2026-07-22 17:57:27,354 [INFO] diag:     >>> LLM CHAMADO com texto='Ainda que eu ande pelo'
+2026-07-22 17:57:27,755 [INFO] diag:   >> SpeechPartialUpdated: full='Ainda que eu ande pelo vale da' appended='vale da'
+2026-07-22 17:57:27,755 [INFO] diag:   [DECISÃO] NÃO dispara growth | motivos=[rate_limit(400ms<1000ms), growth(8<20), append(2<3)] | growth=8 append=2 elapsed=400ms debounce_active=False | text='Ainda que eu ande pelo vale da'
+2026-07-22 17:57:27,755 [INFO] diag:     → Debounce 800ms agendado (será cancelado pelo próximo evento se a fala continuar)
+2026-07-22 17:57:28,155 [INFO] diag:   >> SpeechPartialUpdated: full='Ainda que eu ande pelo vale da sombra da morte.' appended='sombra da morte.'
+2026-07-22 17:57:28,156 [INFO] diag:   [DECISÃO] NÃO dispara growth | motivos=[rate_limit(801ms<1000ms)] | growth=25 append=5 elapsed=801ms debounce_active=True | text='Ainda que eu ande pelo vale da sombra da morte.'
+2026-07-22 17:57:28,156 [INFO] diag:     → Debounce 800ms agendado (será cancelado pelo próximo evento se a fala continuar)
+2026-07-22 17:57:28,156 [INFO] diag:   >> Aguardando 1.5s para debounce expirar...
+2026-07-22 17:57:28,967 [INFO] diag:     >>> LLM CHAMADO com texto='Ainda que eu ande pelo vale da sombra da morte.'
+2026-07-22 17:57:29,656 [INFO] diag: 
+######################################################################
+2026-07-22 17:57:29,656 [INFO] diag: # FRASE: 'A armadura de Deus.' (2 incrementos)
+2026-07-22 17:57:29,656 [INFO] diag: # Incrementos: ['A armadura', 'A armadura de Deus.']
+2026-07-22 17:57:29,656 [INFO] diag: ######################################################################
+2026-07-22 17:57:29,657 [INFO] diag:   >> SpeechPartial: 'A armadura'
+2026-07-22 17:57:29,657 [INFO] diag:   [DECISÃO] NÃO dispara growth | motivos=[growth(10<20), append(2<3)] | growth=10 append=2 elapsed=inf (primeira) debounce_active=False | text='A armadura'
+2026-07-22 17:57:29,657 [INFO] diag:     → Debounce 800ms agendado (será cancelado pelo próximo evento se a fala continuar)
+2026-07-22 17:57:30,057 [INFO] diag:   >> SpeechPartialUpdated: full='A armadura de Deus.' appended='de Deus.'
+2026-07-22 17:57:30,057 [INFO] diag:   [DECISÃO] NÃO dispara growth | motivos=[growth(19<20)] | growth=19 append=4 elapsed=inf (primeira) debounce_active=True | text='A armadura de Deus.'
+2026-07-22 17:57:30,057 [INFO] diag:     → Debounce 800ms agendado (será cancelado pelo próximo evento se a fala continuar)
+2026-07-22 17:57:30,058 [INFO] diag:   >> Aguardando 1.5s para debounce expirar...
+2026-07-22 17:57:30,863 [INFO] diag:     >>> LLM CHAMADO com texto='A armadura de Deus.'
+2026-07-22 17:57:31,558 [INFO] diag: 
+
+======================================================================
+2026-07-22 17:57:31,558 [INFO] diag: RELATÓRIO FINAL
+2026-07-22 17:57:31,558 [INFO] diag: ======================================================================
+2026-07-22 17:57:31,558 [INFO] diag: Chamadas ao LLM: 7
+2026-07-22 17:57:31,558 [INFO] diag:   'O Senhor é meu pastor.'
+2026-07-22 17:57:31,558 [INFO] diag:   'Porque Deus amou o mundo.'
+2026-07-22 17:57:31,558 [INFO] diag:   'Tudo posso naquele que'
+2026-07-22 17:57:31,559 [INFO] diag:   'Tudo posso naquele que me fortalece.'
+2026-07-22 17:57:31,559 [INFO] diag:   'Ainda que eu ande pelo'
+2026-07-22 17:57:31,559 [INFO] diag:   'Ainda que eu ande pelo vale da sombra da morte.'
+2026-07-22 17:57:31,559 [INFO] diag:   'A armadura de Deus.'
+2026-07-22 17:57:31,559 [INFO] diag: Telemetria: 7 eventos
+2026-07-22 17:57:31,559 [INFO] diag:   intent=none cached=False context='O Senhor é meu pastor.' error=''
+2026-07-22 17:57:31,559 [INFO] diag:   intent=none cached=False context='Porque Deus amou o mundo.' error=''
+2026-07-22 17:57:31,559 [INFO] diag:   intent=none cached=False context='Tudo posso naquele que' error=''
+2026-07-22 17:57:31,559 [INFO] diag:   intent=none cached=False context='Tudo posso naquele que me fortalece.' error=''
+2026-07-22 17:57:31,559 [INFO] diag:   intent=none cached=False context='Ainda que eu ande pelo' error=''
+2026-07-22 17:57:31,559 [INFO] diag:   intent=none cached=False context='Ainda que eu ande pelo vale da sombra da morte.' error=''
+2026-07-22 17:57:31,559 [INFO] diag:   intent=none cached=False context='A armadura de Deus.' error=''
+2026-07-22 17:57:31,559 [INFO] diag: Stats: growth=4 debounce=3 calls=7
+2026-07-22 17:57:31,559 [INFO] semantic.engine: SemanticEngine: stopped

@@ -60,6 +60,28 @@ semantic:
     max_tokens: 300
     timeout_seconds: 10
     disable_thinking: true
+  # Sprint 22.2 — Priorização RAG e política de contexto do sermão.
+  # Princípio: BibleRetriever > Texto Atual > Contexto do Sermão.
+  # Quando há candidato dominante (top1 com score alto e gap grande vs
+  # top2), o contexto do sermão é omitido do prompt. O contexto só é
+  # incluído para desambiguação entre candidatos próximos.
+  rag:
+    # score mínimo do top1 para classificar como "alta confiança".
+    dominant_score: 0.98
+    # diferença mínima top1-top2 para classificar como "alta confiança".
+    # gap >= dominant_gap → contexto omitido (candidato dominante).
+    dominant_gap: 0.08
+    # diferença abaixo da qual dois candidatos são considerados empatados
+    # (alta ambiguidade) → contexto completo incluído.
+    ambiguity_gap: 0.03
+  context:
+    # confiança mínima do SermonMemory para incluir current_book no
+    # prompt em qualquer nível. Abaixo disso, contexto sempre omitido.
+    min_confidence: 0.40
+    # limiar abaixo do qual o SermonMemory deve zerar current_book/
+    # current_chapter (assunto provavelmente mudou). Sprint 22.3
+    # implementará a heurística dinâmica; por ora, apenas reservado.
+    remove_when_confidence_below: 0.25
 
 cache:
   recent_capacity: 50
@@ -90,3 +112,23 @@ audio:
 log:
   path: "logs/pipeline.jsonl"
   level: "INFO"
+
+# Sprint 21.9 — Telemetria de observabilidade do pipeline.
+# Registra eventos detalhados de cada componente em arquivos .jsonl
+# para auditoria posterior. Não altera o comportamento do pipeline.
+telemetry:
+  enabled: true
+  # output_dir vazio = usa default (~/AI_Lyrics_telemetry)
+  output_dir: ""
+
+# Sprint 22.0 — Bible Knowledge Base (RAG Local).
+# Quando habilitado, o BibleRetriever recupera candidatos da Bíblia
+# local (data/sources/*.sqlite) e os envia ao SemanticEngine, que atua
+# apenas como desambiguador. Quando desabilitado, usa o Modo Atual
+# (LLM direto). Permite testes A/B entre as duas arquiteturas.
+knowledge:
+  enabled: true
+  sources_dir: "data/sources"
+  top_k: 20
+  fallback_on_empty: true
+  warmup: true

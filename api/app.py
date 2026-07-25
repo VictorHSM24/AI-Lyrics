@@ -87,6 +87,20 @@ def create_app() -> FastAPI:
             get_root().audio_capture.shutdown()
         except Exception:
             pass
+        # Sprint 21.9 — encerrar telemetria graciosamente (drena fila).
+        try:
+            from telemetry import shutdown_recorder
+            shutdown_recorder()
+        except Exception:
+            pass
+        # Sprint 22.0 — encerrar BibleRetriever (libera índice em memória).
+        try:
+            from api.startup import get_root
+            retriever = getattr(get_root(), "bible_retriever", None)
+            if retriever is not None:
+                retriever.close()
+        except Exception:
+            pass
 
     return app
 

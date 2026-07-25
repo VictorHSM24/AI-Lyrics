@@ -115,6 +115,7 @@ class ContextEngine:
         sermon_theme = ""
         sermon_entities: tuple[str, ...] = ()
         sermon_confidence = 0.0
+        sermon_book_confidence = 0.0  # Sprint 22.2
 
         if self._sermon_context_fn is not None:
             try:
@@ -125,6 +126,10 @@ class ContextEngine:
                     sermon_theme = sermon_ctx.probable_theme or ""
                     sermon_entities = tuple(e.name for e in sermon_ctx.entities[:8])
                     sermon_confidence = sermon_ctx.confidence
+                    # Sprint 22.2 — confiança específica do current_book.
+                    sermon_book_confidence = getattr(
+                        sermon_ctx, "current_book_confidence", 0.0
+                    )
             except Exception as e:
                 logger.warning("ContextEngine: failed to read sermon context: %s", e)
 
@@ -141,4 +146,5 @@ class ContextEngine:
             sermon_theme=sermon_theme,
             sermon_entities=sermon_entities,
             sermon_confidence=sermon_confidence,
+            sermon_book_confidence=sermon_book_confidence,
         )

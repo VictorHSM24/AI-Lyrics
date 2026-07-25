@@ -67,6 +67,8 @@ from semantic.cache import SemanticCache
 from semantic.context_engine import ContextEngine
 from semantic.provider import SemanticProvider
 from semantic.types import SemanticError, SemanticResult, SemanticTimeout
+# Sprint 21.9 — Telemetria de observabilidade (não altera comportamento).
+from telemetry import hooks as telemetry_hooks
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +129,15 @@ class SemanticEngine:
         min_growth_chars: int = _DEFAULT_MIN_GROWTH_CHARS,
         min_append_words: int = _DEFAULT_MIN_APPEND_WORDS,
         min_interval_ms: int = _DEFAULT_MIN_INTERVAL_MS,
+        # Sprint 22.0 — BibleRetriever (RAG Local). Opcional: se None,
+        # o SemanticEngine opera no Modo Atual (LLM direto).
+        bible_retriever: Any = None,
+        rag_top_k: int = 20,
+        rag_fallback_on_empty: bool = True,
+        # Sprint 22.2 — ContextPolicy para priorização RAG. Opcional:
+        # se None, o SemanticEngine usa o comportamento legado (sempre
+        # inclui contexto do sermão no prompt RAG).
+        context_policy: Any = None,
     ) -> None:
         self._bus = bus
         self._provider = provider
@@ -140,6 +151,12 @@ class SemanticEngine:
         self._min_growth_chars = min_growth_chars
         self._min_append_words = min_append_words
         self._min_interval_ms = min_interval_ms
+        # Sprint 22.0 — RAG Local.
+        self._bible_retriever = bible_retriever
+        self._rag_top_k = rag_top_k
+        self._rag_fallback_on_empty = rag_fallback_on_empty
+        # Sprint 22.2 — ContextPolicy.
+        self._context_policy = context_policy
 
         # Estado do debounce.
         self._debounce_timer: threading.Timer | None = None
@@ -405,13 +422,99 @@ class SemanticEngine:
             session_id=self._session_id,
             correlation_id=source_meta.correlation_id,
         )
+
+        # Sprint 22.0 — RAG Local: recuperar candidatos da Bíblia local
+        # e injetá-los no contexto antes de consultar o cache/provider.
+        # O retriever é opcional; se None, opera no Modo Atual.
+        if self._bible_retriever is not None and self._bible_retriever.is_ready:
+            try:
+                rag_candidates = self._bible_retriever.retrieve(
+                    text, top_k=self._rag_top_k
+                )
+            except Exception as e:
+                logger.warning(
+                    "SemanticEngine: BibleRetriever.retrieve failed: %s — "
+                    "falling back to current mode", e,
+                )
+                rag_candidates = []
+            if rag_candidates:
+                # Sprint 22.2 — Aplicar ContextPolicy para decidir quanto
+                # do contexto do sermão incluir no prompt.
+                from dataclasses import replace as _dc_replace
+                from knowledge.types import compute_retrieval_meta
+                context_decision = None
+                if self._context_policy is not None:
+                    meta = compute_retrieval_meta(rag_candidates)
+                    context_decision = self._context_policy.decide(
+                        meta=meta,
+                        sermon_book=context.sermon_book or None,
+                        sermon_confidence=context.sermon_book_confidence,
+                    )
+                    # Sprint 22.2 — telemetria da decisão da ContextPolicy.
+                    telemetry_hooks.context_policy_decision(
+                        correlation_id=source_meta.correlation_id,
+                        decision=context_decision.to_dict(),
+                    )
+                    logger.debug(
+                        "SemanticEngine: ContextPolicy → level=%s include=%s "
+                        "reason=%s (top1=%.2f gap=%.2f sermon_conf=%.2f)",
+                        context_decision.level,
+                        context_decision.include_context,
+                        context_decision.reason,
+                        context_decision.top1_score,
+                        context_decision.gap,
+                        context_decision.sermon_confidence,
+                    )
+                # Reconstruir contexto com candidatos RAG e decisão.
+                context = _dc_replace(
+                    context,
+                    rag_candidates=tuple(rag_candidates),
+                    correlation_id=source_meta.correlation_id,
+                    context_decision=context_decision,
+                )
+            elif not self._rag_fallback_on_empty:
+                # Sem candidatos e fallback desabilitado: publicar none.
+                logger.debug(
+                    "SemanticEngine: RAG returned 0 candidates, "
+                    "fallback_on_empty=False → intent=none"
+                )
+                telemetry_hooks.bible_retriever_decision(
+                    correlation_id=source_meta.correlation_id,
+                    candidates_in=[],
+                    chosen=None,
+                    reason="no_candidates",
+                    decision_ms=0.0,
+                )
+                return
+
         context_hash = context.context_hash()
+
+        # Sprint 21.9 — telemetria: registrar input recebido pelo SemanticEngine.
+        telemetry_hooks.semantic_input(
+            correlation_id=source_meta.correlation_id,
+            text=text,
+            recent_text=getattr(context, "recent_text", "") or "",
+            trigger="growth" if self._growth_fired else "debounce",
+            growth_chars=self._count_growth_chars(text) if self._last_inferred_text else len(text),
+            append_words=self._count_append_words(text) if self._last_inferred_text else len(text.split()),
+            cached=False,
+            context_hash=context_hash,
+        )
 
         # 2. Consultar cache.
         cached_result = self._cache.get(context_hash)
         if cached_result is not None:
             self._total_cache_hits += 1
             logger.debug("SemanticEngine: cache hit (hash=%s)", context_hash)
+            # Sprint 21.9 — telemetria: cache hit.
+            telemetry_hooks.semantic_result(
+                correlation_id=source_meta.correlation_id,
+                intent=cached_result.intent,
+                candidates=[c.to_dict() for c in cached_result.candidates],
+                inference_ms=0,
+                cached=True,
+                context_hash=context_hash,
+            )
             self._publish_telemetry(
                 meta=source_meta,
                 intent=cached_result.intent,
@@ -431,6 +534,16 @@ class SemanticEngine:
         # 3. Verificar se provider está disponível.
         if not self._provider.is_available():
             logger.warning("SemanticEngine: provider %s not available", self._provider.name)
+            # Sprint 21.9 — telemetria: provider indisponível.
+            telemetry_hooks.semantic_result(
+                correlation_id=source_meta.correlation_id,
+                intent="",
+                candidates=[],
+                inference_ms=0,
+                cached=False,
+                context_hash=context_hash,
+                error=f"provider {self._provider.name} not available",
+            )
             self._publish_telemetry(
                 meta=source_meta,
                 intent="",
@@ -448,6 +561,16 @@ class SemanticEngine:
             result = self._provider.infer(context, timeout_ms=self._timeout_ms)
         except SemanticTimeout as e:
             self._total_errors += 1
+            # Sprint 21.9 — telemetria: timeout.
+            telemetry_hooks.semantic_result(
+                correlation_id=source_meta.correlation_id,
+                intent="",
+                candidates=[],
+                inference_ms=self._timeout_ms,
+                cached=False,
+                context_hash=context_hash,
+                error=f"timeout: {e}",
+            )
             self._publish_telemetry(
                 meta=source_meta,
                 intent="",
@@ -461,6 +584,16 @@ class SemanticEngine:
             return
         except SemanticError as e:
             self._total_errors += 1
+            # Sprint 21.9 — telemetria: erro do provider.
+            telemetry_hooks.semantic_result(
+                correlation_id=source_meta.correlation_id,
+                intent="",
+                candidates=[],
+                inference_ms=0,
+                cached=False,
+                context_hash=context_hash,
+                error=f"provider error: {e}",
+            )
             self._publish_telemetry(
                 meta=source_meta,
                 intent="",
@@ -477,6 +610,15 @@ class SemanticEngine:
         self._cache.put(context_hash, result)
 
         # 6. Publicar telemetria.
+        # Sprint 21.9 — telemetria: resultado final da inferência.
+        telemetry_hooks.semantic_result(
+            correlation_id=source_meta.correlation_id,
+            intent=result.intent,
+            candidates=[c.to_dict() for c in result.candidates],
+            inference_ms=result.inference_ms,
+            cached=False,
+            context_hash=context_hash,
+        )
         self._publish_telemetry(
             meta=source_meta,
             intent=result.intent,

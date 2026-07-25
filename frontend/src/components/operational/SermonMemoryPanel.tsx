@@ -31,7 +31,6 @@ import {
   Activity,
   Clock,
   TrendingUp,
-  AlertCircle,
 } from "lucide-react";
 import { useSermon } from "@/hooks";
 import type {

@@ -17,6 +17,7 @@ from api.exceptions import setup_exception_handlers
 from api.middlewares import setup_middlewares
 from api.routers import ALL_ROUTERS
 from api.schemas import CURRENT_API_VERSION
+from api.wizard import router as wizard_router
 from api.websocket import websocket_router
 
 # Logging estruturado (infraestrutura apenas — sem logs de negócio).
@@ -47,6 +48,10 @@ def create_app() -> FastAPI:
     # Routers REST.
     for r in ALL_ROUTERS:
         app.include_router(r)
+
+    # Sprint 23.0 — Wizard de primeira execução (router separado, não é
+    # operação de runtime; fica em api/wizard.py por isolamento conceitual).
+    app.include_router(wizard_router)
 
     # WebSocket.
     app.include_router(websocket_router)

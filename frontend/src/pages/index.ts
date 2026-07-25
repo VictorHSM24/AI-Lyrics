@@ -10,3 +10,4 @@ export { AboutPage } from "./AboutPage";
 export { NotFoundPage } from "./NotFoundPage";
 export { ErrorPage } from "./ErrorPage";
 export { DevelopmentPage } from "./DevelopmentPage";
+export { WizardPage } from "./WizardPage";

@@ -12,6 +12,7 @@ import {
   DiagnosticPage,
   AboutPage,
   NotFoundPage,
+  WizardPage,
 } from "@/pages";
 
 const routes: RouteObject[] = [
@@ -20,6 +21,14 @@ const routes: RouteObject[] = [
     element: (
       <ErrorBoundary>
         <StartupPage />
+      </ErrorBoundary>
+    ),
+  },
+  {
+    path: "/wizard",
+    element: (
+      <ErrorBoundary>
+        <WizardPage />
       </ErrorBoundary>
     ),
   },

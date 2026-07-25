@@ -43,18 +43,29 @@ def load_overrides(path: str = DEFAULT_OVERRIDES_PATH) -> dict[str, Any]:
 
     Returns:
         Dict com overrides (vazio se arquivo não existir).
+
+    Sprint 23.0 fix: em bundle PyInstaller frozen, os overrides são
+    gravados em ``writable_root`` (APPDATA), não no bundle read-only.
+    Tentamos ``writable_path`` primeiro; se não existir, tentamos
+    ``resource_path`` (override shipado no bundle como default).
     """
-    if not os.path.isfile(path):
+    from core.paths import resource_path, writable_path
+    # Tentar primeiro o local gravável (onde save_overrides grava).
+    resolved = writable_path(path)
+    if not resolved.is_file():
+        # Fallback: recurso do bundle (default shipado).
+        resolved = resource_path(path)
+    if not resolved.is_file():
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(resolved, "r", encoding="utf-8") as f:
             data = json.load(f)
         if not isinstance(data, dict):
-            logger.warning("overrides file %s is not a dict — ignoring", path)
+            logger.warning("overrides file %s is not a dict — ignoring", resolved)
             return {}
         return data
     except (json.JSONDecodeError, OSError) as e:
-        logger.warning("failed to load overrides from %s: %s", path, e)
+        logger.warning("failed to load overrides from %s: %s", resolved, e)
         return {}
 
 
@@ -62,16 +73,20 @@ def save_overrides(overrides: dict[str, Any], path: str = DEFAULT_OVERRIDES_PATH
     """Salva overrides em disco (atomicamente).
 
     Cria o diretório pai se não existir.
+
+    Sprint 23.0 fix: em bundle PyInstaller frozen, o bundle é read-only,
+    então os overrides são gravados em ``%APPDATA%/AI Lyrics Assistant``
+    (Windows) ou ``~/.local/share/AI Lyrics Assistant`` (Linux) via
+    ``core.paths.writable_path``. Em dev, grava no repo como antes.
     """
+    from core.paths import writable_path
     with _LOCK:
-        parent = os.path.dirname(path)
-        if parent and not os.path.isdir(parent):
-            os.makedirs(parent, exist_ok=True)
-        tmp = f"{path}.tmp"
+        resolved = writable_path(path)
+        tmp = resolved.with_suffix(resolved.suffix + ".tmp")
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(overrides, f, indent=2, ensure_ascii=False, sort_keys=True)
-        os.replace(tmp, path)
-        logger.info("overrides saved to %s (%d keys)", path, len(overrides))
+        os.replace(tmp, resolved)
+        logger.info("overrides saved to %s (%d keys)", resolved, len(overrides))
 
 
 # ---------------------------------------------------------------------------

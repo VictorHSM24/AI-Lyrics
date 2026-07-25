@@ -303,7 +303,10 @@ class Searcher:
         self._metrics = SearchMetrics()
         # Sprint 18.0.1 — Conexão NÃO é mais mantida aberta.
         # Cada operação abre/fecha sua própria conexão (thread-safe).
-        self._db_path = config.fts5_db
+        # Sprint 23.0 fix: resolver fts5_db via resource_path para
+        # funcionar em bundle PyInstaller frozen.
+        from core.paths import resource_path
+        self._db_path = str(resource_path(config.fts5_db))
         self._embedding_searcher = embedding_searcher
         self._validated = False
 

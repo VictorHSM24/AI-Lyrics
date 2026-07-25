@@ -100,10 +100,14 @@ def load_bible_structure(db_path: str) -> BibleStructure:
     Raises:
         StateError: DB ausente, tabela não existe, ou erro de SQLite.
     """
-    if not os.path.isfile(db_path):
-        raise StateError(f"bible database not found: {db_path}")
+    # Sprint 23.0 fix: resolver via resource_path para funcionar
+    # em bundle PyInstaller frozen.
+    from core.paths import resource_path
+    resolved = resource_path(db_path)
+    if not resolved.is_file():
+        raise StateError(f"bible database not found: {db_path} (resolved: {resolved})")
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(str(resolved))
         try:
             # Verificar se a tabela existe.
             row = conn.execute(
@@ -201,7 +205,15 @@ class BibleStateManager:
     ) -> None:
         self._structure = structure
         self._book_names = book_names or {}
-        self._persist_path = persist_path
+        # Sprint 23.0 fix: persist_path é gravável (state.json). Em
+        # bundle PyInstaller frozen, o bundle é read-only, então o
+        # state.json deve ir para writable_root (APPDATA). Em dev,
+        # grava no repo como antes.
+        if persist_path:
+            from core.paths import writable_path
+            self._persist_path = str(writable_path(persist_path))
+        else:
+            self._persist_path = None
         self._history_size = history_size
         self._default_version = default_version
         self._state = BibleState(version=default_version)

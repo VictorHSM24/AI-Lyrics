@@ -276,10 +276,12 @@ class Pipeline:
         knowledge_enricher: object | None = None
         try:
             from busca.knowledge_enricher import KnowledgeBase, KnowledgeEnricher
-            import os
-            kb_path = "config/knowledge_base.json"
-            if os.path.isfile(kb_path):
-                kb = KnowledgeBase(kb_path)
+            # Sprint 23.0 fix: resolver via resource_path para funcionar
+            # em bundle PyInstaller frozen.
+            from core.paths import resource_path
+            kb_path = resource_path("config/knowledge_base.json")
+            if kb_path.is_file():
+                kb = KnowledgeBase(str(kb_path))
                 if kb.is_loaded:
                     knowledge_enricher = KnowledgeEnricher(kb)
                     logger.info(

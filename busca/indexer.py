@@ -135,7 +135,10 @@ class BibleIndexer:
     """
 
     def __init__(self, db_path: str) -> None:
-        self._db_path = db_path
+        # Sprint 23.0 fix: resolver via resource_path para funcionar
+        # em bundle PyInstaller frozen.
+        from core.paths import resource_path
+        self._db_path = str(resource_path(db_path))
 
     # ------------------------------------------------------------------
     # Operações públicas

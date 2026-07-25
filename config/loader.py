@@ -515,13 +515,17 @@ def load_config(path: str = "config/config.yaml") -> Config:
         ConfigError: arquivo ausente, YAML inválido, campo obrigatório faltando,
             env var não definida, ou valor inválido.
     """
-    if not os.path.isfile(path):
-        raise ConfigError(f"config file not found: {path}")
+    # Sprint 23.0 fix: resolver via resource_path quando o path relativo
+    # não existir no cwd (necessário em bundle PyInstaller frozen).
+    from core.paths import resource_path
+    resolved = resource_path(path)
+    if not resolved.is_file():
+        raise ConfigError(f"config file not found: {path} (resolved: {resolved})")
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(resolved, encoding="utf-8") as f:
             raw = yaml.safe_load(f)
     except yaml.YAMLError as e:
-        raise ConfigError(f"invalid YAML in {path}: {e}") from e
+        raise ConfigError(f"invalid YAML in {resolved}: {e}") from e
     if not isinstance(raw, dict):
         raise ConfigError(f"config root must be a mapping, got {type(raw).__name__}")
     substituted = _substitute_env_recursive(raw)
@@ -540,13 +544,17 @@ def load_books(path: str = "config/books.json") -> BookTable:
     Raises:
         ConfigError: arquivo ausente, JSON inválido, schema incorreto.
     """
-    if not os.path.isfile(path):
-        raise ConfigError(f"books file not found: {path}")
+    # Sprint 23.0 fix: resolver via resource_path quando o path relativo
+    # não existir no cwd (necessário em bundle PyInstaller frozen).
+    from core.paths import resource_path
+    resolved = resource_path(path)
+    if not resolved.is_file():
+        raise ConfigError(f"books file not found: {path} (resolved: {resolved})")
     try:
-        with open(path, encoding="utf-8") as f:
+        with open(resolved, encoding="utf-8") as f:
             raw = json.load(f)
     except json.JSONDecodeError as e:
-        raise ConfigError(f"invalid JSON in {path}: {e}") from e
+        raise ConfigError(f"invalid JSON in {resolved}: {e}") from e
     if not isinstance(raw, list):
         raise ConfigError(f"books root must be a list, got {type(raw).__name__}")
     books: list[Book] = []

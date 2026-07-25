@@ -571,11 +571,12 @@ async def wizard_ollama_pull_status() -> dict:
 @router.get("/bible/validate/")
 async def wizard_bible_validate() -> dict:
     """Valida bases SQLite, versões, versículos e BibleRetriever."""
+    from core.paths import resource_path
     try:
         cfg = _get_config()
-        sources_dir = Path(cfg.knowledge.sources_dir)
+        sources_dir = resource_path(cfg.knowledge.sources_dir)
     except Exception:
-        sources_dir = Path("data/sources")
+        sources_dir = resource_path("data/sources")
     sqlite_files = sorted(sources_dir.glob("*.sqlite")) if sources_dir.exists() else []
     versions = [f.stem for f in sqlite_files]
     # Valida BibleRetriever se aquecido.
@@ -597,8 +598,9 @@ async def wizard_bible_validate() -> dict:
         except Exception as e:
             retriever_stats = {"error": str(e)}
     # Arquivos de embeddings (Categoria C — gerados por build_embeddings).
-    embeddings_npy = Path("data/bible.embeddings.npy")
-    fts5_db = Path("data/bible.pt-br.sqlite")
+    # Sprint 23.0 fix: resolver via resource_path para funcionar em frozen.
+    embeddings_npy = resource_path("data/bible.embeddings.npy")
+    fts5_db = resource_path("data/bible.pt-br.sqlite")
     return versioned({
         "sources_dir": str(sources_dir),
         "versions_found": versions,

@@ -146,17 +146,21 @@ def discover_versions(sources_dir: str = "data/sources") -> list[Path]:
     ordenados alfabeticamente. Levanta BibleRetrieverError se o
     diretório não existir ou não contiver nenhuma base.
     """
-    if not os.path.isdir(sources_dir):
+    # Sprint 23.0 fix: resolver via resource_path para funcionar
+    # em bundle PyInstaller frozen.
+    from core.paths import resource_path
+    resolved = resource_path(sources_dir)
+    if not resolved.is_dir():
         raise BibleRetrieverError(
-            f"sources directory not found: {sources_dir}"
+            f"sources directory not found: {sources_dir} (resolved: {resolved})"
         )
     files = []
-    for f in sorted(os.listdir(sources_dir)):
+    for f in sorted(os.listdir(resolved)):
         if f.lower().endswith(".sqlite"):
-            files.append(Path(sources_dir) / f)
+            files.append(resolved / f)
     if not files:
         raise BibleRetrieverError(
-            f"no .sqlite files found in {sources_dir}"
+            f"no .sqlite files found in {resolved}"
         )
     return files
 
@@ -214,7 +218,10 @@ class BibleRetriever:
         book_table: BookTable | None = None,
         top_k_default: int = 20,
     ) -> None:
-        self._sources_dir = sources_dir
+        # Sprint 23.0 fix: resolver via resource_path para funcionar
+        # em bundle PyInstaller frozen.
+        from core.paths import resource_path
+        self._sources_dir = str(resource_path(sources_dir))
         self._book_table = book_table
         self._top_k_default = top_k_default
 

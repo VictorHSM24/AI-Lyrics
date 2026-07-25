@@ -203,9 +203,13 @@ def load_parser_books(
         FileNotFoundError: arquivo ausente.
         ValueError: JSON inválido ou schema incorreto.
     """
-    if not os.path.isfile(path):
-        raise FileNotFoundError(f"books file not found: {path}")
-    with open(path, encoding="utf-8") as f:
+    # Sprint 23.0 fix: resolver via resource_path quando o path relativo
+    # não existir no cwd (necessário em bundle PyInstaller frozen).
+    from core.paths import resource_path
+    resolved = resource_path(path)
+    if not resolved.is_file():
+        raise FileNotFoundError(f"books file not found: {path} (resolved: {resolved})")
+    with open(resolved, encoding="utf-8") as f:
         raw = json.load(f)
     if not isinstance(raw, list):
         raise ValueError(f"books root must be a list, got {type(raw).__name__}")

@@ -86,8 +86,11 @@ class EmbeddingIndex:
         vectors_path: str,
         meta_path: str,
     ) -> None:
-        self._vectors_path = vectors_path
-        self._meta_path = meta_path
+        # Sprint 23.0 fix: resolver via resource_path para funcionar
+        # em bundle PyInstaller frozen.
+        from core.paths import resource_path
+        self._vectors_path = str(resource_path(vectors_path))
+        self._meta_path = str(resource_path(meta_path))
 
         # Estado interno
         self._vectors: np.ndarray | None = None  # shape (N, dim)

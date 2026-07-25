@@ -212,7 +212,10 @@ class KnowledgeBase:
     """
 
     def __init__(self, path: str) -> None:
-        self._path = path
+        # Sprint 23.0 fix: resolver via resource_path para funcionar
+        # em bundle PyInstaller frozen.
+        from core.paths import resource_path
+        self._path = str(resource_path(path))
         self._entries: list[_ConceptEntry] = []
         self._load()
 

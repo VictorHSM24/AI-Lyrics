@@ -1,8 +1,15 @@
 /**
- * Tipos e helpers compartilhados entre as etapas do Wizard (Sprint 23.0).
+ * Tipos e helpers compartilhados entre as etapas do Wizard (Sprint 23.1).
  *
  * Centraliza os tipos das respostas dos endpoints /wizard/* e os helpers
  * de API e visual, para que cada etapa seja um módulo independente.
+ *
+ * Sprint 23.1:
+ * - apiGet/apiPost agora têm timeout (10s) via AbortController.
+ * - Tratamento de erro extrai mensagem do corpo da resposta.
+ * - Novos tipos para endpoints de save (SaveResult).
+ * - BibleValidation.bible_retriever_stats agora inclui sources_dir e error.
+ * - TestResult.components agora é tipado (ComponentStatus).
  */
 
 import { CheckCircle2, XCircle } from "lucide-react";
@@ -36,6 +43,7 @@ export interface AudioLevels {
   rms: number;
   peak: number;
   capturing: boolean;
+  error?: string;
 }
 
 export interface HolyricsTestResult {
@@ -45,6 +53,13 @@ export interface HolyricsTestResult {
   latency_ms: number;
   status_code?: number;
   error_type?: string;
+}
+
+export interface SaveResult {
+  ok: boolean;
+  message: string;
+  base_url?: string;
+  model?: string;
 }
 
 export interface OllamaDetect {
@@ -61,6 +76,7 @@ export interface OllamaApi {
   models_installed?: string[];
   models_count?: number;
   error?: string;
+  error_type?: string;
 }
 
 export interface OllamaModel {
@@ -68,6 +84,7 @@ export interface OllamaModel {
   installed: boolean;
   message: string;
   all_models?: string[];
+  error_type?: string;
 }
 
 export interface PullStatus {
@@ -79,6 +96,16 @@ export interface PullStatus {
   elapsed_s: number;
 }
 
+export interface BibleRetrieverStats {
+  total_versions: number;
+  total_verses: number;
+  unique_verses: number;
+  versions_discovered: string[];
+  init_time_ms: number;
+  sources_dir?: string;
+  error?: string;
+}
+
 export interface BibleValidation {
   sources_dir: string;
   versions_found: string[];
@@ -86,13 +113,7 @@ export interface BibleValidation {
   sqlite_files: string[];
   bible_retriever_ready: boolean;
   bible_retriever_ok: boolean;
-  bible_retriever_stats?: {
-    total_versions: number;
-    total_verses: number;
-    unique_verses: number;
-    versions_discovered: string[];
-    init_time_ms: number;
-  };
+  bible_retriever_stats?: BibleRetrieverStats;
   fts5_db_exists: boolean;
   fts5_db_path: string;
   embeddings_npy_exists: boolean;
@@ -100,8 +121,15 @@ export interface BibleValidation {
   ok: boolean;
 }
 
+export interface ComponentStatus {
+  ok?: boolean;
+  bible_retriever_ok?: boolean;
+  message?: string;
+  [key: string]: unknown;
+}
+
 export interface TestResult {
-  components: Record<string, any>;
+  components: Record<string, ComponentStatus>;
   all_ok: boolean;
   message: string;
 }
@@ -114,22 +142,63 @@ export const STEPS: Step[] = ["audio", "holyrics", "ollama", "bible", "test"];
 // Helpers de API compartilhados
 // ============================================================
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const resp = await fetch(`/wizard${path}`);
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  const json = await resp.json();
-  return json.payload as T;
+const API_TIMEOUT_MS = 10000;
+
+/**
+ * Extrai mensagem amigável do erro de fetch.
+ * Tenta ler o corpo da resposta JSON; se não conseguir, usa o status HTTP.
+ */
+async function extractErrorMessage(resp: Response): Promise<string> {
+  try {
+    const body = await resp.json();
+    if (body?.payload?.message) return body.payload.message;
+    if (body?.message) return body.message;
+    if (body?.detail) return body.detail;
+    return `HTTP ${resp.status}`;
+  } catch {
+    return `HTTP ${resp.status}`;
+  }
 }
 
-export async function apiPost<T>(path: string, body?: any): Promise<T> {
-  const resp = await fetch(`/wizard${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  const json = await resp.json();
-  return json.payload as T;
+export async function apiGet<T>(path: string): Promise<T> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const resp = await fetch(`/wizard${path}`, { signal: controller.signal });
+    if (!resp.ok) throw new Error(await extractErrorMessage(resp));
+    const json = await resp.json();
+    return json.payload as T;
+  } catch (e: unknown) {
+    if (e instanceof DOMException && e.name === "AbortError") {
+      throw new Error("Tempo limite excedido. Tente novamente.");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const resp = await fetch(`/wizard${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+    if (!resp.ok) throw new Error(await extractErrorMessage(resp));
+    const json = await resp.json();
+    return json.payload as T;
+  } catch (e: unknown) {
+    if (e instanceof DOMException && e.name === "AbortError") {
+      throw new Error("Tempo limite excedido. Tente novamente.");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 // ============================================================

@@ -20,7 +20,7 @@ import {
   type AudioLevels,
 } from "./types";
 
-export function AudioStep() {
+export function AudioStep({ onBusyChange }: { onBusyChange?: (busy: boolean) => void }) {
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -35,29 +35,47 @@ export function AudioStep() {
       const r = await apiGet<AudioDevicesResponse>("/audio/devices");
       setDevices(r.devices);
       setSelected(r.devices.find((d) => d.is_default)?.index ?? null);
-    } catch (e: any) {
-      setError(e.message ?? String(e));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    if (onBusyChange) onBusyChange(loading);
+  }, [loading, onBusyChange]);
+
+  useEffect(() => {
     load();
   }, [load]);
 
   useEffect(() => {
+    let mounted = true;
+    let intervalId: number | null = null;
+    let inFlight = false;
+
     const poll = async () => {
+      if (!mounted || inFlight) return;
+      inFlight = true;
       try {
         const l = await apiGet<AudioLevels>("/audio/levels");
-        setLevels(l);
+        if (mounted) setLevels(l);
       } catch {
-        /* silencioso */
+        /* silencioso — medidor não é crítico */
+      } finally {
+        inFlight = false;
       }
     };
-    pollRef.current = window.setInterval(poll, 250);
+
+    poll();
+    intervalId = window.setInterval(poll, 250);
+
     return () => {
-      if (pollRef.current) window.clearInterval(pollRef.current);
+      mounted = false;
+      if (intervalId) window.clearInterval(intervalId);
+      pollRef.current = null;
     };
   }, []);
 

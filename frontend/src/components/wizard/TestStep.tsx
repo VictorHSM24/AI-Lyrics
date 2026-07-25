@@ -10,10 +10,11 @@ import { CheckCircle2, Loader2, RefreshCw, XCircle } from "lucide-react";
 import {
   apiGet,
   StatusRow,
+  type ComponentStatus,
   type TestResult,
 } from "./types";
 
-export function TestStep() {
+export function TestStep({ onBusyChange }: { onBusyChange?: (busy: boolean) => void }) {
   const [data, setData] = useState<TestResult | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -22,7 +23,7 @@ export function TestStep() {
     try {
       const r = await apiGet<TestResult>("/test");
       setData(r);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("test error", e);
     } finally {
       setLoading(false);
@@ -32,6 +33,10 @@ export function TestStep() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (onBusyChange) onBusyChange(loading);
+  }, [loading, onBusyChange]);
 
   return (
     <div className="space-y-4">
@@ -69,7 +74,7 @@ export function TestStep() {
           </div>
 
           <div className="space-y-2">
-            {Object.entries(data.components).map(([key, val]: [string, any]) => (
+            {Object.entries(data.components).map(([key, val]: [string, ComponentStatus]) => (
               <StatusRow
                 key={key}
                 ok={val.ok ?? val.bible_retriever_ok ?? false}

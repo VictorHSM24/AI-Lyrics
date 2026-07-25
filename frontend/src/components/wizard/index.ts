@@ -1,5 +1,5 @@
 /**
- * Wizard components — barrel export (Sprint 23.0).
+ * Wizard components — barrel export (Sprint 23.1).
  */
 
 export { AudioStep } from "./AudioStep";
@@ -12,11 +12,16 @@ export type {
   Step,
   WizardStatus,
   AudioDevice,
+  AudioDevicesResponse,
+  AudioLevels,
   HolyricsTestResult,
+  SaveResult,
   OllamaDetect,
   OllamaApi,
   OllamaModel,
   PullStatus,
   BibleValidation,
+  BibleRetrieverStats,
+  ComponentStatus,
   TestResult,
 } from "./types";

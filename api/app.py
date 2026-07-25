@@ -203,6 +203,12 @@ def create_app() -> FastAPI:
                 retriever.close()
         except Exception:
             pass
+        # Sprint 23.1 — terminar subprocess do ollama pull se ativo.
+        try:
+            from api.wizard import cleanup_ollama_pull
+            cleanup_ollama_pull()
+        except Exception:
+            pass
 
     return app
 

@@ -13,7 +13,7 @@ import {
   type BibleValidation,
 } from "./types";
 
-export function BibleStep() {
+export function BibleStep({ onBusyChange }: { onBusyChange?: (busy: boolean) => void }) {
   const [data, setData] = useState<BibleValidation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,8 +24,9 @@ export function BibleStep() {
     try {
       const r = await apiGet<BibleValidation>("/bible/validate");
       setData(r);
-    } catch (e: any) {
-      setError(e.message ?? String(e));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -34,6 +35,10 @@ export function BibleStep() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (onBusyChange) onBusyChange(loading);
+  }, [loading, onBusyChange]);
 
   if (loading) {
     return (
@@ -67,9 +72,11 @@ export function BibleStep() {
         ok={data.bible_retriever_ok}
         label="BibleRetriever"
         value={
-          data.bible_retriever_stats
-            ? `${data.bible_retriever_stats.total_versions} versões · ${data.bible_retriever_stats.total_verses} versículos · ${data.bible_retriever_stats.unique_verses} únicos · init ${data.bible_retriever_stats.init_time_ms.toFixed(0)} ms`
-            : "Não inicializado"
+          data.bible_retriever_stats?.error
+            ? `Erro: ${data.bible_retriever_stats.error}`
+            : data.bible_retriever_stats
+              ? `${data.bible_retriever_stats.total_versions} versões · ${data.bible_retriever_stats.total_verses} versículos · ${data.bible_retriever_stats.unique_verses} únicos · init ${data.bible_retriever_stats.init_time_ms.toFixed(0)} ms`
+              : "Não inicializado"
         }
       />
       <StatusRow

@@ -95,6 +95,10 @@ class _PullState:
 
 _pull_state = _PullState()
 _pull_lock = threading.Lock()
+# Sprint 23.1 — referência ao subprocess do ollama pull para cleanup
+# no shutdown do app. Sem isso, o processo ollama continua rodando
+# em background se o app fechar durante o download.
+_pull_proc: subprocess.Popen | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +114,21 @@ class TestHolyricsModel(BaseModel):
     base_url: str = "http://127.0.0.1:8091/api"
     token: str = ""
     timeout_ms: int = 2000
+
+
+class SaveHolyricsModel(BaseModel):
+    base_url: str = "http://127.0.0.1:8091/api"
+    token: str = ""
+
+
+class SaveAudioModel(BaseModel):
+    device_index: int
+    device_name: str | None = None
+
+
+class SaveOllamaModel(BaseModel):
+    base_url: str = "http://localhost:11434"
+    model: str = "qwen3:8b-q4_K_M"
 
 
 class PullOllamaModel(BaseModel):
@@ -139,6 +158,97 @@ def _get_bible_retriever():
     from api.startup import get_root
     root = get_root()
     return getattr(root, "bible_retriever", None)
+
+
+def _apply_overrides_via_configuration_service(overrides: dict) -> None:
+    """Aplica overrides via ConfigurationPresentationService do root.
+
+    Sprint 23.1: centraliza a persistência de overrides do Wizard.
+    O ConfigurationPresentationService valida, mescla, persiste em
+    config.overrides.json e atualiza a config em memória.
+    """
+    from api.startup import get_root
+    root = get_root()
+    svc = root.configuration_service
+    svc.update_configuration(overrides)
+
+
+def _reload_holyrics_client() -> None:
+    """Recria o HolyricsClient do CompositionRoot com a config atual.
+
+    Sprint 23.1: após salvar overrides do Holyrics (URL/token), o
+    HolyricsClient no CompositionRoot precisa ser recriado para usar
+    o novo token. Sem isso, o TestStep e o pipeline continuariam
+    usando o client com token vazio (config default), causando 401.
+
+    Lê a config do ConfigurationPresentationService (que é atualizada
+    por update_configuration), não root.config (que pode estar stale
+    se foi substituído por _apply_overrides).
+    """
+    from api.startup import get_root
+    root = get_root()
+    # Preferir a config do configuration_service (sempre atualizada).
+    svc = getattr(root, "configuration_service", None)
+    if svc is not None:
+        cfg = getattr(svc, "_config", None) or root.config
+    else:
+        cfg = root.config
+    holyrics_cfg = getattr(cfg, "holyrics", None)
+    if holyrics_cfg is None:
+        logger.warning("wizard: config.holyrics ausente — reload skipped.")
+        return
+    try:
+        from integracao_holyrics.client import HolyricsClient
+        new_client = HolyricsClient(
+            base_url=holyrics_cfg.base_url,
+            token=holyrics_cfg.token,
+            timeout_s=holyrics_cfg.timeout_ms / 1000.0,
+        )
+        # Fechar client antigo se tiver.
+        old = getattr(root, "holyrics_client", None)
+        if old is not None and hasattr(old, "close"):
+            try:
+                old.close()
+            except Exception:
+                pass
+        # CompositionRoot é frozen dataclass, usar object.__setattr__.
+        object.__setattr__(root, "holyrics_client", new_client)
+        # Atualizar também no verse_presentation_service se existir.
+        vps = getattr(root, "verse_presentation_service", None)
+        if vps is not None and hasattr(vps, "set_holyrics_client"):
+            try:
+                vps.set_holyrics_client(new_client)
+            except Exception:
+                pass
+        logger.info(
+            "wizard: HolyricsClient recarregado (base_url=%s).",
+            holyrics_cfg.base_url,
+        )
+    except Exception as e:
+        logger.warning("wizard: erro recarregando HolyricsClient: %s", e)
+
+
+def cleanup_ollama_pull() -> None:
+    """Termina o subprocess do ollama pull se ainda estiver rodando.
+
+    Sprint 23.1: chamado no shutdown do app (api/app.py) para
+    garantir que o processo `ollama pull` não continue em background
+    após o app fechar.
+    """
+    global _pull_proc
+    with _pull_lock:
+        proc = _pull_proc
+        _pull_proc = None
+    if proc is not None and proc.poll() is None:
+        try:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            logger.info("wizard: subprocess ollama pull terminado no shutdown.")
+        except Exception as e:
+            logger.warning("wizard: erro terminando ollama pull: %s", e)
 
 
 def _ollama_api_url() -> str:
@@ -226,19 +336,30 @@ async def wizard_audio_devices() -> dict:
 @router.post("/audio/select")
 @router.post("/audio/select/")
 async def wizard_audio_select(payload: SelectAudioDeviceModel) -> dict:
-    """Seleciona dispositivo de áudio pelo índice."""
+    """Seleciona dispositivo de áudio pelo índice e persiste em config.
+
+    Sprint 23.1 fix: agora persiste o dispositivo selecionado em
+    config.overrides.json (audio.device_index). Antes, a seleção era
+    apenas validada e o usuário precisava ir na tela principal para
+    salvar, causando perda da configuração se fechasse o app.
+    """
     try:
         svc = _get_audio_service()
-        # ConfigurationPresentationService pode persistir isso.
-        # Aqui apenas validamos que o índice existe.
         devices = svc.list_devices()
         if payload.device_index < 0 or payload.device_index >= len(devices):
             raise HTTPException(400, f"device_index inválido: {payload.device_index}")
         device = devices[payload.device_index]
+        # Persistir em config.overrides.json.
+        try:
+            _apply_overrides_via_configuration_service({
+                "audio": {"device_index": payload.device_index},
+            })
+        except Exception as e_persist:
+            logger.warning("wizard: erro persistindo audio device: %s", e_persist)
         return versioned({
             "ok": True,
             "selected": device.to_dict(),
-            "message": "Dispositivo selecionado. A persistência em config.yaml será feita via /configuration.",
+            "message": f"Dispositivo '{device.name}' selecionado e salvo.",
         })
     except HTTPException:
         raise
@@ -273,13 +394,18 @@ async def wizard_audio_levels() -> dict:
 @router.get("/holyrics/detect")
 @router.get("/holyrics/detect/")
 async def wizard_holyrics_detect() -> dict:
-    """Detecta Holyrics na URL padrão da config."""
+    """Detecta Holyrics na URL padrão da config.
+
+    Sprint 23.1 fix: detect testa apenas reachability (sem exigir token).
+    Retorna ok=True se o Holyrics respondeu na URL, mesmo sem token válido.
+    Isso permite que o usuário saiba que o Holyrics está rodando antes de
+    configurar o token.
+    """
     try:
         cfg = _get_config()
         holyrics_cfg = cfg.holyrics
-        return wizard_holyrics_test_impl(
+        return wizard_holyrics_detect_impl(
             base_url=holyrics_cfg.base_url,
-            token=holyrics_cfg.token,
             timeout_ms=holyrics_cfg.timeout_ms,
         )
     except Exception as e:
@@ -288,13 +414,20 @@ async def wizard_holyrics_detect() -> dict:
             "message": f"Erro ao detectar Holyrics: {e}",
             "base_url": "",
             "latency_ms": 0,
+            "error_type": "generic",
         })
 
 
 @router.post("/holyrics/test")
 @router.post("/holyrics/test/")
 async def wizard_holyrics_test(payload: TestHolyricsModel) -> dict:
-    """Testa conexão com Holyrics em URL/token informados."""
+    """Testa conexão com Holyrics em URL/token informados.
+
+    Sprint 23.1 fix: usa HolyricsClient oficial (token como query param,
+    não como header). O endpoint anterior enviava o token no header
+    ``{"token": token}``, mas a API do Holyrics espera ``?token=xxx``
+    como query parameter, causando 401 mesmo com token correto.
+    """
     return wizard_holyrics_test_impl(
         base_url=payload.base_url,
         token=payload.token,
@@ -302,26 +435,54 @@ async def wizard_holyrics_test(payload: TestHolyricsModel) -> dict:
     )
 
 
-def wizard_holyrics_test_impl(base_url: str, token: str, timeout_ms: int) -> dict:
-    """Implementação compartilhada do teste de Holyrics."""
+@router.post("/holyrics/save")
+@router.post("/holyrics/save/")
+async def wizard_holyrics_save(payload: SaveHolyricsModel) -> dict:
+    """Persiste URL/token do Holyrics em config.overrides.json.
+
+    Sprint 23.1: endpoint dedicado para salvar a config do Holyrics
+    durante o Wizard. Antes, o Wizard só testava e não persistia, então
+    o TestStep e o CompositionRoot usavam config com token vazio,
+    causando 401 no diagnóstico final.
+
+    Após salvar, recarrega o HolyricsClient do CompositionRoot com o
+    novo token, para que testes subsequentes (incluindo /wizard/test)
+    usem a config persistida.
+    """
+    try:
+        overrides = {"holyrics": {"base_url": payload.base_url, "token": payload.token}}
+        _apply_overrides_via_configuration_service(overrides)
+        # Recarregar HolyricsClient no CompositionRoot.
+        _reload_holyrics_client()
+        return versioned({
+            "ok": True,
+            "message": "Configuração do Holyrics salva.",
+            "base_url": payload.base_url,
+        })
+    except Exception as e:
+        logger.warning("wizard: erro salvando config holyrics: %s", e)
+        raise HTTPException(500, f"Erro ao salvar configuração: {e}")
+
+
+def wizard_holyrics_detect_impl(base_url: str, timeout_ms: int) -> dict:
+    """Testa apenas reachability do Holyrics (sem autenticação).
+
+    Sprint 23.1: separa detecção (sem token) de teste (com token).
+    A detecção faz um GET simples na URL base para verificar se o
+    Holyrics está rodando, sem exigir token válido.
+    """
     import requests
     t0 = time.monotonic()
     try:
-        url = f"{base_url}/status"
-        headers = {"token": token} if token else {}
-        resp = requests.get(url, headers=headers, timeout=timeout_ms / 1000.0)
+        # Tenta GET na URL base. Holyrics responde 200 ou 401/403
+        # se estiver rodando mas exigir token. Qualquer resposta HTTP
+        # significa que o Holyrics está reachable.
+        resp = requests.get(base_url, timeout=timeout_ms / 1000.0)
         latency_ms = int((time.monotonic() - t0) * 1000)
-        if resp.status_code == 200:
-            return versioned({
-                "ok": True,
-                "message": "Holyrics conectado com sucesso.",
-                "base_url": base_url,
-                "latency_ms": latency_ms,
-                "status_code": resp.status_code,
-            })
+        # 200, 401, 403, 404 todos indicam que algo respondeu.
         return versioned({
-            "ok": False,
-            "message": f"Holyrics respondeu {resp.status_code}",
+            "ok": True,
+            "message": f"Holyrics detectado em {base_url} (HTTP {resp.status_code}).",
             "base_url": base_url,
             "latency_ms": latency_ms,
             "status_code": resp.status_code,
@@ -329,7 +490,7 @@ def wizard_holyrics_test_impl(base_url: str, token: str, timeout_ms: int) -> dic
     except requests.exceptions.Timeout:
         return versioned({
             "ok": False,
-            "message": "Tempo limite — Holyrics não respondeu.",
+            "message": "Tempo limite. Holyrics não respondeu.",
             "base_url": base_url,
             "latency_ms": int((time.monotonic() - t0) * 1000),
             "error_type": "timeout",
@@ -341,6 +502,54 @@ def wizard_holyrics_test_impl(base_url: str, token: str, timeout_ms: int) -> dic
             "base_url": base_url,
             "latency_ms": int((time.monotonic() - t0) * 1000),
             "error_type": "connection",
+        })
+    except Exception as e:
+        return versioned({
+            "ok": False,
+            "message": f"Erro: {e}",
+            "base_url": base_url,
+            "latency_ms": int((time.monotonic() - t0) * 1000),
+            "error_type": "generic",
+        })
+
+
+def wizard_holyrics_test_impl(base_url: str, token: str, timeout_ms: int) -> dict:
+    """Implementação compartilhada do teste de Holyrics.
+
+    Sprint 23.1 fix: usa HolyricsClient oficial (integracao_holyrics),
+    que envia o token como query parameter ``?token=xxx`` (formato
+    esperado pela API do Holyrics). O endpoint anterior enviava o token
+    no header HTTP ``{"token": token}``, causando 401 mesmo com token
+    correto.
+
+    Usa test_connection_detailed() que retorna mensagens específicas
+    por tipo de erro (auth, connection, timeout, generic).
+    """
+    t0 = time.monotonic()
+    try:
+        from integracao_holyrics import HolyricsClient
+        client = HolyricsClient(
+            base_url=base_url,
+            token=token,
+            timeout_s=timeout_ms / 1000.0,
+        )
+        result = client.test_connection_detailed()
+        result["base_url"] = base_url
+        if result["ok"]:
+            result["message"] = f"Conexão bem-sucedida ({base_url})"
+        else:
+            result["message"] = f"{result['message']} ({base_url})"
+        result["latency_ms"] = result.get(
+            "latency_ms", int((time.monotonic() - t0) * 1000)
+        )
+        return versioned(result)
+    except ImportError:
+        return versioned({
+            "ok": False,
+            "message": "integracao_holyrics não disponível.",
+            "base_url": base_url,
+            "latency_ms": int((time.monotonic() - t0) * 1000),
+            "error_type": "import",
         })
     except Exception as e:
         return versioned({
@@ -491,6 +700,31 @@ async def wizard_ollama_model() -> dict:
         })
 
 
+@router.post("/ollama/save")
+@router.post("/ollama/save/")
+async def wizard_ollama_save(payload: SaveOllamaModel) -> dict:
+    """Persiste URL/modelo do Ollama em config.overrides.json.
+
+    Sprint 23.1: endpoint dedicado para salvar a config do Ollama
+    durante o Wizard. Persiste em ``llm.base_url`` e ``llm.model``
+    (e ``semantic.ollama`` se aplicável).
+    """
+    try:
+        overrides = {
+            "llm": {"base_url": payload.base_url, "model": payload.model},
+        }
+        _apply_overrides_via_configuration_service(overrides)
+        return versioned({
+            "ok": True,
+            "message": f"Configuração do Ollama salva (modelo: {payload.model}).",
+            "base_url": payload.base_url,
+            "model": payload.model,
+        })
+    except Exception as e:
+        logger.warning("wizard: erro salvando config ollama: %s", e)
+        raise HTTPException(500, f"Erro ao salvar configuração: {e}")
+
+
 @router.post("/ollama/pull")
 @router.post("/ollama/pull/")
 async def wizard_ollama_pull(payload: PullOllamaModel) -> dict:
@@ -513,13 +747,15 @@ async def wizard_ollama_pull(payload: PullOllamaModel) -> dict:
     model = payload.model
     # Thread que executa `ollama pull <model>` e atualiza o estado.
     def _run_pull():
-        global _pull_state
+        global _pull_state, _pull_proc
         try:
             proc = subprocess.Popen(
                 [exe, "pull", model],
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, bufsize=1, encoding="utf-8",
             )
+            with _pull_lock:
+                _pull_proc = proc
             last_line = ""
             for line in proc.stdout:
                 last_line = line.strip()
@@ -528,6 +764,7 @@ async def wizard_ollama_pull(payload: PullOllamaModel) -> dict:
             proc.wait()
             with _pull_lock:
                 _pull_state.running = False
+                _pull_proc = None
                 if proc.returncode == 0:
                     _pull_state.completed = True
                     _pull_state.completed_at = time.time()
@@ -537,6 +774,7 @@ async def wizard_ollama_pull(payload: PullOllamaModel) -> dict:
         except Exception as e:
             with _pull_lock:
                 _pull_state.running = False
+                _pull_proc = None
                 _pull_state.failed = True
                 _pull_state.error = str(e)
     threading.Thread(target=_run_pull, daemon=True).start()

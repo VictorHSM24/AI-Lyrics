@@ -23,7 +23,7 @@ import {
   type PullStatus,
 } from "./types";
 
-export function OllamaStep() {
+export function OllamaStep({ onBusyChange }: { onBusyChange?: (busy: boolean) => void }) {
   const [detect, setDetect] = useState<OllamaDetect | null>(null);
   const [api, setApi] = useState<OllamaApi | null>(null);
   const [model, setModel] = useState<OllamaModel | null>(null);
@@ -41,7 +41,7 @@ export function OllamaStep() {
       setApi(a);
       const m = await apiGet<OllamaModel>("/ollama/model");
       setModel(m);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("ollama load error", e);
     } finally {
       setLoading(false);
@@ -52,19 +52,39 @@ export function OllamaStep() {
     loadAll();
   }, [loadAll]);
 
+  const busy = loading || pulling;
+  useEffect(() => {
+    if (onBusyChange) onBusyChange(busy);
+  }, [busy, onBusyChange]);
+
   const startPull = async () => {
+    if (pulling) return; // previne cliques duplicados
     setPulling(true);
     setPull(null);
+    // Limpa polling anterior se existir.
+    if (pollRef.current) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    const modelToPull = model?.configured_model ?? "qwen3:8b-q4_K_M";
     try {
-      await apiPost("/ollama/pull", {
-        model: model?.configured_model ?? "qwen3:8b-q4_K_M",
-      });
+      // Sprint 23.1: salvar config do Ollama antes de baixar.
+      try {
+        await apiPost("/ollama/save", { model: modelToPull });
+      } catch {
+        /* não bloquear o download se salvar falhar */
+      }
+      await apiPost("/ollama/pull", { model: modelToPull });
+      let mounted = true;
       pollRef.current = window.setInterval(async () => {
+        if (!mounted) return;
         try {
           const s = await apiGet<PullStatus>("/ollama/pull/status");
+          if (!mounted) return;
           setPull(s);
           if (!s.running) {
             if (pollRef.current) window.clearInterval(pollRef.current);
+            pollRef.current = null;
             setPulling(false);
             loadAll();
           }
@@ -72,10 +92,11 @@ export function OllamaStep() {
           /* silencioso */
         }
       }, 1000);
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
       setPull({
         running: false, completed: false, failed: true,
-        progress: "", error: e.message, elapsed_s: 0,
+        progress: "", error: msg, elapsed_s: 0,
       });
       setPulling(false);
     }
@@ -84,6 +105,7 @@ export function OllamaStep() {
   useEffect(() => {
     return () => {
       if (pollRef.current) window.clearInterval(pollRef.current);
+      pollRef.current = null;
     };
   }, []);
 

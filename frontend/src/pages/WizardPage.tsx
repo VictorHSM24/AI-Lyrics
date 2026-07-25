@@ -45,6 +45,10 @@ export function WizardPage() {
   const navigate = useNavigate();
   const [stepIdx, setStepIdx] = useState(0);
   const [status, setStatus] = useState<WizardStatus | null>(null);
+  // Sprint 23.1: estado que bloqueia navegação durante operações.
+  // Cada Step reporta se está busy (loading, testing, pulling) via
+  // onBusyChange. O WizardPage desabilita Voltar/Próxima enquanto busy.
+  const [busy, setBusy] = useState(false);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -60,6 +64,7 @@ export function WizardPage() {
   }, [loadStatus]);
 
   const goNext = () => {
+    if (busy) return;
     if (stepIdx < STEPS.length - 1) {
       setStepIdx(stepIdx + 1);
     } else {
@@ -68,6 +73,7 @@ export function WizardPage() {
   };
 
   const goPrev = () => {
+    if (busy) return;
     if (stepIdx > 0) setStepIdx(stepIdx - 1);
   };
 
@@ -106,27 +112,28 @@ export function WizardPage() {
     <WizardShell>
       <Stepper currentIdx={stepIdx} />
       <div className="mt-8">
-        {currentStep === "audio" && <AudioStep />}
-        {currentStep === "holyrics" && <HolyricsStep />}
-        {currentStep === "ollama" && <OllamaStep />}
-        {currentStep === "bible" && <BibleStep />}
-        {currentStep === "test" && <TestStep />}
+        {currentStep === "audio" && <AudioStep onBusyChange={setBusy} />}
+        {currentStep === "holyrics" && <HolyricsStep onBusyChange={setBusy} />}
+        {currentStep === "ollama" && <OllamaStep onBusyChange={setBusy} />}
+        {currentStep === "bible" && <BibleStep onBusyChange={setBusy} />}
+        {currentStep === "test" && <TestStep onBusyChange={setBusy} />}
         {stepIdx >= STEPS.length && <DoneStep onComplete={completeWizard} />}
       </div>
       {stepIdx < STEPS.length && (
         <div className="mt-8 flex justify-between">
           <button
             onClick={goPrev}
-            disabled={stepIdx === 0}
+            disabled={stepIdx === 0 || busy}
             className="inline-flex items-center gap-2 px-4 py-2 text-sm text-text-muted disabled:opacity-30"
           >
             <ArrowLeft className="h-4 w-4" /> Voltar
           </button>
           <button
             onClick={goNext}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-accent text-white rounded hover:opacity-90"
+            disabled={busy}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-accent text-white rounded hover:opacity-90 disabled:opacity-50"
           >
-            Próxima etapa <ArrowRight className="h-4 w-4" />
+            {busy ? "Aguarde..." : "Próxima etapa"} <ArrowRight className="h-4 w-4" />
           </button>
         </div>
       )}

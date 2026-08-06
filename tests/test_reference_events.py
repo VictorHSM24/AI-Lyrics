@@ -138,9 +138,14 @@ class TestReferenceEvents(unittest.TestCase):
         # Sprint 21: +4 (SermonContextUpdated, SermonBookChanged, SermonChapterChanged, SermonTopicChanged)
         # Sprint 21.1: +1 (SemanticProviderUnavailable)
         # Sprint 21.4: +1 (ReferenceAntecipada)
-        self.assertEqual(len(all_event_types()), 39)
+        # CAP-01: +1 (StateChanged)
+        # CAP-03: +1 (IntentClassified)
+        self.assertEqual(len(all_event_types()), 41)
         # Sprint 21.4 — Streaming First.
         self.assertIn("ReferenceAntecipada", names)
+        # CAP-01 — StateOrchestrator.
+        self.assertIn("StateChanged", names)
+        self.assertIn("IntentClassified", names)
 
 
 if __name__ == "__main__":

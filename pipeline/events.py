@@ -848,6 +848,61 @@ class SemanticProviderUnavailable(OperationalEvent):
 
 
 # ---------------------------------------------------------------------------
+# CAP-01 — StateOrchestrator
+#
+# Fluxo:
+#   ReferenceCandidate / ReferenceDetected / IntentUnknown / SpeechTranscribed
+#       ↓
+#   StateOrchestrator (consome eventos, decide estado)
+#       ↓
+#   StateChanged (publicado em toda transição ou mudança observável)
+#
+# CAP-03 — IntentClassified (definição de tipo apenas; não publicado pela CAP-01)
+#
+# O StateOrchestrator é o ponto único e autoritativo de decisão de estado.
+# StateChanged é OperationalEvent — persistido no EventStore.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StateChanged(OperationalEvent):
+    """Transição de estado do sistema (WAIT, PREPARE, PRESENT, IGNORE).
+
+    Publicado pelo StateOrchestrator (CAP-01) quando o sistema transita
+    entre estados da máquina de estados ou quando há uma mudança observável
+    de contexto dentro do mesmo estado (ex.: capítulo adicionado em PREPARE,
+    livro ativo muda, repeat detectado).
+
+    Payload conforme Event Contracts — seção StateChanged.
+    """
+
+    from_state: str = ""         # "WAIT" | "PREPARE" | "PRESENT" | "IGNORE"
+    to_state: str = ""           # "WAIT" | "PREPARE" | "PRESENT" | "IGNORE"
+    reason: str = ""             # ver valores abaixo
+    repeat: bool = False         # True se re-citação (CAP-07). Default False.
+    detail: str = ""             # informação adicional
+    active_book: str = ""        # livro ativo após transição (vazio se None)
+    active_chapter: int = 0      # capítulo ativo após transição (0 se None)
+    pending_reference: str = ""  # referência pendente em PREPARE (vazio se None)
+
+
+@dataclass(frozen=True)
+class IntentClassified(OperationalEvent):
+    """Classificação da intenção do pregador ao mencionar um livro (CAP-03).
+
+    Definido como tipo para compatibilidade futura. A CAP-01 NÃO publica
+    este evento. Ele pertence exclusivamente à CAP-03 (IntentClassifier).
+    """
+
+    book: str = ""
+    book_id: int = 0
+    intent_type: str = ""        # "OPEN_REQUEST" | "ACTIVE_CITATION" | "NARRATIVE_MENTION"
+    trigger_phrase: str = ""
+    confidence: float = 0.0
+    raw_text: str = ""
+
+
+# ---------------------------------------------------------------------------
 # Registry de tipos de evento
 # ---------------------------------------------------------------------------
 
@@ -900,6 +955,10 @@ _ALL_EVENT_TYPES = (
     SermonTopicChanged,
     # Sprint 21.1 — Semantic provider health
     SemanticProviderUnavailable,
+    # CAP-01 — StateOrchestrator
+    StateChanged,
+    # CAP-03 — IntentClassifier (tipo apenas; não publicado pela CAP-01)
+    IntentClassified,
 )
 
 _ALL_EVENT_TYPE_NAMES = tuple(c.__name__ for c in _ALL_EVENT_TYPES)
@@ -978,6 +1037,10 @@ __all__ = [
     "SermonChapterChanged",
     "SermonTopicChanged",
     "SemanticProviderUnavailable",
+    # CAP-01 — StateOrchestrator
+    "StateChanged",
+    # CAP-03 — IntentClassifier (tipo apenas)
+    "IntentClassified",
     "all_event_types",
     "all_event_type_names",
     "is_pipeline_event",

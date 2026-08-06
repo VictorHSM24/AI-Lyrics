@@ -197,15 +197,17 @@ class TestPipelineEvents(unittest.TestCase):
         )
 
     def test_all_event_types_count(self):
-        """Deve haver 39 tipos de evento (Sprint 21.4: +1 ReferenceAntecipada)."""
+        """Deve haver 41 tipos de evento (CAP-01: +1 StateChanged, CAP-03: +1 IntentClassified)."""
         types = all_event_types()
         # 15 + 5 Sprint 16 + 3 Sprint 17 + 4 Sprint 18 + 3 Sprint 19
-        # + 3 Sprint 20 + 4 Sprint 21 + 1 Sprint 21.1 + 1 Sprint 21.4 = 39
-        self.assertEqual(len(types), 39)
+        # + 3 Sprint 20 + 4 Sprint 21 + 1 Sprint 21.1 + 1 Sprint 21.4
+        # + 1 CAP-01 + 1 CAP-03 = 41
+        self.assertEqual(len(types), 41)
 
     def test_all_event_type_names(self):
         names = all_event_type_names()
-        self.assertEqual(len(names), 39)
+        # CAP-01: +1 (StateChanged), CAP-03: +1 (IntentClassified)
+        self.assertEqual(len(names), 41)
         self.assertIn("SpeechSegmentReceived", names)
         self.assertIn("PipelineError", names)
         # Sprint 16 — Continuous Speech Pipeline
@@ -218,6 +220,10 @@ class TestPipelineEvents(unittest.TestCase):
         self.assertIn("ReferenceDetected", names)
         self.assertIn("ReferenceInvalid", names)
         self.assertIn("IntentUnknown", names)
+        # CAP-01 — StateOrchestrator
+        self.assertIn("StateChanged", names)
+        # CAP-03 — IntentClassifier (tipo apenas)
+        self.assertIn("IntentClassified", names)
 
     def test_is_pipeline_event(self):
         meta = self._make_meta()

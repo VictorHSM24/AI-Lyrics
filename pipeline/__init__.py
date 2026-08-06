@@ -92,6 +92,10 @@ from pipeline.events import (
     ReferenceCandidate,
     # Sprint 21.4 — Streaming First (antecipação)
     ReferenceAntecipada,
+    # CAP-01 — StateOrchestrator
+    StateChanged,
+    # CAP-03 — IntentClassifier (tipo apenas)
+    IntentClassified,
     is_operational_event,
     is_pipeline_event,
     is_telemetry_event,
@@ -171,6 +175,10 @@ __all__ = [
     "ReferenceCandidate",
     # Sprint 21.4 — Streaming First (antecipação)
     "ReferenceAntecipada",
+    # CAP-01 — StateOrchestrator
+    "StateChanged",
+    # CAP-03 — IntentClassifier (tipo apenas)
+    "IntentClassified",
     "is_pipeline_event",
     "is_operational_event",
     "is_telemetry_event",

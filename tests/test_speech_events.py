@@ -141,7 +141,8 @@ class TestSpeechEvents(unittest.TestCase):
             self.assertIn(name, names)
         # 15 originais + 5 Sprint 16 + 3 Sprint 17 + 4 Sprint 18 = 27
         # Sprint 19: +3, Sprint 20: +3, Sprint 21: +4, Sprint 21.1: +1, Sprint 21.4: +1
-        self.assertEqual(len(types), 39)
+        # CAP-01: +1 (StateChanged), CAP-03: +1 (IntentClassified)
+        self.assertEqual(len(types), 41)
 
 
 if __name__ == "__main__":

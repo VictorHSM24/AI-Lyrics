@@ -321,6 +321,8 @@ class CompositionRoot:
     semantic_provider: Any = None  # LocalLLMProvider / StubProvider or None
     # Sprint 22.0 — BibleRetriever (RAG Local) or None.
     bible_retriever: Any = None
+    # CAP-01 — StateOrchestrator or None.
+    state_orchestrator: Any = None
 
 
 # ---------------------------------------------------------------------------
@@ -1018,6 +1020,17 @@ def create_composition_root() -> CompositionRoot:
         sdk_compatibility="0.1.0",
     )
 
+    # CAP-01 — StateOrchestrator.
+    # Instanciado após todos os produtores de eventos para que sua
+    # inscrição no EventBus seja posterior à deles (ordem de execução).
+    from pipeline.state_orchestrator import StateOrchestrator
+    state_orchestrator = StateOrchestrator(
+        bus=bus,
+        session_id=session.session_id,
+    )
+    state_orchestrator.start()
+    logger.info("CAP-01: StateOrchestrator started.")
+
     return CompositionRoot(
         bus=bus,
         store=store,
@@ -1058,6 +1071,7 @@ def create_composition_root() -> CompositionRoot:
         reference_resolver=reference_resolver,
         semantic_provider=semantic_provider,
         bible_retriever=bible_retriever_instance,
+        state_orchestrator=state_orchestrator,
     )
 
 

@@ -1,0 +1,49 @@
+Metadata-Version: 2.4
+Name: ai-lyrics
+Version: 0.1.0
+Summary: Sistema de reconhecimento de fala para versículos bíblicos
+Author: AI Lyrics Team
+License: Proprietary
+Project-URL: Homepage, https://github.com/ai-lyrics/ai-lyrics
+Project-URL: Documentation, https://github.com/ai-lyrics/ai-lyrics/docs
+Project-URL: Repository, https://github.com/ai-lyrics/ai-lyrics
+Keywords: speech-recognition,whisper,bible,holyrics,stt
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: End Users/Desktop
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Programming Language :: Python :: 3.14
+Classifier: Topic :: Multimedia :: Sound/Audio :: Speech
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: PyYAML<7.0,>=6.0
+Requires-Dist: requests<3.0,>=2.31
+Requires-Dist: fastapi<0.115,>=0.104
+Requires-Dist: pydantic<3.0,>=2.5
+Requires-Dist: uvicorn[standard]<0.35,>=0.24
+Requires-Dist: sounddevice<0.6.0,>=0.4.6
+Requires-Dist: pysilero-vad<4.0.0,>=3.4.0
+Requires-Dist: numpy<3.0,>=1.24
+Requires-Dist: faster-whisper<2.0.0,>=1.1.0
+Requires-Dist: rapidfuzz<4.0,>=3.10
+Requires-Dist: sentence-transformers<6.0,>=3.0
+Requires-Dist: torch<3.0,>=2.1
+Requires-Dist: psutil<7.0,>=5.9
+Provides-Extra: vad-fallback
+Requires-Dist: webrtcvad<3.0,>=2.0.36; python_version < "3.14" and extra == "vad-fallback"
+Provides-Extra: gpu
+Requires-Dist: torch<3.0,>=2.1; extra == "gpu"
+Provides-Extra: gpu-ct2
+Requires-Dist: nvidia-cuda-runtime-cu12; platform_system != "Darwin" and extra == "gpu-ct2"
+Provides-Extra: test
+Requires-Dist: pytest<10.0,>=8.0; extra == "test"
+Requires-Dist: httpx<1.0,>=0.24; extra == "test"
+Provides-Extra: dev
+Requires-Dist: ruff<1.0,>=0.4; extra == "dev"
+Requires-Dist: mypy<2.0,>=1.10; extra == "dev"
+Provides-Extra: all
+Requires-Dist: ai-lyrics[dev,test,vad-fallback]; extra == "all"

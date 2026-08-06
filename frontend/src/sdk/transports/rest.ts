@@ -75,6 +75,7 @@ const METHOD_TO_ENDPOINT: Record<string, string> = {
   "audio.stop": "/audio/stop",
   "audio.select": "/audio/select",
   "system.get": "/system",
+  "system.restart": "/system/restart",
   "info.get": "/info",
   // Sprint 24 — Operator Panel
   "operator.getBooks": "/operator/books",
@@ -102,6 +103,7 @@ const POST_METHODS: ReadonlySet<string> = new Set([
   "pipeline.start",
   "pipeline.stop",
   "operator.present",
+  "system.restart",
 ]);
 
 // ============================================================

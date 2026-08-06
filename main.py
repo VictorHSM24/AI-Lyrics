@@ -100,20 +100,6 @@ def main() -> int:
 
         threading.Thread(target=_open_after_delay, daemon=True).start()
 
-    # Importa a app FastAPI explicitamente (não por string) para garantir
-    # que o PyInstaller resolva o módulo api.app no bundle em tempo de
-    # import, evitando o erro "Could not import module api.app" que
-    # ocorre quando uvicorn tenta importlib em runtime.
-    try:
-        from api.app import app  # noqa: E402
-    except ImportError as e:
-        logger.error(
-            "Não foi possível importar api.app: %s. "
-            "Verifique se o bundle PyInstaller inclui o pacote api.",
-            e,
-        )
-        return 1
-
     # Importa uvicorn após a app (garante que api.app está resolvível).
     try:
         import uvicorn
@@ -122,16 +108,88 @@ def main() -> int:
         return 1
 
     logger.info("Iniciando AI Lyrics em http://%s:%d", host, port)
-    # Passa o objeto app diretamente (não a string "api.app:app") para
-    # evitar import dinâmico em runtime no bundle PyInstaller.
-    uvicorn.run(
-        app,
-        host=host,
-        port=port,
-        log_level="info",
-        access_log=False,
+
+    # Sprint 27 — Loop de supervisão.
+    #
+    # Em produção (PyInstaller frozen), o uvicorn roda sem reloader.
+    # Quando POST /system/restart é chamado, o endpoint seta
+    # should_exit=True no Server uvicorn (via set_server_ref) e um flag
+    # _restart_requested. O Server.run() retorna, o loop detecta o flag,
+    # recarrega os módulos de config do disco, recria a app, e reinicia.
+    #
+    # Em desenvolvimento (não-frozen), o usuário tipicamente usa
+    # `uvicorn api.app:app --reload` diretamente, e o watchfiles cuida
+    # do restart. Mas se rodar main.py em dev, o loop também funciona.
+    from api.routers.system import (
+        set_server_ref,
+        was_restart_requested,
+        reset_restart_flag,
     )
-    return 0
+
+    is_frozen = getattr(sys, "frozen", False)
+    max_restarts = 10 if is_frozen else 50
+    restart_count = 0
+
+    while True:
+        # Reimporta create_app a cada iteração para recarregar config
+        # do disco (config.overrides.json). Em modo frozen, o import
+        # cacheia módulos, então precisamos forçar reload dos módulos
+        # de configuração.
+        if restart_count > 0:
+            logger.info("Reiniciando backend (tentativa %d/%d)…", restart_count, max_restarts)
+            # Forçar recarga dos módulos de config para ler overrides atualizados.
+            import importlib
+            for mod_name in [
+                "config.loader", "config.persistence", "config.models",
+                "api.startup.composition", "api.app",
+            ]:
+                mod = sys.modules.get(mod_name)
+                if mod is not None:
+                    importlib.reload(mod)
+            reset_restart_flag()
+
+        # Cria/recria a app FastAPI.
+        try:
+            from api.app import create_app
+            app = create_app()
+        except ImportError as e:
+            logger.error("Não foi possível importar api.app: %s", e)
+            return 1
+
+        # Cria o Server uvicorn manualmente (em vez de uvicorn.run())
+        # para ter uma referência que o endpoint /system/restart pode
+        # usar para sinalizar shutdown graceful.
+        server = uvicorn.Server(
+            uvicorn.Config(
+                app=app,
+                host=host,
+                port=port,
+                log_level="info",
+                access_log=False,
+            )
+        )
+        set_server_ref(server)
+
+        try:
+            server.run()
+        except KeyboardInterrupt:
+            logger.info("Interrompido pelo usuário (Ctrl+C).")
+            return 0
+
+        # server.run() retornou — verificar se foi restart ou shutdown normal.
+        if was_restart_requested():
+            restart_count += 1
+            if restart_count > max_restarts:
+                logger.error(
+                    "Limite de %d reinícios excedido — parando.",
+                    max_restarts,
+                )
+                return 1
+            logger.info("Restart solicitado — recarregando configuração e reiniciando.")
+            continue
+
+        logger.info("Servidor parou normalmente.")
+        return 0
 
 
 if __name__ == "__main__":

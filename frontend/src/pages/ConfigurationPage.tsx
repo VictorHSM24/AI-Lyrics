@@ -10,7 +10,7 @@ import { Settings, Mic, Brain, Church, Server, Wrench } from "lucide-react";
 import { PageLayout } from "@/app/layout";
 import { OperationStatusBadge } from "@/components/operational";
 import { useOperationState } from "@/contexts/OperationContext";
-import { TabNav, type TabDef } from "@/components/settings";
+import { TabNav, type TabDef, SaveRestartBar } from "@/components/settings";
 import { GeneralTab } from "@/components/settings/GeneralTab";
 import { AudioTab } from "@/components/settings/AudioTab";
 import { AITab } from "@/components/settings/AITab";
@@ -78,6 +78,12 @@ export function ConfigurationPage() {
         activeTab={activeTab}
         onChange={(id) => setActiveTab(id as TabId)}
       />
+
+      {/* Sprint 27 — Barra global "Salvar e Reiniciar Backend".
+          Fica no rodapé, FORA das abas, para que o usuário entenda
+          que TODAS as configurações de TODAS as abas serão salvas
+          de uma só vez antes de reiniciar o backend. */}
+      <SaveRestartBar />
     </PageLayout>
   );
 }

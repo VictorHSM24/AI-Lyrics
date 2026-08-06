@@ -1,12 +1,13 @@
 {
   "audio": {
-    "device_index": 0
+    "channels": 2
   },
-  "holyrics": {
-    "base_url": "http://127.0.0.1:8091/api"
-  },
-  "llm": {
-    "base_url": "http://localhost:11434",
-    "model": "qwen3:8b-q4_K_M"
+  "stt": {
+    "backend": "faster-whisper",
+    "compute_type": "float32",
+    "cpu_threads": 4,
+    "device": "cuda",
+    "language": "pt",
+    "model": "large-v3-turbo"
   }
 }

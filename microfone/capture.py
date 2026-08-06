@@ -349,6 +349,14 @@ class VadSegmenter:
                 elif callable(self._vad):
                     prob = float(self._vad(chunk))
                     is_speech = prob >= 0.5
+                    # Sprint 27 — Log periódico de probabilidade VAD para diagnóstico.
+                    # Loga a cada ~100 chunks (~3s) para não poluir o log.
+                    if self._chunk_count % 100 == 0:
+                        logger.info(
+                            "VAD diag: chunk=%d prob=%.4f speech=%s sr=%d buf_ms=%d",
+                            self._chunk_count, prob, is_speech,
+                            self._sample_rate, self._speech_ms,
+                        )
                 else:
                     is_speech = False
                 self._last_vad_speech = is_speech

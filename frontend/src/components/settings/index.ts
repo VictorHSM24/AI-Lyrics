@@ -13,3 +13,4 @@ export { AITab } from "./AITab";
 export { HolyricsTab } from "./HolyricsTab";
 export { SystemTab } from "./SystemTab";
 export { AdvancedTab } from "./AdvancedTab";
+export { SaveRestartBar } from "./SaveRestartBar";

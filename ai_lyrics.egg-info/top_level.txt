@@ -1,0 +1,17 @@
+api
+busca
+config
+context
+core
+estado
+evaluation
+examples
+feedback
+integracao_holyrics
+intelligence
+llm
+microfone
+parser
+pipeline
+presentation
+transcricao

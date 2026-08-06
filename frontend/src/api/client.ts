@@ -71,6 +71,7 @@ export function createPresentationApi(): PresentationApi {
     },
     system: {
       getSystemInfo: notImplemented,
+      restart: notImplemented,
     },
     info: {
       getInfo: notImplemented,

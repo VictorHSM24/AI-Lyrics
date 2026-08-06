@@ -155,6 +155,7 @@ export interface AudioSelectResult {
 
 export interface SystemService {
   getSystemInfo(options?: CallOptions): Promise<SystemInfoDTO>;
+  restart(options?: CallOptions): Promise<{ status: string; message: string }>;
 }
 
 // ============================================================
@@ -268,6 +269,7 @@ export function createServices(client: Client): PresentationServices {
     },
     system: {
       getSystemInfo: (o) => call<SystemInfoDTO>("system.get", {}, o),
+      restart: (o) => call<{ status: string; message: string }>("system.restart", {}, o),
     },
     info: {
       getInfo: (o) => call<InfoDTO>("info.get", {}, o),
@@ -342,7 +344,7 @@ export function createStubServices(): PresentationServices {
       getReplayCorrelations: reject,
     },
     audio: { getDevices: reject, getCurrentDevice: reject, getLevels: reject, startCapture: reject, stopCapture: reject, selectDevice: reject },
-    system: { getSystemInfo: reject },
+    system: { getSystemInfo: reject, restart: reject },
     info: { getInfo: reject },
     operator: {
       getBooks: reject,

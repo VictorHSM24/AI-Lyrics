@@ -5,17 +5,15 @@
  * Todos os campos utilizam a configuração existente (AppSettings).
  * Preparado para futura expansão.
  *
- * Sprint 17.3 — Auditoria do Runtime do STT:
- * - Mostra divergência entre UI (localStorage) e backend (config.yaml).
- * - Botão "Aplicar no Backend" envia via PUT /configuration.
- * - Aviso se alteração só vale após reiniciar backend.
+ * Sprint 27 — O botão "Aplicar no Backend" foi removido daqui e movido
+ * para a barra global SaveRestartBar na ConfigurationPage. Agora o
+ * usuário altera todas as abas que quiser e clica em "Salvar e Reiniciar
+ * Backend" uma única vez no rodapé.
  */
 
-import { useState } from "react";
-import { Cpu, Mic2, Brain, AlertTriangle, Send } from "lucide-react";
+import { Cpu, Mic2, Brain, AlertTriangle } from "lucide-react";
 import { useOperationState } from "@/contexts/OperationContext";
 import { useConfiguration } from "@/hooks";
-import { useServices } from "@/hooks";
 import { Card, PropertyGrid } from "@/components";
 import { SelectField, NumberField, TextField } from "./FormControls";
 
@@ -78,9 +76,6 @@ function uiDeviceToBackend(uiDevice: string): string {
 export function AITab() {
   const { settings, updateSettings } = useOperationState();
   const { configuration } = useConfiguration();
-  const services = useServices();
-  const [applying, setApplying] = useState(false);
-  const [applyResult, setApplyResult] = useState<string | null>(null);
 
   const ai = settings?.data.ai;
 
@@ -131,77 +126,6 @@ export function AITab() {
     }
   }
 
-  /**
-   * Sprint 17.5.2 — Valida valores críticos ANTES de enviar ao backend.
-   * Espelha a validação de config/loader.py para falhar cedo na UI
-   * com mensagem amigável, em vez de persistir valor inválido e
-   * quebrar o restart do backend.
-   */
-  const VALID_BACKENDS = new Set(["faster-whisper"]);
-  const VALID_DEVICES = new Set(["cpu", "cuda", "auto"]);
-  const VALID_COMPUTE_TYPES = new Set(["int8", "int8_float16", "float16", "float32"]);
-
-  function validateSttOverrides(overrides: Record<string, unknown>): string[] {
-    const errs: string[] = [];
-    const backend = overrides.backend as string | undefined;
-    const device = overrides.device as string | undefined;
-    const computeType = overrides.compute_type as string | undefined;
-    const threads = overrides.cpu_threads as number | undefined;
-    if (backend && !VALID_BACKENDS.has(backend)) {
-      errs.push(`Backend inválido: "${backend}". Válidos: faster-whisper.`);
-    }
-    if (device && !VALID_DEVICES.has(device)) {
-      errs.push(`Device inválido: "${device}". Válidos: cpu, cuda, auto.`);
-    }
-    if (computeType && !VALID_COMPUTE_TYPES.has(computeType)) {
-      errs.push(`Compute type inválido: "${computeType}". Válidos: int8, int8_float16, float16, float32.`);
-    }
-    if (threads !== undefined && (!Number.isInteger(threads) || threads < 0 || threads > 128)) {
-      errs.push(`CPU threads inválido: ${threads}. Deve ser inteiro entre 0 e 128.`);
-    }
-    return errs;
-  }
-
-  /**
-   * Sprint 17.3 — Envia configurações de STT para o backend via PUT /configuration.
-   * As alterações só passam a valer após reiniciar o backend (o modelo STT
-   * é carregado uma vez no startup).
-   *
-   * Sprint 17.5.2 — Valida antes de enviar. Se houver valores inválidos,
-   * mostra erro amigável e NÃO envia ao backend.
-   */
-  async function applyToBackend() {
-    if (!services || !ai) return;
-    setApplying(true);
-    setApplyResult(null);
-    try {
-      const sttOverrides: Record<string, unknown> = {
-        model: uiModelToBackend(ai.whisperModel),
-        backend: ai.backend,
-        device: uiDeviceToBackend(ai.device),
-        compute_type: ai.computeType,
-        language: ai.language === "pt-BR" ? "pt" : ai.language,
-        cpu_threads: ai.threads,
-      };
-      const validationErrors = validateSttOverrides(sttOverrides);
-      if (validationErrors.length > 0) {
-        setApplyResult(
-          `Não enviado — valores inválidos detectados:\n${validationErrors.map((e) => `  • ${e}`).join("\n")}`,
-        );
-        return;
-      }
-      const overrides = { stt: sttOverrides };
-      await services.configuration.updateConfiguration(overrides);
-      setApplyResult(
-        "Configuração enviada ao backend. REINICIE o backend para aplicar (o modelo STT é carregado no startup).",
-      );
-    } catch (e) {
-      setApplyResult(`Erro ao aplicar: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setApplying(false);
-    }
-  }
-
   return (
     <div className="flex flex-col gap-4" data-testid="ai-tab">
       {divergences.length > 0 && (
@@ -223,7 +147,7 @@ export function AITab() {
                 </ul>
                 <p className="mt-2 text-xs">
                   A UI mostra valores do localStorage. O backend usa config.yaml.
-                  Use "Aplicar no Backend" para sincronizar.
+                  Use o botão "Salvar e Reiniciar Backend" no rodapé para aplicar.
                 </p>
               </div>
             </div>
@@ -320,26 +244,6 @@ export function AITab() {
               }))
             }
           />
-
-          <button
-            type="button"
-            onClick={applyToBackend}
-            disabled={applying}
-            className="inline-flex items-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-sm font-medium text-text hover:bg-surface-hover disabled:opacity-50"
-            data-testid="apply-stt-to-backend"
-          >
-            <Send className="h-4 w-4" />
-            {applying ? "Aplicando..." : "Aplicar no Backend"}
-          </button>
-
-          {applyResult && (
-            <p
-              className="text-xs"
-              data-testid="apply-result"
-            >
-              {applyResult}
-            </p>
-          )}
         </div>
       </Card>
 

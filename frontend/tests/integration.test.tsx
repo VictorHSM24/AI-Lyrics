@@ -235,6 +235,7 @@ function createMockServices(overrides?: Partial<{
         sentence_transformers_version: "",
         sounddevice_version: "",
       })),
+      restart: vi.fn(async () => ({ status: "restarting", message: "Backend reiniciando." })),
     },
     info: {
       getInfo: vi.fn(async () => ({
@@ -275,7 +276,7 @@ function createFailingServices(): PresentationServices {
     events: services.events,
     replay: services.replay,
     audio: { getDevices: reject, getCurrentDevice: reject, getLevels: reject, startCapture: reject, stopCapture: reject, selectDevice: reject },
-    system: { getSystemInfo: reject },
+    system: { getSystemInfo: reject, restart: reject },
     info: { getInfo: reject },
   };
 }

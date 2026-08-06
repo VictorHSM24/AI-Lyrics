@@ -654,6 +654,7 @@ export function handleVersePresentationEvent(
     errorType: "",
     errorMessage: "",
     timestamp: dto.meta.timestamp,
+    origin: dto.meta.origin ?? "",
   };
 
   let updated: typeof baseEntry | null = null;
@@ -736,11 +737,26 @@ export function handleVersePresentationEvent(
 
   if (updated === null) return;
 
+  // Sprint 24 — Dedup consecutivo: se o versículo apresentado é o mesmo
+  // do current (mesmo book_id, chapter, verse), substituir a entrada no
+  // topo em vez de adicionar nova. Evita poluir o histórico com o mesmo
+  // versículo apresentado múltiplas vezes seguidas (manual ou automático).
+  const prevCurrent = prev?.current ?? null;
+  const isSameVerseAsCurrent =
+    prevCurrent !== null &&
+    prevCurrent.bookId === updated.bookId &&
+    prevCurrent.chapter === updated.chapter &&
+    prevCurrent.verse === updated.verse;
+
   // Substituir entrada existente ou adicionar nova no topo.
   let newEntries: typeof prevEntries;
   if (existingIdx >= 0) {
     newEntries = [...prevEntries];
     newEntries[existingIdx] = updated;
+  } else if (isSameVerseAsCurrent && prevEntries.length > 0) {
+    // Dedup: substituir o topo (entrada mais recente = current anterior).
+    newEntries = [...prevEntries];
+    newEntries[0] = updated;
   } else {
     newEntries = [updated, ...prevEntries].slice(0, 50);
   }

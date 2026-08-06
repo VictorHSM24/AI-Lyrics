@@ -13,6 +13,12 @@ export default {
           DEFAULT: "rgb(var(--color-surface) / <alpha-value>)",
           hover: "rgb(var(--color-surface-hover) / <alpha-value>)",
           raised: "rgb(var(--color-surface-raised) / <alpha-value>)",
+          // Alias: "elevated" é usado em vários componentes como sinônimo
+          // de "raised" (superfície acima do plano base). Sem este alias,
+          // bg-surface-elevated não gera CSS e elementos nativos como
+          // <select> caem no background branco default do browser,
+          // causando texto branco em fundo branco no dark mode.
+          elevated: "rgb(var(--color-surface-raised) / <alpha-value>)",
         },
         border: {
           DEFAULT: "rgb(var(--color-border) / <alpha-value>)",

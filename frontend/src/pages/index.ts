@@ -1,6 +1,7 @@
 export { StartupPage } from "./StartupPage";
 export { DashboardPage } from "./DashboardPage";
 export { ConsolePage } from "./ConsolePage";
+export { OperatorPage } from "./OperatorPage";
 export { SessionsPage } from "./SessionsPage";
 export { ReplayPage } from "./ReplayPage";
 export { LogsPage } from "./LogsPage";

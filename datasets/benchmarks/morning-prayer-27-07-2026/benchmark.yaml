@@ -1,0 +1,359 @@
+# Benchmark oficial: AI Lyrics
+# Sermão: Morning Prayer: 27/07/2026
+# Arquivo de origem: datasets/sermons/morning prayer/27-07-2026.txt
+#
+# Este benchmark descreve o comportamento esperado do AI Lyrics
+# ao acompanhar a pregação em streaming (segmentos incrementais).
+# Cada evento representa uma mudança de estado do sistema.
+# Estados: WAIT | PREPARE | PRESENT | IGNORE
+#
+# decision_source identifica qual subsistema é responsável:
+#   parser          : detecção determinística de livro/capítulo/versículo
+#   parser + context: parser usando memória de curto prazo (active_book, etc.)
+#   semantic_engine : decisão que exige compreensão semântica (passing mention, etc.)
+#   ignore          : trecho sem referência, reset automático
+
+# ============================================================
+# EVENTO 1: WAIT → PREPARE
+# ============================================================
+- id: 1
+  speech: "Abra comigo a sua Bíblia no livro de Primeiro Coríntios"
+  detected:
+    books: ["1 Coríntios"]
+    chapters: []
+    verses: []
+    explicit_reference: false
+    partial_reference: "Primeiro Coríntios (livro apenas)"
+  context:
+    active_book: "1 Coríntios"
+    active_chapter: null
+    pending_reference: "1 Coríntios ?:?"
+    last_presented_reference: null
+  state: PREPARE
+  confidence: 0.40
+  candidate_reference: "1 Coríntios"
+  expected_action: none
+  reason: >
+    Livro detectado com comando explícito "Abra comigo a sua Bíblia no livro de".
+    Parser identifica "Primeiro Coríntios" como nome canônico de 1 Corinthians.
+    Sem capítulo ou versículo ainda. Sistema guarda contexto e aguarda.
+  decision_source: parser
+
+# ============================================================
+# EVENTO 2: PREPARE → PRESENT
+# ============================================================
+- id: 2
+  speech: "capítulo 14, versículo 10"
+  detected:
+    books: ["1 Coríntios"]
+    chapters: [14]
+    verses: [10]
+    explicit_reference: true
+    partial_reference: null
+  context:
+    active_book: "1 Coríntios"
+    active_chapter: 14
+    pending_reference: null
+    last_presented_reference: null
+  state: PRESENT
+  confidence: 0.98
+  candidate_reference: "1 Coríntios 14:10"
+  expected_action: present
+  reason: >
+    Referência completa: livro (do contexto ativo), capítulo 14 e versículo 10.
+    Confiança máxima (0.98). Apresentar imediatamente no Holyrics.
+  decision_source: parser + context
+
+# ============================================================
+# EVENTO 3: PRESENT → WAIT
+# ============================================================
+- id: 3
+  speech: >
+    "Quando o pastor Marcos pregava ontem sobre Gênesis, uma coisa me veio à
+    lembrança: lá em Gênesis, no começo de tudo, a guerra não começou por força
+    e nem por violência, mas ela começou quando pessoas deram ouvido a uma voz.
+    [...] Como diz lá em Salmos: assenta-se, detém e para."
+  detected:
+    books: ["Gênesis", "Salmos"]
+    chapters: []
+    verses: []
+    explicit_reference: false
+    partial_reference: >
+      "Gênesis (menção passiva, 'pregava ontem sobre'),
+      Salmos (referência vaga, 'Como diz lá em')"
+  context:
+    active_book: null
+    active_chapter: null
+    pending_reference: null
+    last_presented_reference: "1 Coríntios 14:10"
+  state: WAIT
+  confidence: 0.0
+  candidate_reference: null
+  expected_action: none
+  reason: >
+    Após apresentar 1 Cor 14:10, sistema reseta para WAIT.
+    "Gênesis" aparece em contexto de menção passiva ("pregava ontem sobre Gênesis"),
+    não como pedido de abertura. Parser pode detectar o nome do livro, mas
+    semantic_engine deve reconhecer o contexto passado e NÃO entrar PREPARE.
+    "lá em Gênesis, no começo de tudo" repete Gênesis sem capítulo/versículo;
+    "no começo de tudo" não é número de capítulo.
+    "Como diz lá em Salmos" é referência vaga sem capítulo/versículo (WAIT por definição).
+    Nenhuma referência qualifica para PREPARE. Estado permanece WAIT.
+    Este evento é um teste crítico de falso positivo: se a IA for agressiva,
+    pode entrar PREPARE para Gênesis ou Salmos incorretamente.
+  decision_source: semantic_engine
+
+# ============================================================
+# EVENTO 4: WAIT → PREPARE
+# ============================================================
+- id: 4
+  speech: "É por isso que aqui em Coríntios"
+  detected:
+    books: ["1 Coríntios"]
+    chapters: []
+    verses: []
+    explicit_reference: false
+    partial_reference: "Coríntios (livro apenas, re-referência)"
+  context:
+    active_book: "1 Coríntios"
+    active_chapter: null
+    pending_reference: "1 Coríntios ?:?"
+    last_presented_reference: "1 Coríntios 14:10"
+  state: PREPARE
+  confidence: 0.40
+  candidate_reference: "1 Coríntios"
+  expected_action: none
+  reason: >
+    Livro re-detectado: "aqui em Coríntios". Parser identifica "Coríntios"
+    como 1 Corinthians (mesmo livro já apresentado). Sem capítulo/versículo
+    ainda. Sistema entra PREPARE normalmente pois não pode assumir que
+    a referência será a mesma. last_presented_reference registra 1 Cor 14:10
+    para contexto, mas não impede re-detecção.
+  decision_source: parser
+
+# ============================================================
+# EVENTO 5: PREPARE → PRESENT
+# ============================================================
+- id: 5
+  speech: "capítulo 14, versículo 10"
+  detected:
+    books: ["1 Coríntios"]
+    chapters: [14]
+    verses: [10]
+    explicit_reference: true
+    partial_reference: null
+  context:
+    active_book: "1 Coríntios"
+    active_chapter: 14
+    pending_reference: null
+    last_presented_reference: "1 Coríntios 14:10"
+  state: PRESENT
+  confidence: 0.98
+  candidate_reference: "1 Coríntios 14:10"
+  expected_action: present (repeat)
+  reason: >
+    Referência completa idêntica à anterior: 1 Cor 14:10.
+    O pregador re-cita a mesma referência para comentar o versículo.
+    Estado é PRESENT (referência válida e completa), mas
+    last_presented_reference indica que já foi apresentada.
+    A decisão de re-apresentar no Holyrics é de UX: o benchmark
+    marca como PRESENT (repeat) para que o sistema possa decidir
+    se atualiza ou mantém o versículo atual na tela.
+  decision_source: parser + context
+
+# ============================================================
+# EVENTO 6: PRESENT → WAIT
+# ============================================================
+- id: 6
+  speech: >
+    "Vemos que Jesus trata muito bem disso quando diz que o homem dará conta
+    de tudo que falar: e de tudo aquilo que ouvirmos também."
+  detected:
+    books: []
+    chapters: []
+    verses: []
+    explicit_reference: false
+    partial_reference: null
+  context:
+    active_book: null
+    active_chapter: null
+    pending_reference: null
+    last_presented_reference: "1 Coríntios 14:10"
+  state: WAIT
+  confidence: 0.0
+  candidate_reference: null
+  expected_action: none
+  reason: >
+    Após re-apresentar 1 Cor 14:10, sistema reseta para WAIT.
+    Trecho menciona Jesus mas sem livro/capítulo/versículo.
+    "Jesus trata muito bem disso quando diz" é uma alusão sem
+    referência explícita. Nenhuma ação.
+  decision_source: ignore
+
+# ============================================================
+# EVENTO 7: WAIT → PREPARE
+# ============================================================
+- id: 7
+  speech: "Lá em Gênesis 3"
+  detected:
+    books: ["Gênesis"]
+    chapters: [3]
+    verses: []
+    explicit_reference: false
+    partial_reference: "Gênesis 3 (livro + capítulo, sem versículo)"
+  context:
+    active_book: "Gênesis"
+    active_chapter: 3
+    pending_reference: "Gênesis 3:?"
+    last_presented_reference: "1 Coríntios 14:10"
+  state: PREPARE
+  confidence: 0.75
+  candidate_reference: "Gênesis 3"
+  expected_action: none
+  reason: >
+    Livro e capítulo detectados: "Lá em Gênesis 3".
+    Sem versículo. PREPARE é apropriado: a referência é parcial
+    mas suficientemente forte para guardar contexto.
+    "Lá em" indica referência bíblica (não menção passiva como
+    "pregava ontem sobre"). Diferente do evento 3, aqui há capítulo.
+  decision_source: parser
+
+# ============================================================
+# EVENTO 8: PREPARE → WAIT
+# ============================================================
+- id: 8
+  speech: >
+    "Aquilo que Paulo diz à igreja de Tessalônica: 'E o mesmo Deus de paz
+    vos santifique em tudo; e todo o vosso espírito, e alma, e corpo,
+    sejam plenamente conservados irrepreensíveis diante dele.'"
+  detected:
+    books: []
+    chapters: []
+    verses: []
+    explicit_reference: false
+    partial_reference: >
+      "igreja de Tessalônica (referência indireta, implica 1 Tessalonicenses,
+      mas sem livro/capítulo/versículo explícitos)"
+  context:
+    active_book: null
+    active_chapter: null
+    pending_reference: null
+    last_presented_reference: "1 Coríntios 14:10"
+  state: WAIT
+  confidence: 0.0
+  candidate_reference: null
+  expected_action: none
+  reason: >
+    Contexto de Gênesis 3 abandonado: o pregador mudou de assunto.
+    "igreja de Tessalônica" é uma referência indireta que implica
+    1 Tessalonicenses, mas o nome do livro não é explicitado e
+    não há capítulo/versículo. O parser não deve detectar "Tessalônica"
+    como nome de livro (não é o nome canônico). O semantic_engine
+    NÃO deve inferir 1 Tessalonicenses a partir de conhecimento teológico.
+    A citação bíblica é verbalmente reconhecível como 1 Tess 5:23, mas
+    o sistema conservador não completa referências ausentes.
+    Estado vai para WAIT: Gênesis 3 expirou sem versículo, e
+    Tessalônica não qualifica como referência apresentável.
+  decision_source: semantic_engine
+
+# ============================================================
+# EVENTO 9: WAIT → PREPARE
+# ============================================================
+- id: 9
+  speech: "Lá no Evangelho de João"
+  detected:
+    books: ["João"]
+    chapters: []
+    verses: []
+    explicit_reference: false
+    partial_reference: "João (livro apenas, prefixo 'Evangelho de')"
+  context:
+    active_book: "João"
+    active_chapter: null
+    pending_reference: "João ?:?"
+    last_presented_reference: "1 Coríntios 14:10"
+  state: PREPARE
+  confidence: 0.40
+  candidate_reference: "João"
+  expected_action: none
+  reason: >
+    Livro detectado: "Evangelho de João". Parser deve reconhecer
+    "João" como o livro canônico (Gospel of John), ignorando o
+    prefixo "Evangelho de" que é uma forma comum de referência
+    em português. Sem capítulo/versículo ainda. PREPARE.
+  decision_source: parser
+
+# ============================================================
+# EVENTO 10: PREPARE → PRESENT
+# ============================================================
+- id: 10
+  speech: "10:27"
+  detected:
+    books: ["João"]
+    chapters: [10]
+    verses: [27]
+    explicit_reference: true
+    partial_reference: null
+  context:
+    active_book: "João"
+    active_chapter: 10
+    pending_reference: null
+    last_presented_reference: "1 Coríntios 14:10"
+  state: PRESENT
+  confidence: 0.98
+  candidate_reference: "João 10:27"
+  expected_action: present
+  reason: >
+    Referência completa: livro (do contexto ativo), capítulo 10,
+    versículo 27. "Evangelho de João 10:27" é uma referência
+    completa e explícita. Apresentar imediatamente no Holyrics.
+    O formato "10:27" (capítulo:versículo numérico) deve ser
+    parseado corretamente pelo parser.
+  decision_source: parser + context
+
+# ============================================================
+# EVENTO 11: PRESENT → WAIT
+# ============================================================
+- id: 11
+  speech: >
+    "Durante esta semana, nós temos a escolha e a decisão de escolher
+    a quem vamos ouvir. Se você tem o Espírito Santo, dentro de você
+    há uma voz dizendo manhã após manhã: 'Filho, este é o caminho,
+    siga por ele.'"
+  detected:
+    books: []
+    chapters: []
+    verses: []
+    explicit_reference: false
+    partial_reference: >
+      "'Filho, este é o caminho, siga por ele' (citação sem referência,
+      é Isaías 30:21, mas o pregador não cita livro/capítulo/versículo)"
+  context:
+    active_book: null
+    active_chapter: null
+    pending_reference: null
+    last_presented_reference: "João 10:27"
+  state: WAIT
+  confidence: 0.0
+  candidate_reference: null
+  expected_action: none
+  reason: >
+    Após apresentar João 10:27, sistema reseta para WAIT.
+    "Filho, este é o caminho, siga por ele" é uma citação bíblica
+    verbalmente reconhecível (Isaías 30:21), mas o pregador não
+    fornece livro/capítulo/versículo. Sistema conservador NÃO deve
+    inferir a referência. Nenhuma ação.
+  decision_source: ignore
+
+# ============================================================
+# TRECHOS SEM EVENTO (estado não muda)
+# ============================================================
+# Linha 1: "Glória a Deus. Graça e paz, bom dia...": IGNORE (saudação)
+# Linha 2: "Pai, no nome de Jesus...": IGNORE (oração inicial)
+# Linha 8: "Quando passamos a entender que a voz...": IGNORE (reflexão)
+# Linha 9: "A tática do diabo sempre foi a mesma. Lá no Éden...": IGNORE
+#   ("Éden" é local, não livro; Adão e Eva são personagens, não referência)
+# Linha 12: "Neemias sabia muito bem o propósito...": IGNORE
+#   ("Neemias sabia..." é referência a personagem, não pedido de abertura)
+# Linha 13: "Fique de pé nesta manhã...": IGNORE (convite)
+# Linha 14: "Pai, nós damos ouvidos ao Senhor...": IGNORE (oração final)

@@ -64,3 +64,20 @@ export {
   type SermonReferenceEntry,
   type SermonChangeEvent,
 } from "./domain";
+export {
+  createOperatorWorkspaceStore,
+  createOperatorFavoritesStore,
+  createOperatorRecentsStore,
+  createOperatorStores,
+  type OperatorRef,
+  type OperatorFavorite,
+  type OperatorRecentEntry,
+  type OperatorMode,
+  type OperatorWorkspaceState,
+  type OperatorWorkspaceStore,
+  type OperatorFavoritesState,
+  type OperatorFavoritesStore,
+  type OperatorRecentsState,
+  type OperatorRecentsStore,
+  type OperatorStoreRegistry,
+} from "./operator";

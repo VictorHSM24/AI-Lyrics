@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
   Terminal,
+  BookOpen,
   History,
   RotateCcw,
   ScrollText,
@@ -21,6 +22,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/console", label: "Console", icon: Terminal },
+  { to: "/operador", label: "Operador", icon: BookOpen },
   { to: "/sessoes", label: "Sessões", icon: History },
   { to: "/replay", label: "Replay", icon: RotateCcw },
   { to: "/logs", label: "Logs", icon: ScrollText },

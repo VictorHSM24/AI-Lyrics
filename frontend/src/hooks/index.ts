@@ -21,10 +21,12 @@ import {
   useServices,
   useStores,
 } from "@/contexts/InfraContext";
-import { devLog } from "@/utils";
+import { devLog, LruCache, cacheKey } from "@/utils";
 
 // Re-export useServices for components that need to call services directly.
-export { useServices } from "@/contexts/InfraContext";
+export { useServices, useStores } from "@/contexts/InfraContext";
+// Sprint 25 — useLocalStorage para persistência de favoritos e recentes.
+export { useLocalStorage, type UseLocalStorageResult } from "./useLocalStorage";
 import type { Snapshot, TranscriptEntry, ReferenceEntry, VersePresentationEntry, SemanticInferenceEntry, SemanticResolutionEntry, SermonContextEntry, SermonChangeEvent } from "@/stores";
 import type {
   AudioDeviceDTO,
@@ -35,6 +37,10 @@ import type {
   HealthSnapshot,
   InfoDTO,
   MetricsDTO,
+  OperatorBookDTO,
+  OperatorPresentRequest,
+  OperatorPresentResultDTO,
+  OperatorVerseDTO,
   PipelineSnapshot,
   PipelineStatusDTO,
   SessionDTO,
@@ -46,7 +52,7 @@ import type { StreamEvent } from "@/stream";
 // Helper — assina um SnapshotStore e re-renderiza em mudanças.
 // ============================================================
 
-function useStoreSnapshot<T>(store: { current: Snapshot<T> | null; subscribe(cb: (s: Snapshot<T>) => void): { unsubscribe(): void } }): Snapshot<T> | null {
+export function useStoreSnapshot<T>(store: { current: Snapshot<T> | null; subscribe(cb: (s: Snapshot<T>) => void): { unsubscribe(): void } }): Snapshot<T> | null {
   const [snapshot, setSnapshot] = useState<Snapshot<T> | null>(store.current);
   useEffect(() => {
     setSnapshot(store.current);
@@ -688,4 +694,279 @@ export function useAutoStartPipeline(autoStart: boolean): void {
 
     return () => clearTimeout(timer);
   }, [autoStart, status, pipelineStatus?.running, services]);
+}
+
+// ============================================================
+// useOperator (Sprint 24) — Painel do Operador.
+// Navegação bíblica + apresentação manual no Holyrics.
+// ============================================================
+
+export interface UseOperatorResult {
+  // Navegação.
+  books: OperatorBookDTO[];
+  booksLoading: boolean;
+  chapters: number[];
+  verses: number[];
+  currentVerse: OperatorVerseDTO | null;
+  // Apresentação.
+  presenting: boolean;
+  lastPresentResult: OperatorPresentResultDTO | null;
+  // Histórico (vindo do VersePresentationStore em tempo real).
+  history: VersePresentationEntry[];
+  // Ações.
+  loadBooks: () => Promise<void>;
+  loadChapters: (bookId: number, version?: string) => Promise<void>;
+  loadVerses: (bookId: number, chapter: number, version?: string) => Promise<void>;
+  loadVerse: (bookId: number, chapter: number, verse: number, version?: string) => Promise<void>;
+  presentVerse: (req: OperatorPresentRequest) => Promise<OperatorPresentResultDTO>;
+  // Erros.
+  error: string | null;
+}
+
+export function useOperator(): UseOperatorResult {
+  const services = useServices();
+  const { entries } = useVersePresentation();
+  const [books, setBooks] = useState<OperatorBookDTO[]>([]);
+  const [booksLoading, setBooksLoading] = useState(false);
+  const [chapters, setChapters] = useState<number[]>([]);
+  const [verses, setVerses] = useState<number[]>([]);
+  const [currentVerse, setCurrentVerse] = useState<OperatorVerseDTO | null>(null);
+  const [presenting, setPresenting] = useState(false);
+  const [lastPresentResult, setLastPresentResult] = useState<OperatorPresentResultDTO | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadBooks = async () => {
+    setBooksLoading(true);
+    setError(null);
+    try {
+      const res = await services.operator.getBooks();
+      setBooks(res.books);
+    } catch (e) {
+      setError(`Erro ao carregar livros: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBooksLoading(false);
+    }
+  };
+
+  const loadChapters = async (bookId: number, version?: string) => {
+    setError(null);
+    try {
+      const res = await services.operator.getChapters(bookId, version);
+      setChapters(res.chapters);
+      setVerses([]);
+    } catch (e) {
+      setError(`Erro ao carregar capítulos: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const loadVerses = async (bookId: number, chapter: number, version?: string) => {
+    setError(null);
+    try {
+      const res = await services.operator.getVerses(bookId, chapter, version);
+      setVerses(res.verses);
+    } catch (e) {
+      setError(`Erro ao carregar versículos: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const loadVerse = async (bookId: number, chapter: number, verse: number, version?: string) => {
+    setError(null);
+    try {
+      const res = await services.operator.getVerse(bookId, chapter, verse, version);
+      setCurrentVerse(res);
+    } catch (e) {
+      setError(`Erro ao carregar versículo: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const presentVerse = async (req: OperatorPresentRequest): Promise<OperatorPresentResultDTO> => {
+    setPresenting(true);
+    setError(null);
+    try {
+      const res = await services.operator.presentVerse(req);
+      setLastPresentResult(res);
+      if (!res.ok) {
+        setError(res.message);
+      }
+      return res;
+    } catch (e) {
+      const msg = `Erro ao apresentar: ${e instanceof Error ? e.message : String(e)}`;
+      setError(msg);
+      throw e;
+    } finally {
+      setPresenting(false);
+    }
+  };
+
+  return {
+    books,
+    booksLoading,
+    chapters,
+    verses,
+    currentVerse,
+    presenting,
+    lastPresentResult,
+    history: entries,
+    loadBooks,
+    loadChapters,
+    loadVerses,
+    loadVerse,
+    presentVerse,
+    error,
+  };
+}
+
+// ============================================================
+// useOperatorNavigation (Sprint 25) — navegação bíblica com cache LRU.
+//
+// Wrap do OperatorService com cache LRU para evitar re-buscar
+// chapters/verses/verse que não mudam durante a sessão. A Bíblia
+// é estática, então cache é seguro.
+//
+// Diferença vs useOperator:
+// - useOperator mantém estado de UI (currentVerse, presenting, etc.)
+// - useOperatorNavigation é puro: dado (bookId, chapter, verse),
+//   retorna dados do cache ou busca do backend.
+// - Use este hook em componentes de navegação rápida (QuickNavigator,
+//   QuickSearch) que precisam de múltiplas resoluções simultâneas.
+// ============================================================
+
+export interface UseOperatorNavigationResult {
+  /** Lista de livros (cacheado após primeira carga). */
+  books: OperatorBookDTO[];
+  booksLoading: boolean;
+  /** Carrega lista de livros (usa cache se já carregado). */
+  loadBooks: () => Promise<OperatorBookDTO[]>;
+  /** Carrega capítulos de um livro (usa cache). */
+  getChapters: (bookId: number, version?: string) => Promise<number[]>;
+  /** Carrega versículos de um capítulo (usa cache). */
+  getVerses: (bookId: number, chapter: number, version?: string) => Promise<number[]>;
+  /** Carrega versículo específico (usa cache). */
+  getVerse: (bookId: number, chapter: number, verse: number, version?: string) => Promise<OperatorVerseDTO>;
+  /** Limpa todo o cache. */
+  clearCache: () => void;
+  /** Erro da última operação. */
+  error: string | null;
+}
+
+// Cache singleton — compartilhado entre todas as instâncias do hook.
+// A Bíblia é estática, não há razão para caches separados.
+const _chaptersCache = new LruCache<string, number[]>(64);
+const _versesCache = new LruCache<string, number[]>(256);
+const _verseCache = new LruCache<string, OperatorVerseDTO>(512);
+let _booksCache: OperatorBookDTO[] | null = null;
+
+export function useOperatorNavigation(): UseOperatorNavigationResult {
+  const services = useServices();
+  const [books, setBooks] = useState<OperatorBookDTO[]>(_booksCache ?? []);
+  const [booksLoading, setBooksLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadBooks = async (): Promise<OperatorBookDTO[]> => {
+    if (_booksCache) {
+      setBooks(_booksCache);
+      return _booksCache;
+    }
+    setBooksLoading(true);
+    setError(null);
+    try {
+      const res = await services.operator.getBooks();
+      _booksCache = res.books;
+      setBooks(res.books);
+      return res.books;
+    } catch (e) {
+      setError(`Erro ao carregar livros: ${e instanceof Error ? e.message : String(e)}`);
+      throw e;
+    } finally {
+      setBooksLoading(false);
+    }
+  };
+
+  const getChapters = async (bookId: number, version?: string): Promise<number[]> => {
+    const key = cacheKey("chapters", bookId, version ?? "");
+    const cached = _chaptersCache.get(key);
+    if (cached) return cached;
+    try {
+      const res = await services.operator.getChapters(bookId, version);
+      _chaptersCache.set(key, res.chapters);
+      return res.chapters;
+    } catch (e) {
+      setError(`Erro ao carregar capítulos: ${e instanceof Error ? e.message : String(e)}`);
+      throw e;
+    }
+  };
+
+  const getVerses = async (bookId: number, chapter: number, version?: string): Promise<number[]> => {
+    const key = cacheKey("verses", bookId, chapter, version ?? "");
+    const cached = _versesCache.get(key);
+    if (cached) return cached;
+    try {
+      const res = await services.operator.getVerses(bookId, chapter, version);
+      _versesCache.set(key, res.verses);
+      return res.verses;
+    } catch (e) {
+      setError(`Erro ao carregar versículos: ${e instanceof Error ? e.message : String(e)}`);
+      throw e;
+    }
+  };
+
+  const getVerse = async (
+    bookId: number,
+    chapter: number,
+    verse: number,
+    version?: string,
+  ): Promise<OperatorVerseDTO> => {
+    const key = cacheKey("verse", bookId, chapter, verse, version ?? "");
+    const cached = _verseCache.get(key);
+    if (cached) return cached;
+    try {
+      const res = await services.operator.getVerse(bookId, chapter, verse, version);
+      _verseCache.set(key, res);
+      return res;
+    } catch (e) {
+      setError(`Erro ao carregar versículo: ${e instanceof Error ? e.message : String(e)}`);
+      throw e;
+    }
+  };
+
+  const clearCache = () => {
+    _chaptersCache.clear();
+    _versesCache.clear();
+    _verseCache.clear();
+    _booksCache = null;
+    setBooks([]);
+  };
+
+  return {
+    books,
+    booksLoading,
+    loadBooks,
+    getChapters,
+    getVerses,
+    getVerse,
+    clearCache,
+    error,
+  };
+}
+
+// ============================================================
+// useWorkspaceSnapshot (Sprint 26) — assina o WorkspaceStore
+// reativamente, para que componentes re-renderizem quando
+// `selected` muda via comandos de navegação (não apenas via
+// eventos de apresentação).
+// ============================================================
+
+export function useWorkspaceSnapshot() {
+  const stores = useStores();
+  return useStoreSnapshot(stores.workspace);
+}
+
+export function useFavoritesSnapshot() {
+  const stores = useStores();
+  return useStoreSnapshot(stores.favorites);
+}
+
+export function useRecentsSnapshot() {
+  const stores = useStores();
+  return useStoreSnapshot(stores.recents);
 }

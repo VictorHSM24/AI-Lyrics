@@ -5,6 +5,7 @@ import {
   StartupPage,
   DashboardPage,
   ConsolePage,
+  OperatorPage,
   SessionsPage,
   ReplayPage,
   LogsPage,
@@ -49,6 +50,16 @@ const routes: RouteObject[] = [
       <ErrorBoundary>
         <AppLayout>
           <ConsolePage />
+        </AppLayout>
+      </ErrorBoundary>
+    ),
+  },
+  {
+    path: "/operador",
+    element: (
+      <ErrorBoundary>
+        <AppLayout>
+          <OperatorPage />
         </AppLayout>
       </ErrorBoundary>
     ),

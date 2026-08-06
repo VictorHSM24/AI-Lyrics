@@ -76,6 +76,16 @@ const METHOD_TO_ENDPOINT: Record<string, string> = {
   "audio.select": "/audio/select",
   "system.get": "/system",
   "info.get": "/info",
+  // Sprint 24 — Operator Panel
+  "operator.getBooks": "/operator/books",
+  "operator.getChapters": "/operator/books/{book_id}/chapters",
+  "operator.getVerses": "/operator/books/{book_id}/chapters/{chapter}/verses",
+  "operator.getVerse": "/operator/verse",
+  "operator.present": "/operator/present",
+  "operator.getHistory": "/operator/history",
+  "operator.getCurrent": "/operator/current",
+  // Sprint 25 — validação híbrida de referências
+  "operator.parse": "/operator/parse",
 };
 
 /** Métodos que usam PUT (body JSON) em vez de GET (query params). */
@@ -91,6 +101,7 @@ const POST_METHODS: ReadonlySet<string> = new Set([
   "health.testHolyrics",
   "pipeline.start",
   "pipeline.stop",
+  "operator.present",
 ]);
 
 // ============================================================
@@ -216,9 +227,19 @@ export class RestTransport implements Transport {
   private buildUrl(endpoint: string, params: Record<string, unknown>): string {
     const base = this.config.url.replace(/\/$/, "");
     let url = `${base}${endpoint}`;
-    // Query params para filtros.
-    const query: string[] = [];
+    // Path params: substituir placeholders {key} pelos valores correspondentes.
+    const remaining: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(params)) {
+      const placeholder = `{${k}}`;
+      if (url.includes(placeholder)) {
+        url = url.split(placeholder).join(encodeURIComponent(String(v)));
+      } else {
+        remaining[k] = v;
+      }
+    }
+    // Query params para filtros restantes.
+    const query: string[] = [];
+    for (const [k, v] of Object.entries(remaining)) {
       if (v === undefined || v === null || v === "") continue;
       query.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
     }

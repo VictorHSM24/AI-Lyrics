@@ -78,3 +78,55 @@ export function cn(...classes: Array<string | false | null | undefined>): string
 // ============================================================
 
 export { devLog, type DevLog } from "./dev-log";
+
+// ============================================================
+// Sprint 25 — LruCache para navegação bíblica do OperatorPanel.
+// ============================================================
+
+export { LruCache, cacheKey, type LruCacheEntry } from "./lruCache";
+
+// ============================================================
+// Sprint 25 — Parser de referências bíblicas (sem LLM).
+// ============================================================
+
+export {
+  normalizeText,
+  buildBookIndex,
+  parseBibleReference,
+  suggestReferences,
+  type ParsedBibleReference,
+  type ParseError,
+  type ParseResult,
+  type SearchSuggestion,
+  type BookAliasIndex,
+} from "./parseBibleReference";
+
+// ============================================================
+// Sprint 26 — Estrutura estática da Bíblia (max chapters/verses).
+// ============================================================
+
+export {
+  BOOK_MAX_CHAPTERS,
+  getMaxChapters,
+  getMaxVerseHeuristic,
+} from "./bibleStructure";
+
+// ============================================================
+// Sprint 26 — ReferenceResolver (heurística numérica, ambiguidades).
+// ============================================================
+
+export {
+  resolveReference,
+  type ConfidenceLevel,
+  type ReferenceInterpretation,
+  type ResolutionResult,
+} from "./referenceResolver";
+
+// ============================================================
+// Sprint 26 — AutoCompleteEngine (autocomplete IDE-style de livros).
+// ============================================================
+
+export {
+  autoCompleteBook,
+  type AutoCompleteResult,
+} from "./autoCompleteEngine";

@@ -103,6 +103,7 @@ def create_app() -> FastAPI:
             "startup",
             "wizard",
             "console",
+            "operador",
             "sessoes",
             "replay",
             "logs",
@@ -132,7 +133,8 @@ def create_app() -> FastAPI:
             # Paths que parecem de API retornam 404 JSON.
             if full_path.startswith(("api/", "wizard/", "health", "info", "system",
                                      "audio", "pipeline", "session", "metrics",
-                                     "configuration", "diagnostics", "events", "ws")):
+                                     "configuration", "diagnostics", "events",
+                                     "operator", "ws")):
                 from fastapi import HTTPException
                 raise HTTPException(status_code=404, detail=f"Endpoint não encontrado: /{full_path}")
             # Se o path corresponde a um arquivo estático em frontend/dist,

@@ -1471,6 +1471,118 @@ class Searcher:
         )]
 
     # ------------------------------------------------------------------
+    # Sprint 24 — Navegação estruturada para o Painel do Operador.
+    # ------------------------------------------------------------------
+
+    def get_chapters(self, book_id: int, *, version: str | None = None) -> list[int]:
+        """Lista os capítulos disponíveis para um livro.
+
+        Sprint 24: usado pelo Painel do Operador para popular o seletor
+        de capítulos. Retorna números de capítulo ordenados.
+
+        Args:
+            book_id: ID do livro (1..66).
+            version: versão bíblica (default: versão padrão).
+
+        Returns:
+            Lista de números de capítulo (ex.: [1, 2, 3, ..., 21]).
+        """
+        if not self._validated:
+            raise SearchError("database not open")
+        version = version or self._default_version
+        with self._db_connection() as db:
+            cursor = db.execute(
+                "SELECT DISTINCT chapter FROM verses "
+                "WHERE id LIKE ? AND version = ? "
+                "ORDER BY chapter",
+                (f"{book_id:02d}%", version),
+            )
+            return [int(r[0]) for r in cursor.fetchall()]
+
+    def get_verse_numbers(
+        self, book_id: int, chapter: int, *, version: str | None = None
+    ) -> list[int]:
+        """Lista os versículos disponíveis para um capítulo.
+
+        Sprint 24: usado pelo Painel do Operador para popular o seletor
+        de versículos. Retorna números de versículo ordenados.
+
+        Args:
+            book_id: ID do livro (1..66).
+            chapter: número do capítulo.
+            version: versão bíblica (default: versão padrão).
+
+        Returns:
+            Lista de números de versículo (ex.: [1, 2, 3, ..., 31]).
+        """
+        if not self._validated:
+            raise SearchError("database not open")
+        version = version or self._default_version
+        chapter_prefix = f"{book_id:02d}{chapter:03d}"
+        with self._db_connection() as db:
+            cursor = db.execute(
+                "SELECT verse FROM verses "
+                "WHERE id LIKE ? AND version = ? "
+                "ORDER BY verse",
+                (f"{chapter_prefix}%", version),
+            )
+            return [int(r[0]) for r in cursor.fetchall()]
+
+    def get_verse_by_id(
+        self,
+        book_id: int,
+        chapter: int,
+        verse: int,
+        *,
+        version: str | None = None,
+    ) -> SearchResult | None:
+        """Busca um versículo específico por IDs numéricos.
+
+        Sprint 24: usado pelo Painel do Operador para obter o texto de
+        um versículo selecionado via navegação estruturada (sem precisar
+        do nome do livro, ao contrário de search_by_reference).
+
+        Args:
+            book_id: ID do livro (1..66).
+            chapter: número do capítulo.
+            verse: número do versículo.
+            version: versão bíblica (default: versão padrão).
+
+        Returns:
+            SearchResult ou None se não encontrado.
+        """
+        if not self._validated:
+            raise SearchError("database not open")
+        version = version or self._default_version
+        try:
+            book = self._book_table.by_id(book_id)
+        except KeyError:
+            return None
+        verse_id = f"{book_id:02d}{chapter:03d}{verse:03d}"
+        with self._db_connection() as db:
+            cursor = db.execute(
+                "SELECT id, book, chapter, verse, text, version "
+                "FROM verses WHERE id = ? AND version = ?",
+                (verse_id, version),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            return SearchResult(
+                reference=_build_reference(book.canonical, chapter, verse),
+                book=book.canonical,
+                book_id=book_id,
+                chapter=chapter,
+                verse=verse,
+                text=row[4],
+                version=row[5],
+                score=1.0,
+                c_search=1.0,
+                ambiguous=False,
+                match_type="reference",
+            )
+
+    # ------------------------------------------------------------------
     # Detecção de referência
     # ------------------------------------------------------------------
 

@@ -75,5 +75,15 @@ export function createPresentationApi(): PresentationApi {
     info: {
       getInfo: notImplemented,
     },
+    operator: {
+      getBooks: notImplemented,
+      getChapters: notImplemented,
+      getVerses: notImplemented,
+      getVerse: notImplemented,
+      presentVerse: notImplemented,
+      getHistory: notImplemented,
+      getCurrent: notImplemented,
+      parseReference: notImplemented,
+    },
   };
 }

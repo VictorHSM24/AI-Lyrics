@@ -7,6 +7,11 @@
    ============================================================ */
 
 :root {
+  /* Native form controls (select, option, scrollbar) seguem o tema do app
+     em vez do tema do sistema operacional. Sem isso, <option> renderiza
+     com fundo branco e texto branco em dark mode. */
+  color-scheme: light;
+
   /* Surface */
   --color-surface: 255 255 255;
   --color-surface-hover: 248 250 252;
@@ -40,6 +45,11 @@
 }
 
 .dark {
+  /* Native form controls (select, option, scrollbar) seguem o tema do app
+     em vez do tema do sistema operacional. Sem isso, <option> renderiza
+     com fundo branco e texto branco em dark mode. */
+  color-scheme: dark;
+
   /* Surface */
   --color-surface: 15 23 42;
   --color-surface-hover: 30 41 59;
@@ -90,6 +100,21 @@
   /* Focus visible for accessibility */
   :focus-visible {
     @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-surface;
+  }
+
+  /* Native <option> elements — alguns browsers (Windows) ignoram
+     color-scheme para o dropdown do <select>, então forçamos
+     explicitamente as cores do tema para evitar texto branco
+     em fundo branco no dark mode. */
+  select,
+  option {
+    @apply bg-surface-raised text-text;
+  }
+
+  /* Selects nativos em estado disabled devem manter contraste
+     com o texto placeholder, não sumir. */
+  select:disabled {
+    @apply text-text-muted;
   }
 }
 

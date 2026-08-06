@@ -31,6 +31,11 @@ import {
   type StoreSubscription,
   type StoreListener,
 } from "./SnapshotStore";
+import {
+  createOperatorWorkspaceStore,
+  createOperatorFavoritesStore,
+  createOperatorRecentsStore,
+} from "./operator";
 
 // ============================================================
 // Base helper — expõe uma interface comum.
@@ -338,6 +343,8 @@ export interface VersePresentationEntry {
   errorMessage: string;
   /** Timestamp do evento mais recente deste fluxo. */
   timestamp: number;
+  /** Sprint 25 — origem da apresentação: "OperatorPanel" (manual) ou outra (IA). */
+  origin: string;
 }
 
 export interface VersePresentationState {
@@ -541,6 +548,10 @@ export interface StoreRegistry {
   readonly versePresentation: VersePresentationStore;
   readonly semantic: SemanticStore;
   readonly sermon: SermonStore;
+  // Sprint 25 — Operator workspace stores.
+  readonly workspace: import("./operator").OperatorWorkspaceStore;
+  readonly favorites: import("./operator").OperatorFavoritesStore;
+  readonly recents: import("./operator").OperatorRecentsStore;
 }
 
 export function createStoreRegistry(): StoreRegistry {
@@ -562,5 +573,8 @@ export function createStoreRegistry(): StoreRegistry {
     versePresentation: createVersePresentationStore(),
     semantic: createSemanticStore(),
     sermon: createSermonStore(),
+    workspace: createOperatorWorkspaceStore(),
+    favorites: createOperatorFavoritesStore(),
+    recents: createOperatorRecentsStore(),
   };
 }

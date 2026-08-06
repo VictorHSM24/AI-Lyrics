@@ -21,6 +21,15 @@ import type {
   HealthSnapshot,
   InfoDTO,
   MetricsDTO,
+  OperatorBooksResponseDTO,
+  OperatorChapterListDTO,
+  OperatorCurrentDTO,
+  OperatorHistoryDTO,
+  OperatorParseResultDTO,
+  OperatorPresentRequest,
+  OperatorPresentResultDTO,
+  OperatorVerseDTO,
+  OperatorVerseListDTO,
   PipelineSnapshot,
   PipelineStatusDTO,
   SessionDTO,
@@ -157,6 +166,22 @@ export interface InfoService {
 }
 
 // ============================================================
+// OperatorService (Sprint 24) — Painel do Operador.
+// ============================================================
+
+export interface OperatorService {
+  getBooks(options?: CallOptions): Promise<OperatorBooksResponseDTO>;
+  getChapters(bookId: number, version?: string, options?: CallOptions): Promise<OperatorChapterListDTO>;
+  getVerses(bookId: number, chapter: number, version?: string, options?: CallOptions): Promise<OperatorVerseListDTO>;
+  getVerse(bookId: number, chapter: number, verse: number, version?: string, options?: CallOptions): Promise<OperatorVerseDTO>;
+  presentVerse(req: OperatorPresentRequest, options?: CallOptions): Promise<OperatorPresentResultDTO>;
+  getHistory(limit?: number, options?: CallOptions): Promise<OperatorHistoryDTO>;
+  getCurrent(options?: CallOptions): Promise<OperatorCurrentDTO>;
+  /** Sprint 25 — valida referência string no backend (parser híbrido). */
+  parseReference(query: string, version?: string, options?: CallOptions): Promise<OperatorParseResultDTO>;
+}
+
+// ============================================================
 // PresentationServices — agregador.
 // ============================================================
 
@@ -172,6 +197,7 @@ export interface PresentationServices {
   audio: AudioService;
   system: SystemService;
   info: InfoService;
+  operator: OperatorService;
 }
 
 // ============================================================
@@ -246,6 +272,40 @@ export function createServices(client: Client): PresentationServices {
     info: {
       getInfo: (o) => call<InfoDTO>("info.get", {}, o),
     },
+    operator: {
+      getBooks: (o) => call<OperatorBooksResponseDTO>("operator.getBooks", {}, o),
+      getChapters: (bookId, version, o) => call<OperatorChapterListDTO>(
+        "operator.getChapters",
+        { book_id: bookId, ...(version ? { version } : {}) },
+        o,
+      ),
+      getVerses: (bookId, chapter, version, o) => call<OperatorVerseListDTO>(
+        "operator.getVerses",
+        { book_id: bookId, chapter, ...(version ? { version } : {}) },
+        o,
+      ),
+      getVerse: (bookId, chapter, verse, version, o) => call<OperatorVerseDTO>(
+        "operator.getVerse",
+        { book_id: bookId, chapter, verse, ...(version ? { version } : {}) },
+        o,
+      ),
+      presentVerse: (req, o) => call<OperatorPresentResultDTO>(
+        "operator.present",
+        req as unknown as Record<string, unknown>,
+        o,
+      ),
+      getHistory: (limit, o) => call<OperatorHistoryDTO>(
+        "operator.getHistory",
+        { limit: limit ?? 50 },
+        o,
+      ),
+      getCurrent: (o) => call<OperatorCurrentDTO>("operator.getCurrent", {}, o),
+      parseReference: (query, version, o) => call<OperatorParseResultDTO>(
+        "operator.parse",
+        { q: query, ...(version ? { version } : {}) },
+        o,
+      ),
+    },
   };
 }
 
@@ -284,6 +344,16 @@ export function createStubServices(): PresentationServices {
     audio: { getDevices: reject, getCurrentDevice: reject, getLevels: reject, startCapture: reject, stopCapture: reject, selectDevice: reject },
     system: { getSystemInfo: reject },
     info: { getInfo: reject },
+    operator: {
+      getBooks: reject,
+      getChapters: reject,
+      getVerses: reject,
+      getVerse: reject,
+      presentVerse: reject,
+      getHistory: reject,
+      getCurrent: reject,
+      parseReference: reject,
+    },
   };
 }
 

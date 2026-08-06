@@ -349,3 +349,97 @@ export interface InfoDTO {
   frontend_version: string;
   sdk_compatibility: string;
 }
+
+// ============================================================
+// Sprint 24 — Operator Panel (navegação bíblica + apresentação).
+// ============================================================
+
+export interface OperatorBookDTO {
+  id: number;
+  canonical: string;
+  aliases: string[];
+}
+
+export interface OperatorBooksResponseDTO {
+  books: OperatorBookDTO[];
+  count: number;
+}
+
+export interface OperatorChapterListDTO {
+  book_id: number;
+  chapters: number[];
+}
+
+export interface OperatorVerseListDTO {
+  book_id: number;
+  chapter: number;
+  verses: number[];
+}
+
+export interface OperatorVerseDTO {
+  book_id: number;
+  book: string;
+  chapter: number;
+  verse: number;
+  reference: string;
+  text: string;
+  version: string;
+}
+
+export interface OperatorPresentRequest {
+  book_id: number;
+  chapter: number;
+  verse: number;
+  version?: string;
+  quick?: boolean;
+}
+
+export interface OperatorPresentResultDTO {
+  ok: boolean;
+  message: string;
+  reference: string;
+  book_id: number;
+  chapter: number;
+  verse: number;
+  version: string;
+  holyrics_status: string;
+  latency_ms: number;
+}
+
+/** Sprint 25 — resultado de GET /operator/parse (validação híbrida). */
+export interface OperatorParseResultDTO {
+  ok: boolean;
+  query: string;
+  book_id: number | null;
+  book: string | null;
+  chapter: number | null;
+  verse: number | null;
+  reference: string | null;
+  text: string | null;
+  version: string | null;
+  reason: string | null;
+}
+
+export interface OperatorHistoryEntryDTO {
+  reference: string;
+  book: string;
+  book_id: number;
+  chapter: number;
+  verse: number;
+  version: string;
+  timestamp: number;
+  holyrics_status: string;
+  holyrics_latency_ms: number;
+  total_latency_ms: number;
+  quick_presentation: boolean;
+  origin: string;
+}
+
+export interface OperatorHistoryDTO {
+  entries: OperatorHistoryEntryDTO[];
+  count: number;
+}
+
+export interface OperatorCurrentDTO {
+  current: OperatorHistoryEntryDTO | null;
+}

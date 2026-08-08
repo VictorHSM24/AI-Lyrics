@@ -465,6 +465,28 @@ class FasterWhisperBackend:
         """Motivo do fallback (vazio se não houve fallback)."""
         return self._fallback_reason
 
+    @property
+    def backend_name(self) -> str:
+        """Nome do backend ('faster-whisper-cuda', 'faster-whisper-cpu', etc.).
+
+        Implementa a interface InferenceBackend (Sprint 19.1) — necessária
+        para que o BackendFallbackManager possa logar e identificar o backend.
+        """
+        return f"faster-whisper-{self._actual_device}"
+
+    @property
+    def is_loaded(self) -> bool:
+        """True se o modelo está carregado e pronto para inferência."""
+        return self._model is not None
+
+    def unload(self) -> None:
+        """Libera o modelo da memória (alias para close()).
+
+        Implementa a interface InferenceBackend — o BackendFallbackManager
+        chama unload() em vez de close().
+        """
+        self.close()
+
 
 # ---------------------------------------------------------------------------
 # STT (classe principal)

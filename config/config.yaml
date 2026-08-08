@@ -48,7 +48,7 @@ semantic:
   provider: "ollama"
   enabled: true
   debounce_ms: 800
-  timeout_ms: 5000
+  timeout_ms: 15000
   min_text_length: 8
   ollama:
     enabled: true
@@ -58,7 +58,7 @@ semantic:
     temperature: 0.1
     top_p: 0.9
     max_tokens: 300
-    timeout_seconds: 10
+    timeout_seconds: 15
     disable_thinking: true
   # Sprint 22.2 — Priorização RAG e política de contexto do sermão.
   # Princípio: BibleRetriever > Texto Atual > Contexto do Sermão.

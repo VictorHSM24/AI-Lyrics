@@ -9,6 +9,11 @@ Para rodar:
 
 from __future__ import annotations
 
+# Sprint 27 — Registrar DLLs CUDA ANTES de qualquer import que carregue
+# ctranslate2/faster_whisper. Sem isto, a inferência GPU falha com
+# "Library cublas64_12.dll is not found" no Windows.
+from core.cuda_setup import setup_cuda_dlls  # noqa: F401 (side-effect import)
+
 import logging
 
 from fastapi import FastAPI

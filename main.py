@@ -17,6 +17,10 @@ Para desenvolvimento (sem PyInstaller), continue usando:
 """
 from __future__ import annotations
 
+# Sprint 27 — Registrar DLLs CUDA ANTES de qualquer import que carregue
+# ctranslate2/faster_whisper (necessário no Windows com GPU NVIDIA).
+from core.cuda_setup import setup_cuda_dlls  # noqa: F401 (side-effect import)
+
 import logging
 import os
 import sys

@@ -1,14 +1,8 @@
 {
   "audio": {
-    "channels": 1
-  },
-  "holyrics": {
-    "token": "b7zdCL2Rhu83Vqpn"
+    "channels": 2
   },
   "stt": {
-    "backend": "faster-whisper",
-    "compute_type": "float16",
-    "cpu_threads": 8,
-    "device": "cuda"
+    "model": "medium"
   }
 }

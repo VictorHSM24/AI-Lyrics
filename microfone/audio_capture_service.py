@@ -318,9 +318,17 @@ class AudioCaptureService:
         device = self._device_index
 
         # Sprint 27 — Detectar sample rate e canais nativos do dispositivo.
+        # Sprint 23.1 — Quando device_index é None, consulta o dispositivo
+        # padrão do PortAudio em vez de usar defaults fixos (16kHz mono),
+        # que podem não ser suportados por todos os drivers.
         native_sr = self._sample_rate
         native_ch = self._channels
         try:
+            if device is None:
+                # Usar dispositivo padrão de entrada do PortAudio.
+                default_input = sd.default.device[0] if sd.default.device else None
+                if default_input is not None:
+                    device = default_input
             if device is not None:
                 dev_info = sd.query_devices(device)
                 native_sr = int(dev_info.get("default_samplerate", self._sample_rate))

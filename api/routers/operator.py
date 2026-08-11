@@ -581,3 +581,196 @@ async def get_current(
         origin=ev.origin,
     )
     return versioned({"current": entry.model_dump()})
+
+
+# ---------------------------------------------------------------------------
+# Sprint 23.2 — Reading Follow Mode & Version Management
+# ---------------------------------------------------------------------------
+
+
+def _get_follow_service(root: CompositionRoot):
+    svc = getattr(root, "reading_follow_service", None)
+    if svc is None:
+        raise HTTPException(503, "ReadingFollowService não inicializado.")
+    return svc
+
+
+def _get_version_detector(root: CompositionRoot):
+    det = getattr(root, "version_command_detector", None)
+    if det is None:
+        raise HTTPException(503, "VersionCommandDetector não inicializado.")
+    return det
+
+
+class FollowStartRequest(BaseModel):
+    """Payload para POST /operator/follow/start."""
+    book_id: int
+    book_name: str
+    chapter: int
+    verse_start: int
+    verse_end: int
+    version: str | None = None
+
+
+class FollowStartResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    ok: bool
+    message: str
+    state: dict
+
+
+class FollowStateResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    active: bool
+    book: str = ""
+    book_id: int = 0
+    chapter: int = 0
+    verse_start: int = 0
+    verse_end: int = 0
+    current_verse: int = 0
+    version: str = ""
+    total_verses: int = 0
+    verses_read: int = 0
+
+
+class VersionRequest(BaseModel):
+    """Payload para POST /operator/version."""
+    version: str
+
+
+class AutoVersionRequest(BaseModel):
+    """Payload para PUT /operator/version/auto."""
+    enabled: bool
+
+
+@router.post("/follow/start")
+@router.post("/follow/start/")
+async def follow_start(
+    req: FollowStartRequest,
+    root: CompositionRoot = Depends(get_composition_root),
+) -> dict:
+    """Ativa o modo de acompanhamento de leitura manualmente."""
+    svc = _get_follow_service(root)
+    version = req.version or _default_version(root)
+    ok = svc.activate(
+        book_id=req.book_id,
+        book_name=req.book_name,
+        chapter=req.chapter,
+        verse_start=req.verse_start,
+        verse_end=req.verse_end,
+        version=version,
+    )
+    msg = "Modo de acompanhamento ativado." if ok else "Falha ao ativar modo de acompanhamento."
+    result = FollowStartResult(ok=ok, message=msg, state=svc.get_state())
+    return versioned(result)
+
+
+@router.post("/follow/stop")
+@router.post("/follow/stop/")
+async def follow_stop(
+    root: CompositionRoot = Depends(get_composition_root),
+) -> dict:
+    """Desativa o modo de acompanhamento de leitura."""
+    svc = _get_follow_service(root)
+    ok = svc.deactivate()
+    msg = "Modo de acompanhamento desativado." if ok else "Modo de acompanhamento não estava ativo."
+    result = FollowStartResult(ok=ok, message=msg, state=svc.get_state())
+    return versioned(result)
+
+
+@router.post("/follow/advance")
+@router.post("/follow/advance/")
+async def follow_advance(
+    root: CompositionRoot = Depends(get_composition_root),
+) -> dict:
+    """Avança manualmente para o próximo versículo no modo de acompanhamento."""
+    svc = _get_follow_service(root)
+    ok = svc.advance()
+    msg = "Avançado para o próximo versículo." if ok else "Não foi possível avançar."
+    result = FollowStartResult(ok=ok, message=msg, state=svc.get_state())
+    return versioned(result)
+
+
+@router.get("/follow/state")
+@router.get("/follow/state/")
+async def follow_state(
+    root: CompositionRoot = Depends(get_composition_root),
+) -> dict:
+    """Retorna o estado atual do modo de acompanhamento."""
+    svc = _get_follow_service(root)
+    state = svc.get_state()
+    result = FollowStateResult(**state)
+    return versioned(result)
+
+
+@router.get("/versions")
+@router.get("/versions/")
+async def list_versions(
+    root: CompositionRoot = Depends(get_composition_root),
+) -> dict:
+    """Lista versões bíblicas disponíveis no Holyrics."""
+    client = _get_holyrics(root)
+    try:
+        versions = client.get_bible_versions()
+        if isinstance(versions, list):
+            version_list = [str(v) for v in versions]
+        elif hasattr(versions, "versions"):
+            version_list = [str(v) for v in versions.versions]
+        else:
+            version_list = []
+    except Exception as e:
+        logger.warning("operator: erro ao listar versões: %s", e)
+        raise HTTPException(500, f"Erro ao listar versões: {e}")
+    return versioned({"versions": version_list})
+
+
+@router.get("/version")
+@router.get("/version/")
+async def get_version(
+    root: CompositionRoot = Depends(get_composition_root),
+) -> dict:
+    """Retorna a versão bíblica ativa atual."""
+    svc = _get_follow_service(root)
+    state = svc.get_state()
+    return versioned({"version": state.get("version", _default_version(root))})
+
+
+@router.post("/version")
+@router.post("/version/")
+async def set_version(
+    req: VersionRequest,
+    root: CompositionRoot = Depends(get_composition_root),
+) -> dict:
+    """Muda a versão bíblica ativa manualmente."""
+    from pipeline.events import VersionChanged
+    from pipeline.metadata import EventMetadata
+    svc = _get_follow_service(root)
+    detector = _get_version_detector(root)
+    old = _default_version(root)
+    ok = svc.set_version(req.version)
+    if ok:
+        detector.set_current_version(req.version)
+        root.bus.publish(VersionChanged(
+            meta=EventMetadata.for_session_event(
+                session_id="",
+                origin="operator_api",
+            ),
+            old_version=old,
+            new_version=req.version,
+            source="manual",
+        ))
+    msg = f"Versão alterada para {req.version}." if ok else "Falha ao alterar versão."
+    return versioned({"ok": ok, "message": msg, "version": req.version})
+
+
+@router.put("/version/auto")
+@router.put("/version/auto/")
+async def set_auto_version(
+    req: AutoVersionRequest,
+    root: CompositionRoot = Depends(get_composition_root),
+) -> dict:
+    """Habilita/desabilita a mudança automática de versão por voz."""
+    detector = _get_version_detector(root)
+    detector.set_auto_enabled(req.enabled)
+    msg = "Mudança automática de versão habilitada." if req.enabled else "Mudança automática de versão desabilitada."
+    return versioned({"ok": True, "message": msg, "auto_enabled": req.enabled})

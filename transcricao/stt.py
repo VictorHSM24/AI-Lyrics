@@ -581,7 +581,7 @@ class STT:
         return BackendFallbackManager(
             gpu_backend=gpu_backend,
             cpu_backend_factory=cpu_factory,
-            max_consecutive_failures=3,
+            max_consecutive_failures=1,
         )
 
     @staticmethod

@@ -26,6 +26,7 @@ from config.models import (
     LogConfig,
     OllamaConfig,
     RagPolicyConfig,
+    ReadingFollowConfig,
     SearchConfig,
     SemanticConfig,
     SermonContextPolicyConfig,
@@ -453,6 +454,18 @@ def _build_knowledge(data: dict[str, Any]) -> KnowledgeConfig:
     )
 
 
+def _build_reading_follow(data: dict[str, Any]) -> ReadingFollowConfig:
+    """Sprint 23.2 — Constrói ReadingFollowConfig (opcional)."""
+    if not isinstance(data, dict):
+        return ReadingFollowConfig()
+    fuzzy_threshold = float(data.get("fuzzy_threshold", 0.70))
+    auto_version_change = bool(data.get("auto_version_change", True))
+    return ReadingFollowConfig(
+        fuzzy_threshold=fuzzy_threshold,
+        auto_version_change=auto_version_change,
+    )
+
+
 def _build_config(data: dict[str, Any]) -> Config:
     """Constrói ``Config`` imutável a partir de dict parseado do YAML."""
     holyrics = _build_holyrics(_require(data, "holyrics", "root"))
@@ -485,6 +498,10 @@ def _build_config(data: dict[str, Any]) -> Config:
     knowledge: KnowledgeConfig | None = None
     if "knowledge" in data:
         knowledge = _build_knowledge(data["knowledge"])
+    # Sprint 23.2 — reading_follow é opcional (backward-compatible).
+    reading_follow: ReadingFollowConfig | None = None
+    if "reading_follow" in data:
+        reading_follow = _build_reading_follow(data["reading_follow"])
     return Config(
         holyrics=holyrics,
         stt=stt,
@@ -499,6 +516,7 @@ def _build_config(data: dict[str, Any]) -> Config:
         semantic=semantic,
         telemetry=telemetry,
         knowledge=knowledge,
+        reading_follow=reading_follow,
     )
 
 

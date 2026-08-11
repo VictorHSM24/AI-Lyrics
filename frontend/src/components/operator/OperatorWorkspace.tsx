@@ -116,6 +116,7 @@ export function OperatorWorkspace({ className }: OperatorWorkspaceProps) {
             value={quickPresentation}
             onChange={setQuickPresentation}
           />
+          <ReadingFollowPanel />
           <FavoritesPanel ctx={ctx} />
           <MostUsedPanel ctx={ctx} />
         </div>
@@ -144,3 +145,4 @@ export function OperatorWorkspace({ className }: OperatorWorkspaceProps) {
 // Import inline para evitar arquivo separado para um ícone.
 import { AlertCircle } from "lucide-react";
 import { QuickPresentationToggle } from "./QuickPresentationToggle";
+import { ReadingFollowPanel } from "./ReadingFollowPanel";

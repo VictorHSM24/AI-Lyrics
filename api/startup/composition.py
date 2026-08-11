@@ -323,6 +323,9 @@ class CompositionRoot:
     bible_retriever: Any = None
     # CAP-01 — StateOrchestrator or None.
     state_orchestrator: Any = None
+    # Sprint 23.2 — Reading Follow Mode
+    reading_follow_service: Any = None  # ReadingFollowService or None
+    version_command_detector: Any = None  # VersionCommandDetector or None
 
 
 # ---------------------------------------------------------------------------
@@ -522,6 +525,9 @@ def create_composition_root() -> CompositionRoot:
     verse_presentation_service = None
     searcher_instance = None
     holyrics_client_instance = None
+    # Sprint 23.2 — Reading Follow Mode (declarados aqui para serem visíveis no retorno).
+    reading_follow_service = None
+    version_command_detector = None
     # Sprint 22.0 — BibleRetriever (declarado aqui para ser visível no
     # bloco do SemanticEngine abaixo).
     bible_retriever_instance = None
@@ -602,6 +608,61 @@ def create_composition_root() -> CompositionRoot:
                         default_version,
                         quick,
                     )
+
+                    # Sprint 23.2 — Reading Follow Mode.
+                    # Instancia ReadingFollowService e VersionCommandDetector
+                    # apenas se Searcher e HolyricsClient estiverem disponiveis.
+                    try:
+                        from presentation.reading_follow_service import (
+                            ReadingFollowService,
+                        )
+                        from presentation.version_command_detector import (
+                            VersionCommandDetector,
+                        )
+
+                        rf_config = getattr(config, "reading_follow", None)
+                        rf_threshold = (
+                            getattr(rf_config, "fuzzy_threshold", 0.70)
+                            if rf_config is not None else 0.70
+                        )
+                        rf_auto_version = (
+                            getattr(rf_config, "auto_version_change", True)
+                            if rf_config is not None else True
+                        )
+
+                        reading_follow_service = ReadingFollowService(
+                            searcher=searcher_instance,
+                            holyrics=holyrics_client_instance,
+                            bus=bus,
+                            session_id=session.session_id,
+                            version=default_version,
+                            fuzzy_threshold=rf_threshold,
+                        )
+                        reading_follow_service.start()
+                        logger.info(
+                            "Sprint 23.2: ReadingFollowService started "
+                            "(version=%s, fuzzy_threshold=%.2f).",
+                            default_version, rf_threshold,
+                        )
+
+                        version_command_detector = VersionCommandDetector(
+                            bus=bus,
+                            session_id=session.session_id,
+                            holyrics=holyrics_client_instance,
+                            auto_enabled=rf_auto_version,
+                            current_version=default_version,
+                        )
+                        version_command_detector.start()
+                        logger.info(
+                            "Sprint 23.2: VersionCommandDetector started "
+                            "(auto_enabled=%s, version=%s).",
+                            rf_auto_version, default_version,
+                        )
+                    except Exception as e_follow:
+                        logger.warning(
+                            "Sprint 23.2: ReadingFollowService/VersionCommandDetector "
+                            "initialization failed: %s", e_follow,
+                        )
 
             # Sprint 22.0 — BibleRetriever (RAG Local).
             # Inicializa apenas se knowledge.enabled=True e book_table
@@ -1072,6 +1133,9 @@ def create_composition_root() -> CompositionRoot:
         semantic_provider=semantic_provider,
         bible_retriever=bible_retriever_instance,
         state_orchestrator=state_orchestrator,
+        # Sprint 23.2 — Reading Follow Mode
+        reading_follow_service=locals().get("reading_follow_service", None),
+        version_command_detector=locals().get("version_command_detector", None),
     )
 
 

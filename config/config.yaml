@@ -132,3 +132,10 @@ knowledge:
   top_k: 20
   fallback_on_empty: true
   warmup: true
+
+# Sprint 23.2 — Reading Follow Mode (acompanhamento de leitura).
+# Quando o pregador diz um intervalo de versículos (ex.: "Mateus 7 do 1 ao 3"),
+# o sistema acompanha a leitura e avança automaticamente.
+reading_follow:
+  fuzzy_threshold: 0.70
+  auto_version_change: true

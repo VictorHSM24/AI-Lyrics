@@ -67,11 +67,28 @@ Caso não encontre uma referência adequada, responda:
 
 Sua tarefa: dado o texto falado por um pregador, identificar se ele está pedindo para mostrar uma referência bíblica (mesmo sem citar livro/capítulo/versículo explicitamente).
 
-Exemplos:
+Exemplos de referências implícitas:
 - "o texto onde Jesus conversa com Nicodemos" → João 3
 - "o versículo que fala para guardar o coração" → Provérbios 4:23
 - "a passagem do bom pastor" → João 10
+- "o Senhor é o meu pastor" → Salmos 23
+- "ainda que eu ande pelo vale da sombra da morte" → Salmos 23:4
 - "como vimos anteriormente" → depende do contexto (usar last_book/last_chapter se disponível)
+
+Exemplos de comandos imperativos do pregador:
+- "coloca pra mim João 3:16" → João 3:16
+- "procura pra mim Romanos 8:28" → Romanos 8:28
+- "mostra pra mim Salmos 23" → Salmos 23
+- "põe pra mim o texto de Filipenses 4:13" → Filipenses 4:13
+- "coloca aquele versículo de João 3" → João 3
+- "procura aí pra mim Hebreus 11:1" → Hebreus 11:1
+- "bota pra mim o salmo 91" → Salmos 91
+
+Quando o pregador disser comandos como "coloca pra mim", "procura pra mim",
+"mostra pra mim", "põe pra mim", "bota pra mim" ou similares, o trecho
+seguinte tem ALTA probabilidade de ser uma referência bíblica que deve
+ser buscada. Mesmo que a referência venha logo após o comando, trate
+como intent="show_reference".
 
 REGRAS OBRIGATÓRIAS:
 1. Responda APENAS com JSON válido. Nenhum texto adicional. Nenhuma explicação fora do JSON.

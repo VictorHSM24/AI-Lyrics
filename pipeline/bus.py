@@ -33,9 +33,12 @@ Características:
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable
 
 from pipeline.event_store import EventStore, MemoryEventStore
+
+logger = logging.getLogger(__name__)
 
 
 # Tipo do handler: função que recebe um evento e retorna None ou evento.
@@ -126,8 +129,11 @@ class PipelineEventBus:
         Apenas OperationalEvents são armazenados no EventStore.
         TelemetryEvents são dispatchados aos handlers mas NÃO persistidos.
 
-        Erros em handlers NÃO são capturados aqui — o Engine trata
-        erros via try/except ao redor do publish. O bus é puro.
+        Sprint 23.0 — Subscriber Isolation:
+        Exceções de handlers são capturadas e logadas, mas NÃO impedem
+        que os handlers subsequentes recebam o evento. Apenas
+        Exception é capturado (não BaseException), preservando
+        KeyboardInterrupt e SystemExit.
 
         Args:
             event: evento a ser publicado.
@@ -140,8 +146,33 @@ class PipelineEventBus:
         # 2. Notificar handlers (sempre — operational e telemetry).
         event_type = type(event)
         handlers = self._subscriptions.get(event_type, [])
-        for handler in handlers:
-            handler(event)
+        # Sprint 23.0 — snapshot da lista para evitar mutação durante iteração.
+        for handler in list(handlers):
+            try:
+                handler(event)
+            except Exception:
+                handler_name = (
+                    getattr(handler, "__name__", None)
+                    or getattr(handler, "__qualname__", None)
+                    or repr(handler)
+                )
+                owner = getattr(handler, "__self__", None)
+                if owner is not None:
+                    handler_name = f"{type(owner).__name__}.{handler_name}"
+                corr_id = ""
+                event_id = ""
+                meta = getattr(event, "meta", None)
+                if meta is not None:
+                    corr_id = getattr(meta, "correlation_id", "") or ""
+                    event_id = getattr(meta, "event_id", "") or ""
+                logger.exception(
+                    "PipelineEventBus: handler %r falhou ao processar "
+                    "%s (correlation_id=%s, event_id=%s)",
+                    handler_name,
+                    event_type.__name__,
+                    corr_id,
+                    event_id,
+                )
 
     def dispatch(self, event: Any) -> None:
         """Alias semântico para publish."""

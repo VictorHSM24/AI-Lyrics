@@ -1,0 +1,671 @@
+======================================================================
+Investigação da Cadeia Semântica — LLM Not Triggering
+Data: 2026-08-10 20:36:07
+Modelo: qwen3:8b-q4_K_M (Ollama local)
+======================================================================
+
+======================================================================
+FASE 5 — TESTE DO OLLAMA INDEPENDENTE
+======================================================================
+  Ollama ONLINE. Modelos disponíveis: ['qwen3:8b-q4_k_m']
+  Modelo qwen3:8b-q4_K_M disponível: True
+
+  >> Chamada mínima ao Ollama...
+  Resposta mínima: 'OK' (13931ms)
+  HTTP status: 200
+
+  >> Chamada com prompt real do sistema...
+  Resposta prompt real (6219ms):
+    content: '{\n  "intent": "show_reference",\n  "candidates": [\n    {\n      "book": "João",\n      "chapter": 10,\n      "verse": 27,\n      "confidence": 0.95,\n      "reason": "menção direta ao pastor e ovelhas"\n    }\n  ]\n}'
+    thinking (primeiros 200 chars): '(vazio)'
+    JSON válido: {
+  "intent": "show_reference",
+  "candidates": [
+    {
+      "book": "João",
+      "chapter": 10,
+      "verse": 27,
+      "confidence": 0.95,
+      "reason": "menção direta ao pastor e ovelhas"
+    }
+  ]
+}
+
+======================================================================
+FASE 4 — TESTE DA CADEIA SEM EVENTBUS
+======================================================================
+  >> Inferência direta (sem EventBus, sem debounce, sem filtros)...
+  ══ INFERÊNCIA INICIADA ══
+    Texto: 'As minhas ovelhas ouvem a minha voz e elas me seguem'
+  ── CONTEXTO ENVIADO ──
+    current_text: 'As minhas ovelhas ouvem a minha voz e elas me seguem'
+    recent_text: ''
+    last_book: ''
+    last_chapter: 0
+    last_reference: ''
+    sermon_book: ''
+    sermon_chapter: 0
+    sermon_theme: ''
+    sermon_entities: []
+    sermon_confidence: 0.0
+  ── USER PROMPT ──
+    Texto atual: As minhas ovelhas ouvem a minha voz e elas me seguem
+    
+    Responda apenas com JSON:
+  ── PAYLOAD HTTP ──
+    Endpoint: http://localhost:11434/api/chat
+      {
+        "model": "qwen3:8b-q4_K_M",
+        "messages": [
+          {
+            "role": "system",
+            "content": "[SYSTEM PROMPT — 1826 chars]"
+          },
+          {
+            "role": "user",
+            "content": "Texto atual: As minhas ovelhas ouvem a minha voz e elas me seguem\n\nResponda apenas com JSON:"
+          }
+        ],
+        "stream": false,
+        "options": {
+          "temperature": 0.1,
+          "top_p": 0.9,
+          "num_predict": 300
+        },
+        "think": false
+      }
+  ── RESPOSTA RAW ──
+    Tempo HTTP: 5458ms
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "João",
+          "chapter": 10,
+          "verse": 27,
+          "confidence": 0.95,
+          "reason": "Menciona ovelhas ouvindo a voz do pastor"
+        }
+      ]
+    }
+  ── PARSER (entrada) ──
+      {
+        "intent": "show_reference",
+        "candidates": [
+          {
+            "book": "João",
+            "chapter": 10,
+            "verse": 27,
+            "confidence": 0.95,
+            "reason": "Menciona ovelhas ouvindo a voz do pastor"
+          }
+        ]
+      }
+  ── RESULTADO DO PARSER ──
+    intent: show_reference
+    candidates: 1
+      [0] book='João' chapter=10 verse=27 conf=0.95 reason='Menciona ovelhas ouvindo a voz do pastor'
+  ══ INFERÊNCIA CONCLUÍDA (5459ms) ══
+    intent: show_reference, candidates: 1
+  Resultado: intent=show_reference, candidates=1, ms=5457
+    book='João' chapter=10 verse=27 conf=0.95
+
+======================================================================
+FASE 3 — TESTE DO EVENTBUS COM FALHA ISOLADA
+======================================================================
+  Publicando SpeechPartial com 3 handlers (B lança exceção)...
+  [BUS] SpeechPartial handler[0] SpeechPartial→handler_a → COMPLETED (0.0ms)
+  [BUS] SpeechPartial handler[1] SpeechPartial→handler_b_throws → EXCEPTION: ValueError: Simulated failure in handler B
+  Exceção propagada para o publicador: Simulated failure in handler B
+  Resultado da execução: ['A', 'B-start']
+  CONFIRMADO: handler C NÃO recebeu o evento devido a exceção em B
+  CAUSA RAIZ POTENCIAL: EventBus não isola exceções por subscriber
+
+======================================================================
+FASE 2 — TESTE CONTROLADO A-E (SEM microfone, SEM Whisper)
+======================================================================
+  SermonMemoryEngine iniciado.
+  LocalLLMProvider criado. is_available: True
+  >> Warmup do modelo...
+  Warmup OK: intent=none, ms=2853
+  SemanticEngine iniciado.
+  ReferenceResolver não disponível: SearchConfig.__init__() got an unexpected keyword argument 'index_path'
+
+██████████████████████████████████████████████████████████████████████
+█ TESTE A (IMPLÍCITA): 'Quando Jesus fala sobre as suas ovelhas ouvirem a voz dele'
+██████████████████████████████████████████████████████████████████████
+  Correlation ID: 2585a1ed-ec5e-4b48-8383-07439ce9a7f7
+  >> Publicando SpeechPartial...
+  [SERMON] _on_partial recebido (call #1)
+  [SERMON] _on_partial concluído
+  [BUS] SpeechPartial handler[0] SpeechPartial→patched_on_partial → COMPLETED (0.3ms)
+  ══ INFERÊNCIA INICIADA ══
+    Texto: 'Quando Jesus fala sobre as suas ovelhas ouvirem a voz dele'
+  ── CONTEXTO ENVIADO ──
+    current_text: 'Quando Jesus fala sobre as suas ovelhas ouvirem a voz dele'
+    recent_text: ''
+    last_book: ''
+    last_chapter: 0
+    last_reference: ''
+    sermon_book: ''
+    sermon_chapter: 0
+    sermon_theme: 'Ovelhas'
+    sermon_entities: ['Jesus']
+    sermon_confidence: 0.11999995841117639
+  ── USER PROMPT ──
+    Texto atual: Quando Jesus fala sobre as suas ovelhas ouvirem a voz dele
+    
+    Responda apenas com JSON:
+  ── PAYLOAD HTTP ──
+    Endpoint: http://localhost:11434/api/chat
+      {
+        "model": "qwen3:8b-q4_K_M",
+        "messages": [
+          {
+            "role": "system",
+            "content": "[SYSTEM PROMPT — 1826 chars]"
+          },
+          {
+            "role": "user",
+            "content": "Texto atual: Quando Jesus fala sobre as suas ovelhas ouvirem a voz dele\n\nResponda apenas com JSON:"
+          }
+        ],
+        "stream": false,
+        "options": {
+          "temperature": 0.1,
+          "top_p": 0.9,
+          "num_predict": 300
+        },
+        "think": false
+      }
+  ── RESPOSTA RAW ──
+    Tempo HTTP: 5328ms
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "João",
+          "chapter": 10,
+          "verse": 27,
+          "confidence": 0.95,
+          "reason": "Menciona ovelhas ouvindo a voz de Jesus"
+        }
+      ]
+    }
+  ── PARSER (entrada) ──
+      {
+        "intent": "show_reference",
+        "candidates": [
+          {
+            "book": "João",
+            "chapter": 10,
+            "verse": 27,
+            "confidence": 0.95,
+            "reason": "Menciona ovelhas ouvindo a voz de Jesus"
+          }
+        ]
+      }
+  ── RESULTADO DO PARSER ──
+    intent: show_reference
+    candidates: 1
+      [0] book='João' chapter=10 verse=27 conf=0.95 reason='Menciona ovelhas ouvindo a voz de Jesus'
+  ══ INFERÊNCIA CONCLUÍDA (5330ms) ══
+    intent: show_reference, candidates: 1
+  [BUS] SemanticInferenceCompleted handler[0] SemanticInferenceCompleted→<lambda> → COMPLETED (0.0ms)
+  [BUS] SpeechPartial handler[1] SpeechPartial→SemanticEngine._on_partial → COMPLETED (7335.1ms)
+  >> Aguardando 35s para inferência + resolução...
+
+  ── DECISÃO SEMÂNTICA ──
+    test_id: A
+    text: Quando Jesus fala sobre as suas ovelhas ouvirem a voz dele
+    speech_partial_received: True
+    sermon_received: True
+    sermon_exception: False
+    semantic_engine_received: True
+    inference_started: True
+    reason: 
+    llm_called: True
+    json_parsed: True
+    intent: show_reference
+    inference_ms: 5327
+    error: 
+    intent_candidate_published: True
+    resolver_received: False
+    reference_detected: False
+    outcome: UNKNOWN
+
+██████████████████████████████████████████████████████████████████████
+█ TESTE B (EXPLÍCITA): 'João 10:27'
+██████████████████████████████████████████████████████████████████████
+  Correlation ID: 06221d23-b4e3-49d9-8001-f4276b8f40a5
+  >> Publicando SpeechPartial...
+  [SERMON] _on_partial recebido (call #2)
+  [SERMON] _on_partial concluído
+  [BUS] SpeechPartial handler[0] SpeechPartial→patched_on_partial → COMPLETED (0.2ms)
+  [BUS] SpeechPartial handler[1] SpeechPartial→SemanticEngine._on_partial → COMPLETED (0.7ms)
+  >> Aguardando 35s para inferência + resolução...
+  ══ INFERÊNCIA INICIADA ══
+    Texto: 'João 10:27'
+  ── CONTEXTO ENVIADO ──
+    current_text: 'João 10:27'
+    recent_text: 'Quando Jesus fala sobre as suas ovelhas ouvirem a voz dele'
+    last_book: ''
+    last_chapter: 0
+    last_reference: ''
+    sermon_book: ''
+    sermon_chapter: 0
+    sermon_theme: 'Ovelhas'
+    sermon_entities: ['João', 'Jesus']
+    sermon_confidence: 0.16999994304641622
+  ── USER PROMPT ──
+    Fala recente: Quando Jesus fala sobre as suas ovelhas ouvirem a voz dele
+    Texto atual: João 10:27
+    
+    Responda apenas com JSON:
+  ── PAYLOAD HTTP ──
+    Endpoint: http://localhost:11434/api/chat
+      {
+        "model": "qwen3:8b-q4_K_M",
+        "messages": [
+          {
+            "role": "system",
+            "content": "[SYSTEM PROMPT — 1826 chars]"
+          },
+          {
+            "role": "user",
+            "content": "Fala recente: Quando Jesus fala sobre as suas ovelhas ouvirem a voz dele\nTexto atual: João 10:27\n\nResponda apenas com JSON:"
+          }
+        ],
+        "stream": false,
+        "options": {
+          "temperature": 0.1,
+          "top_p": 0.9,
+          "num_predict": 300
+        },
+        "think": false
+      }
+  ── RESPOSTA RAW ──
+    Tempo HTTP: 5383ms
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "João",
+          "chapter": 10,
+          "verse": 27,
+          "confidence": 0.95,
+          "reason": "Menciona ovelhas e voz de Jesus"
+        }
+      ]
+    }
+  ── PARSER (entrada) ──
+      {
+        "intent": "show_reference",
+        "candidates": [
+          {
+            "book": "João",
+            "chapter": 10,
+            "verse": 27,
+            "confidence": 0.95,
+            "reason": "Menciona ovelhas e voz de Jesus"
+          }
+        ]
+      }
+  ── RESULTADO DO PARSER ──
+    intent: show_reference
+    candidates: 1
+      [0] book='João' chapter=10 verse=27 conf=0.95 reason='Menciona ovelhas e voz de Jesus'
+  ══ INFERÊNCIA CONCLUÍDA (5385ms) ══
+    intent: show_reference, candidates: 1
+  [BUS] SemanticInferenceCompleted handler[0] SemanticInferenceCompleted→<lambda> → COMPLETED (0.0ms)
+
+  ── DECISÃO SEMÂNTICA ──
+    test_id: B
+    text: João 10:27
+    speech_partial_received: True
+    sermon_received: True
+    sermon_exception: False
+    semantic_engine_received: True
+    inference_started: True
+    reason: 
+    llm_called: True
+    json_parsed: True
+    intent: show_reference
+    inference_ms: 5382
+    error: 
+    intent_candidate_published: True
+    resolver_received: False
+    reference_detected: False
+    outcome: UNKNOWN
+
+██████████████████████████████████████████████████████████████████████
+█ TESTE C (CONTEXTUAL): 'As minhas ovelhas ouvem a minha voz e elas me seguem'
+██████████████████████████████████████████████████████████████████████
+  Correlation ID: 0c26d246-f279-4723-9efe-650781acb52b
+  >> Publicando SpeechPartial...
+  [SERMON] _on_partial recebido (call #3)
+  [SERMON] _on_partial concluído
+  [BUS] SpeechPartial handler[0] SpeechPartial→patched_on_partial → COMPLETED (0.2ms)
+  ══ INFERÊNCIA INICIADA ══
+    Texto: 'As minhas ovelhas ouvem a minha voz e elas me seguem'
+  ── CONTEXTO ENVIADO ──
+    current_text: 'As minhas ovelhas ouvem a minha voz e elas me seguem'
+    recent_text: 'João 10:27'
+    last_book: ''
+    last_chapter: 0
+    last_reference: ''
+    sermon_book: ''
+    sermon_chapter: 0
+    sermon_theme: 'Ovelhas'
+    sermon_entities: ['João', 'Jesus']
+    sermon_confidence: 0.11999996395635204
+  ── USER PROMPT ──
+    Fala recente: João 10:27
+    Texto atual: As minhas ovelhas ouvem a minha voz e elas me seguem
+    
+    Responda apenas com JSON:
+  ── PAYLOAD HTTP ──
+    Endpoint: http://localhost:11434/api/chat
+      {
+        "model": "qwen3:8b-q4_K_M",
+        "messages": [
+          {
+            "role": "system",
+            "content": "[SYSTEM PROMPT — 1826 chars]"
+          },
+          {
+            "role": "user",
+            "content": "Fala recente: João 10:27\nTexto atual: As minhas ovelhas ouvem a minha voz e elas me seguem\n\nResponda apenas com JSON:"
+          }
+        ],
+        "stream": false,
+        "options": {
+          "temperature": 0.1,
+          "top_p": 0.9,
+          "num_predict": 300
+        },
+        "think": false
+      }
+  ── RESPOSTA RAW ──
+    Tempo HTTP: 5481ms
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "João",
+          "chapter": 10,
+          "verse": 27,
+          "confidence": 0.95,
+          "reason": "Menciona João 10:27 diretamente"
+        }
+      ]
+    }
+  ── PARSER (entrada) ──
+      {
+        "intent": "show_reference",
+        "candidates": [
+          {
+            "book": "João",
+            "chapter": 10,
+            "verse": 27,
+            "confidence": 0.95,
+            "reason": "Menciona João 10:27 diretamente"
+          }
+        ]
+      }
+  ── RESULTADO DO PARSER ──
+    intent: show_reference
+    candidates: 1
+      [0] book='João' chapter=10 verse=27 conf=0.95 reason='Menciona João 10:27 diretamente'
+  ══ INFERÊNCIA CONCLUÍDA (5482ms) ══
+    intent: show_reference, candidates: 1
+  [BUS] SemanticInferenceCompleted handler[0] SemanticInferenceCompleted→<lambda> → COMPLETED (0.0ms)
+  [BUS] SpeechPartial handler[1] SpeechPartial→SemanticEngine._on_partial → COMPLETED (7485.3ms)
+  >> Aguardando 35s para inferência + resolução...
+
+  ── DECISÃO SEMÂNTICA ──
+    test_id: C
+    text: As minhas ovelhas ouvem a minha voz e elas me seguem
+    speech_partial_received: True
+    sermon_received: True
+    sermon_exception: False
+    semantic_engine_received: True
+    inference_started: True
+    reason: 
+    llm_called: True
+    json_parsed: True
+    intent: show_reference
+    inference_ms: 5480
+    error: 
+    intent_candidate_published: True
+    resolver_received: False
+    reference_detected: False
+    outcome: UNKNOWN
+
+██████████████████████████████████████████████████████████████████████
+█ TESTE D (NARRATIVA): 'Quando Paulo fala que há tantas espécies de vozes no mundo'
+██████████████████████████████████████████████████████████████████████
+  Correlation ID: e14e4d12-1cc0-4282-8423-da681fb7b46b
+  >> Publicando SpeechPartial...
+  [SERMON] _on_partial recebido (call #4)
+  [SERMON] _on_partial concluído
+  [BUS] SpeechPartial handler[0] SpeechPartial→patched_on_partial → COMPLETED (0.4ms)
+  ══ INFERÊNCIA INICIADA ══
+    Texto: 'Quando Paulo fala que há tantas espécies de vozes no mundo'
+  ── CONTEXTO ENVIADO ──
+    current_text: 'Quando Paulo fala que há tantas espécies de vozes no mundo'
+    recent_text: 'As minhas ovelhas ouvem a minha voz e elas me seguem'
+    last_book: ''
+    last_chapter: 0
+    last_reference: ''
+    sermon_book: ''
+    sermon_chapter: 0
+    sermon_theme: 'Ovelhas'
+    sermon_entities: ['Paulo', 'João', 'Jesus']
+    sermon_confidence: 0.11999993068530197
+  ── USER PROMPT ──
+    Fala recente: As minhas ovelhas ouvem a minha voz e elas me seguem
+    Texto atual: Quando Paulo fala que há tantas espécies de vozes no mundo
+    
+    Responda apenas com JSON:
+  ── PAYLOAD HTTP ──
+    Endpoint: http://localhost:11434/api/chat
+      {
+        "model": "qwen3:8b-q4_K_M",
+        "messages": [
+          {
+            "role": "system",
+            "content": "[SYSTEM PROMPT — 1826 chars]"
+          },
+          {
+            "role": "user",
+            "content": "Fala recente: As minhas ovelhas ouvem a minha voz e elas me seguem\nTexto atual: Quando Paulo fala que há tantas espécies de vozes no mundo\n\nResponda apenas com JSON:"
+          }
+        ],
+        "stream": false,
+        "options": {
+          "temperature": 0.1,
+          "top_p": 0.9,
+          "num_predict": 300
+        },
+        "think": false
+      }
+  ── RESPOSTA RAW ──
+    Tempo HTTP: 8059ms
+    {
+      "intent": "show_reference",
+      "candidates": [
+        {
+          "book": "João",
+          "chapter": 10,
+          "verse": 27,
+          "confidence": 0.95,
+          "reason": "Menciona ovelhas ouvindo a voz do pastor"
+        },
+        {
+          "book": "1 Coríntios",
+          "chapter": 14,
+          "verse": 10,
+          "confidence": 0.75,
+          "reason": "Fala sobre diferentes vozes e linguagens"
+        }
+      ]
+    }
+  ── PARSER (entrada) ──
+      {
+        "intent": "show_reference",
+        "candidates": [
+          {
+            "book": "João",
+            "chapter": 10,
+            "verse": 27,
+            "confidence": 0.95,
+            "reason": "Menciona ovelhas ouvindo a voz do pastor"
+          },
+          {
+            "book": "1 Coríntios",
+            "chapter": 14,
+            "verse": 10,
+            "confidence": 0.75,
+            "reason": "Fala sobre diferentes vozes e linguagens"
+          }
+        ]
+      }
+  ── RESULTADO DO PARSER ──
+    intent: show_reference
+    candidates: 2
+      [0] book='João' chapter=10 verse=27 conf=0.95 reason='Menciona ovelhas ouvindo a voz do pastor'
+      [1] book='1 Coríntios' chapter=14 verse=10 conf=0.75 reason='Fala sobre diferentes vozes e linguagens'
+  ══ INFERÊNCIA CONCLUÍDA (8061ms) ══
+    intent: show_reference, candidates: 2
+  [BUS] SemanticInferenceCompleted handler[0] SemanticInferenceCompleted→<lambda> → COMPLETED (0.0ms)
+  [BUS] SpeechPartial handler[1] SpeechPartial→SemanticEngine._on_partial → COMPLETED (10075.5ms)
+  >> Aguardando 35s para inferência + resolução...
+
+  ── DECISÃO SEMÂNTICA ──
+    test_id: D
+    text: Quando Paulo fala que há tantas espécies de vozes no mundo
+    speech_partial_received: True
+    sermon_received: True
+    sermon_exception: False
+    semantic_engine_received: True
+    inference_started: True
+    reason: 
+    llm_called: True
+    json_parsed: True
+    intent: show_reference
+    inference_ms: 8059
+    error: 
+    intent_candidate_published: True
+    resolver_received: False
+    reference_detected: False
+    outcome: UNKNOWN
+
+██████████████████████████████████████████████████████████████████████
+█ TESTE E (NÃO-BÍBLICA): 'Vamos cantar agora o próximo louvor'
+██████████████████████████████████████████████████████████████████████
+  Correlation ID: 2f0b0698-15ca-4357-a494-3fb1eb548f41
+  >> Publicando SpeechPartial...
+  [SERMON] _on_partial recebido (call #5)
+  [SERMON] _on_partial concluído
+  [BUS] SpeechPartial handler[0] SpeechPartial→patched_on_partial → COMPLETED (0.2ms)
+  ══ INFERÊNCIA INICIADA ══
+    Texto: 'Vamos cantar agora o próximo louvor'
+  ── CONTEXTO ENVIADO ──
+    current_text: 'Vamos cantar agora o próximo louvor'
+    recent_text: ''
+    last_book: ''
+    last_chapter: 0
+    last_reference: ''
+    sermon_book: ''
+    sermon_chapter: 0
+    sermon_theme: 'Ovelhas'
+    sermon_entities: ['Paulo', 'João', 'Jesus']
+    sermon_confidence: 0.11999994870711961
+  ── USER PROMPT ──
+    Texto atual: Vamos cantar agora o próximo louvor
+    
+    Responda apenas com JSON:
+  ── PAYLOAD HTTP ──
+    Endpoint: http://localhost:11434/api/chat
+      {
+        "model": "qwen3:8b-q4_K_M",
+        "messages": [
+          {
+            "role": "system",
+            "content": "[SYSTEM PROMPT — 1826 chars]"
+          },
+          {
+            "role": "user",
+            "content": "Texto atual: Vamos cantar agora o próximo louvor\n\nResponda apenas com JSON:"
+          }
+        ],
+        "stream": false,
+        "options": {
+          "temperature": 0.1,
+          "top_p": 0.9,
+          "num_predict": 300
+        },
+        "think": false
+      }
+  ── RESPOSTA RAW ──
+    Tempo HTTP: 2979ms
+    {
+      "intent": "none",
+      "candidates": []
+    }
+  ── PARSER (entrada) ──
+      {
+        "intent":"none",
+        "candidates":[]
+      }
+  ── RESULTADO DO PARSER ──
+    intent: none
+    candidates: 0
+  ══ INFERÊNCIA CONCLUÍDA (2982ms) ══
+    intent: none, candidates: 0
+  [BUS] SemanticInferenceCompleted handler[0] SemanticInferenceCompleted→<lambda> → COMPLETED (0.0ms)
+  [BUS] SpeechPartial handler[1] SpeechPartial→SemanticEngine._on_partial → COMPLETED (4994.7ms)
+  >> Aguardando 35s para inferência + resolução...
+
+  ── DECISÃO SEMÂNTICA ──
+    test_id: E
+    text: Vamos cantar agora o próximo louvor
+    speech_partial_received: True
+    sermon_received: True
+    sermon_exception: False
+    semantic_engine_received: True
+    inference_started: True
+    reason: llm_returned_none_or_no_candidates
+    llm_called: True
+    json_parsed: True
+    intent: none
+    inference_ms: 2979
+    error: 
+    intent_candidate_published: False
+    outcome: EXECUTED
+
+======================================================================
+RELATÓRIO FINAL — Investigação da Cadeia Semântica
+======================================================================
+
+1. OLLAMA INDEPENDENTE
+   Status: ONLINE
+
+2. EVENTBUS ISOLAMENTO DE EXCEÇÕES
+   Isolamento quebrado: True
+
+3. MATRIZ DE EVIDÊNCIAS (Testes A-E)
+----------------------------------------------------------------------
+  | ID | SpeechPartial | Sermon | Sermon Exc | LLM Called | Intent | Candidates | Resolver | RefDetected | Outcome |
+  |----|---------------|--------|------------|------------|--------|------------|----------|-------------|---------|
+  | A  | True            | True      | False         | True         | show_reference     | 1          | False       | False          | UNKNOWN      |
+  | B  | True            | True      | False         | True         | show_reference     | 1          | False       | False          | UNKNOWN      |
+  | C  | True            | True      | False         | True         | show_reference     | 1          | False       | False          | UNKNOWN      |
+  | D  | True            | True      | False         | True         | show_reference     | 2          | False       | False          | UNKNOWN      |
+  | E  | True            | True      | False         | True         | none     | 0          | False       | False          | EXECUTED      |
+
+4. CAUSA RAIZ
+   ROOT_CAUSE_EVENTBUS confirmado: EventBus não isola exceções por subscriber.
+   Se SermonMemoryEngine lançar exceção, SemanticEngine NÃO recebe o evento.
+   Executados: 1, Filtrados: 0, Bloqueados: 0, Erros: 4

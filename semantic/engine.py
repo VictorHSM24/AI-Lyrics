@@ -97,6 +97,27 @@ _DEFAULT_MIN_GROWTH_CHARS = 20
 _DEFAULT_MIN_APPEND_WORDS = 3
 _DEFAULT_MIN_INTERVAL_MS = 1000
 
+# Sprint 23.1 — Command Trigger.
+# Quando o pregador usa comandos imperativos ("coloca pra mim", "procura pra mim",
+# etc.), o texto seguinte tem alta probabilidade de ser uma referência bíblica.
+# Nestes casos, baixamos o threshold de growth para disparar a inferência
+# mais cedo, sem esperar acumular 20 chars.
+_COMMAND_PHRASES = frozenset({
+    "coloca", "coloca pra mim", "coloca para mim",
+    "procura", "procura pra mim", "procura para mim",
+    "procura aí", "procura ai",
+    "mostra", "mostra pra mim", "mostra para mim",
+    "põe", "põe pra mim", "põe para mim", "poe", "poe pra mim",
+    "bota", "bota pra mim", "bota para mim",
+    "abre", "abre pra mim", "abre para mim",
+    "joga", "joga pra mim", "joga para mim",
+    "pula", "pula pra mim",
+    "vai pra", "vai para",
+})
+_COMMAND_MIN_GROWTH_CHARS = 5
+_COMMAND_MIN_APPEND_WORDS = 2
+_COMMAND_MIN_INTERVAL_MS = 500
+
 
 class SemanticEngine:
     """Camada de compreensão semântica.
@@ -305,9 +326,28 @@ class SemanticEngine:
           AND append_words >= min_append_words
           AND elapsed_ms >= min_interval_ms
 
+        Sprint 23.1 — Command Trigger:
+          Se o texto contém um comando imperativo ("coloca pra mim", etc.),
+          usa thresholds reduzidos (5 chars, 2 palavras, 500ms) pois o
+          texto seguinte tem alta probabilidade de ser uma referência.
+
         Deve ser chamado sob self._lock.
         """
         now = time.monotonic()
+
+        # Sprint 23.1 — detectar comando imperativo para baixar thresholds.
+        text_lower = text.lower()
+        has_command = any(
+            phrase in text_lower for phrase in _COMMAND_PHRASES
+        )
+        if has_command:
+            min_growth = _COMMAND_MIN_GROWTH_CHARS
+            min_words = _COMMAND_MIN_APPEND_WORDS
+            min_interval = _COMMAND_MIN_INTERVAL_MS
+        else:
+            min_growth = self._min_growth_chars
+            min_words = self._min_append_words
+            min_interval = self._min_interval_ms
 
         # Calcular tempo desde a última inferência.
         if self._last_inference_monotonic == 0.0:
@@ -316,17 +356,17 @@ class SemanticEngine:
         else:
             elapsed_ms = (now - self._last_inference_monotonic) * 1000.0
 
-        if elapsed_ms < self._min_interval_ms:
+        if elapsed_ms < min_interval:
             return False
 
         # Calcular crescimento em caracteres desde a última inferência.
         growth_chars = self._count_growth_chars(text)
-        if growth_chars < self._min_growth_chars:
+        if growth_chars < min_growth:
             return False
 
         # Calcular palavras novas desde a última inferência.
         append_words = self._count_append_words(text)
-        if append_words < self._min_append_words:
+        if append_words < min_words:
             return False
 
         return True

@@ -23,6 +23,7 @@ class Intent:
     book_id: int | None = None     # 1..66
     chapter: int | None = None     # int ou "current" (para jump)
     verse: int | None = None
+    verse_end: int | None = None   # Sprint 23.2 — intervalo de versículos
     amount: int | None = None      # para next/previous/jump relativo
     query: str | None = None       # frase para busca (action=search)
     version: str | None = None

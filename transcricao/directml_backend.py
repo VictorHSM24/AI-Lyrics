@@ -290,9 +290,36 @@ class DirectMLBackend:
             logger.debug("DirectMLBackend: generate took %.0fms", gen_ms)
 
             # 4. Decodificar tokens → texto.
-            text = self._processor.batch_decode(
-                predicted_ids, skip_special_tokens=True
-            )[0].strip()
+            # Sprint 23.1 — O tokenizer ONNX do Whisper pode gerar token IDs
+            # cuja decodificação produz bytes inválidos em UTF-8 (bug conhecido
+            # do optimum/transformers com modelos ONNX). Tentamos batch_decode
+            # primeiro; se falhar com UnicodeDecodeError, fazemos decode manual
+            # token-a-token com errors='replace' para não perder a transcrição.
+            try:
+                text = self._processor.batch_decode(
+                    predicted_ids, skip_special_tokens=True
+                )[0].strip()
+            except UnicodeDecodeError:
+                logger.warning(
+                    "DirectMLBackend: batch_decode failed with UnicodeDecodeError — "
+                    "falling back to manual token decode"
+                )
+                tokenizer = self._processor.tokenizer
+                token_ids = predicted_ids[0].tolist()
+                # Decodificar token-a-token, pulando especiais.
+                pieces = []
+                for tid in token_ids:
+                    if tokenizer.convert_ids_to_tokens(tid) in (
+                        tokenizer.pad_token, tokenizer.bos_token,
+                        tokenizer.eos_token, None,
+                    ):
+                        continue
+                    try:
+                        piece = tokenizer.decode([tid], skip_special_tokens=True)
+                        pieces.append(piece)
+                    except Exception:
+                        pass
+                text = "".join(pieces).strip()
 
             # avg_logprob não disponível via ONNX — usar heurística.
             avg_logprob = -0.3 if text else -1.0

@@ -903,6 +903,89 @@ class IntentClassified(OperationalEvent):
 
 
 # ---------------------------------------------------------------------------
+# Sprint 23.2 — Reading Follow Mode (acompanhamento de leitura)
+#
+# Fluxo:
+#   ReferenceDetected (com verse_end != verse_start)
+#       ↓
+#   ReadingFollowService ativa modo
+#       ↓
+#   ReadingFollowStarted
+#       ↓
+#   SpeechTranscribed → fuzzy match → ReadingFollowAdvanced (para cada versículo)
+#       ↓
+#   ReadingFollowEnded (fim do intervalo ou parada manual)
+#
+# VersionChanged é publicado por VersionCommandDetector (voz) ou API (manual).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ReadingFollowStarted(OperationalEvent):
+    """Modo de acompanhamento de leitura ativado.
+
+    Emitido quando o ReadingFollowService começa a acompanhar a leitura
+    de um intervalo de versículos. Pode ser ativado automaticamente
+    (quando ReferenceDetected tem verse_end != verse_start) ou
+    manualmente pelo operador via API.
+    """
+
+    book: str = ""
+    book_id: int = 0
+    chapter: int = 0
+    verse_start: int = 0
+    verse_end: int = 0
+    current_verse: int = 0
+    version: str = ""
+
+
+@dataclass(frozen=True)
+class ReadingFollowAdvanced(OperationalEvent):
+    """Sistema avançou para o próximo versículo no modo de acompanhamento.
+
+    Emitido após o fuzzy matching detectar que o versículo atual foi lido
+    e o sistema avançar para o próximo versículo do intervalo.
+    """
+
+    book: str = ""
+    book_id: int = 0
+    chapter: int = 0
+    previous_verse: int = 0
+    current_verse: int = 0
+    version: str = ""
+    match_score: float = 0.0
+
+
+@dataclass(frozen=True)
+class ReadingFollowEnded(OperationalEvent):
+    """Modo de acompanhamento de leitura desativado.
+
+    Emitido quando o modo termina, seja por conclusão do intervalo
+    (reason="completed") ou por parada manual do operador
+    (reason="manual_stop").
+    """
+
+    book: str = ""
+    chapter: int = 0
+    last_verse: int = 0
+    reason: str = ""  # "completed" | "manual_stop"
+
+
+@dataclass(frozen=True)
+class VersionChanged(OperationalEvent):
+    """Versão bíblica ativa foi alterada.
+
+    Emitido quando a versão bíblica em uso muda, seja por comando
+    de voz do pregador (source="voice") ou por ação manual do
+    operador no painel (source="manual").
+    """
+
+    old_version: str = ""
+    new_version: str = ""
+    source: str = ""  # "voice" | "manual"
+
+
+# ---------------------------------------------------------------------------
 # Registry de tipos de evento
 # ---------------------------------------------------------------------------
 
@@ -959,6 +1042,11 @@ _ALL_EVENT_TYPES = (
     StateChanged,
     # CAP-03 — IntentClassifier (tipo apenas; não publicado pela CAP-01)
     IntentClassified,
+    # Sprint 23.2 — Reading Follow Mode
+    ReadingFollowStarted,
+    ReadingFollowAdvanced,
+    ReadingFollowEnded,
+    VersionChanged,
 )
 
 _ALL_EVENT_TYPE_NAMES = tuple(c.__name__ for c in _ALL_EVENT_TYPES)
@@ -1041,6 +1129,11 @@ __all__ = [
     "StateChanged",
     # CAP-03 — IntentClassifier (tipo apenas)
     "IntentClassified",
+    # Sprint 23.2 — Reading Follow Mode
+    "ReadingFollowStarted",
+    "ReadingFollowAdvanced",
+    "ReadingFollowEnded",
+    "VersionChanged",
     "all_event_types",
     "all_event_type_names",
     "is_pipeline_event",

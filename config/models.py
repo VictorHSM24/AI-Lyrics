@@ -316,6 +316,22 @@ class KnowledgeConfig:
 
 
 @dataclass(frozen=True)
+class ReadingFollowConfig:
+    """Sprint 23.2 — Configuração do modo de acompanhamento de leitura.
+
+    Campos:
+        fuzzy_threshold: similaridade mínima (0.0-1.0) para considerar
+            que o versículo foi lido (default 0.70).
+        auto_version_change: se True, comandos de voz mudam a versão
+            automaticamente (default True). O operador pode desabilitar
+            via frontend.
+    """
+
+    fuzzy_threshold: float = 0.70
+    auto_version_change: bool = True
+
+
+@dataclass(frozen=True)
 class Config:
     """Configuração raiz do sistema. Imutável após carregamento."""
 
@@ -335,3 +351,5 @@ class Config:
     telemetry: "TelemetryConfig | None" = None
     # Sprint 22.0 — Bible Knowledge Base RAG Local (opcional).
     knowledge: "KnowledgeConfig | None" = None
+    # Sprint 23.2 — Reading Follow Mode (opcional).
+    reading_follow: "ReadingFollowConfig | None" = None

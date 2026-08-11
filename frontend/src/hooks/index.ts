@@ -34,6 +34,9 @@ import type {
   ConfigurationDTO,
   DiagnosticDTO,
   EventDTO,
+  FollowResultDTO,
+  FollowStartRequestDTO,
+  FollowStateDTO,
   HealthSnapshot,
   InfoDTO,
   MetricsDTO,
@@ -969,4 +972,144 @@ export function useFavoritesSnapshot() {
 export function useRecentsSnapshot() {
   const stores = useStores();
   return useStoreSnapshot(stores.recents);
+}
+
+// ============================================================
+// useReadingFollow (Sprint 23.2) — Reading Follow Mode.
+// ============================================================
+
+export interface UseReadingFollowResult {
+  state: FollowStateDTO | null;
+  versions: string[];
+  currentVersion: string;
+  autoVersionEnabled: boolean;
+  loading: boolean;
+  error: string | null;
+  // Actions.
+  start: (req: FollowStartRequestDTO) => Promise<FollowResultDTO>;
+  stop: () => Promise<FollowResultDTO>;
+  advance: () => Promise<FollowResultDTO>;
+  refreshState: () => Promise<void>;
+  loadVersions: () => Promise<void>;
+  setVersion: (version: string) => Promise<void>;
+  setAutoVersion: (enabled: boolean) => Promise<void>;
+}
+
+export function useReadingFollow(): UseReadingFollowResult {
+  const services = useServices();
+  const [state, setState] = useState<FollowStateDTO | null>(null);
+  const [versions, setVersions] = useState<string[]>([]);
+  const [currentVersion, setCurrentVersion] = useState("ACF");
+  const [autoVersionEnabled, setAutoVersionEnabled] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshState = async () => {
+    setError(null);
+    try {
+      const res = await services.operator.followState();
+      setState(res);
+      if (res.version) setCurrentVersion(res.version);
+    } catch (e) {
+      setError(`Erro ao carregar estado: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const loadVersions = async () => {
+    setError(null);
+    try {
+      const res = await services.operator.getVersions();
+      setVersions(res.versions);
+    } catch (e) {
+      setError(`Erro ao carregar versões: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const start = async (req: FollowStartRequestDTO): Promise<FollowResultDTO> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await services.operator.followStart(req);
+      setState(res.state);
+      return res;
+    } catch (e) {
+      const msg = `Erro ao ativar: ${e instanceof Error ? e.message : String(e)}`;
+      setError(msg);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const stop = async (): Promise<FollowResultDTO> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await services.operator.followStop();
+      setState(res.state);
+      return res;
+    } catch (e) {
+      const msg = `Erro ao parar: ${e instanceof Error ? e.message : String(e)}`;
+      setError(msg);
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const advance = async (): Promise<FollowResultDTO> => {
+    setError(null);
+    try {
+      const res = await services.operator.followAdvance();
+      setState(res.state);
+      return res;
+    } catch (e) {
+      const msg = `Erro ao avançar: ${e instanceof Error ? e.message : String(e)}`;
+      setError(msg);
+      throw e;
+    }
+  };
+
+  const setVersion = async (version: string) => {
+    setError(null);
+    try {
+      const res = await services.operator.setVersion(version);
+      if (res.ok) {
+        setCurrentVersion(version);
+        if (state) {
+          setState({ ...state, version });
+        }
+      }
+    } catch (e) {
+      setError(`Erro ao mudar versão: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const setAutoVersion = async (enabled: boolean) => {
+    setError(null);
+    try {
+      const res = await services.operator.setAutoVersion(enabled);
+      if (res.ok) {
+        setAutoVersionEnabled(enabled);
+      }
+    } catch (e) {
+      setError(`Erro ao alterar versão automática: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  return {
+    state,
+    versions,
+    currentVersion,
+    autoVersionEnabled,
+    loading,
+    error,
+    start,
+    stop,
+    advance,
+    refreshState,
+    loadVersions,
+    setVersion,
+    setAutoVersion,
+  };
 }

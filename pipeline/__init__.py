@@ -96,6 +96,11 @@ from pipeline.events import (
     StateChanged,
     # CAP-03 — IntentClassifier (tipo apenas)
     IntentClassified,
+    # Sprint 23.2 — Reading Follow Mode
+    ReadingFollowStarted,
+    ReadingFollowAdvanced,
+    ReadingFollowEnded,
+    VersionChanged,
     is_operational_event,
     is_pipeline_event,
     is_telemetry_event,
@@ -179,6 +184,11 @@ __all__ = [
     "StateChanged",
     # CAP-03 — IntentClassifier (tipo apenas)
     "IntentClassified",
+    # Sprint 23.2 — Reading Follow Mode
+    "ReadingFollowStarted",
+    "ReadingFollowAdvanced",
+    "ReadingFollowEnded",
+    "VersionChanged",
     "is_pipeline_event",
     "is_operational_event",
     "is_telemetry_event",

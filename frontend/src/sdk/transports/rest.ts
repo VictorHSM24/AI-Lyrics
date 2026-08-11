@@ -87,11 +87,21 @@ const METHOD_TO_ENDPOINT: Record<string, string> = {
   "operator.getCurrent": "/operator/current",
   // Sprint 25 — validação híbrida de referências
   "operator.parse": "/operator/parse",
+  // Sprint 23.2 — Reading Follow Mode & Version Management
+  "operator.followStart": "/operator/follow/start",
+  "operator.followStop": "/operator/follow/stop",
+  "operator.followAdvance": "/operator/follow/advance",
+  "operator.followState": "/operator/follow/state",
+  "operator.getVersions": "/operator/versions",
+  "operator.getVersion": "/operator/version",
+  "operator.setVersion": "/operator/version",
+  "operator.setAutoVersion": "/operator/version/auto",
 };
 
 /** Métodos que usam PUT (body JSON) em vez de GET (query params). */
 const PUT_METHODS: ReadonlySet<string> = new Set([
   "configuration.update",
+  "operator.setAutoVersion",
 ]);
 
 /** Métodos que usam POST (body JSON) em vez de GET (query params). */
@@ -103,6 +113,9 @@ const POST_METHODS: ReadonlySet<string> = new Set([
   "pipeline.start",
   "pipeline.stop",
   "operator.present",
+  "operator.followStart",
+  "operator.followStop",
+  "operator.followAdvance",
   "system.restart",
 ]);
 

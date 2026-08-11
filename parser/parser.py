@@ -89,6 +89,10 @@ _RE_STAY = re.compile(
 _CHAPTER_MARKERS: Final[frozenset[str]] = frozenset({"capitulo", "cap"})
 _VERSE_MARKERS: Final[frozenset[str]] = frozenset({"versiculo", "vers", "v"})
 
+# Sprint 23.2 — Reading Follow Mode.
+# Marcadores de intervalo de versiculos: "do 1 ao 3", "de 1 a 3", "1 ate 3".
+_RANGE_END_MARKERS: Final[frozenset[str]] = frozenset({"ao", "a", "ate", "até"})
+
 # ---------------------------------------------------------------------------
 # Gatilhos para uncertain (doc. técnica §3.9)
 # ---------------------------------------------------------------------------
@@ -308,7 +312,7 @@ class Parser:
         prefix = norm[:result.start].strip()
 
         # Parsear números do sufixo
-        chapter, verse, has_markers = self._parse_ref_suffix(suffix, state)
+        chapter, verse, verse_end, has_markers = self._parse_ref_suffix(suffix, state)
 
         # Se não há números nem no sufixo nem no prefixo → uncertain
         # (livro encontrado mas sem referência)
@@ -346,6 +350,7 @@ class Parser:
             book_id=book.id,
             chapter=chapter,
             verse=verse,
+            verse_end=verse_end,
             confidence=round(final_conf, 4),
             source="parser",
             raw=raw,
@@ -355,19 +360,21 @@ class Parser:
         self,
         suffix: str,
         state: BibleState | None,
-    ) -> tuple[int | None, int | None, bool]:
-        """Extrai capítulo e versículo do sufixo após o nome do livro.
+    ) -> tuple[int | None, int | None, int | None, bool]:
+        """Extrai capítulo, versículo e versículo final do sufixo.
 
         Returns:
-            ``(chapter, verse, has_markers)`` onde ``has_markers`` indica
-            se marcadores explícitos (cap/vers) foram usados.
+            ``(chapter, verse, verse_end, has_markers)`` onde
+            ``has_markers`` indica se marcadores explícitos (cap/vers)
+            foram usados. ``verse_end`` é None para versículo único.
         """
         if not suffix:
-            return None, None, False
+            return None, None, None, False
 
         tokens = suffix.split()
         chapter: int | None = None
         verse: int | None = None
+        verse_end: int | None = None
         unmarked_nums: list[int] = []
         has_markers = False
 
@@ -389,6 +396,15 @@ class Parser:
                     verse = int(tokens[i + 1])
                     i += 2
                     continue
+            elif tok in _RANGE_END_MARKERS:
+                # Sprint 23.2 — marcador de intervalo ("ao", "a", "ate")
+                # Próximo token deve ser o versículo final
+                if i + 1 < len(tokens) and tokens[i + 1].isdigit():
+                    end = int(tokens[i + 1])
+                    if verse is not None and end > verse:
+                        verse_end = end
+                        i += 2
+                        continue
             elif tok.isdigit():
                 unmarked_nums.append(int(tok))
 
@@ -399,6 +415,13 @@ class Parser:
             chapter = unmarked_nums.pop(0)
         if verse is None and unmarked_nums:
             verse = unmarked_nums.pop(0)
+        # Sprint 23.2 — se há um número extra e verse_end não foi
+        # encontrado via marcador, pode ser intervalo sem marcador
+        # (ex.: "7 1 3" = cap 7, versiculo 1 ao 3).
+        if verse_end is None and unmarked_nums and verse is not None:
+            end_candidate = unmarked_nums.pop(0)
+            if end_candidate > verse:
+                verse_end = end_candidate
 
         # Se verse foi encontrado via marcador mas chapter não,
         # tentar usar o chapter do estado atual
@@ -406,7 +429,7 @@ class Parser:
             if not state.is_empty():
                 chapter = state.chapter
 
-        return chapter, verse, has_markers
+        return chapter, verse, verse_end, has_markers
 
     @staticmethod
     def _extract_numbers(text: str) -> list[int]:

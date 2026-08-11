@@ -68,6 +68,12 @@ __all__ = ["IncrementalBiblicalParser"]
 _CHAPTER_MARKERS = frozenset({"capitulo", "cap"})
 _VERSE_MARKERS = frozenset({"versiculo", "vers", "v"})
 
+# Sprint 23.2 — Reading Follow Mode.
+# Marcadores de intervalo de versículos: "do 1 ao 3", "de 1 a 3", "1 ate 3".
+# Apos encontrar verse_start, procuramos por estes marcadores seguidos
+# de um numero que representa verse_end.
+_RANGE_END_MARKERS = frozenset({"ao", "a", "ate", "até"})
+
 # Confianças por nível de completude.
 _C_BOOK_ONLY = 0.40
 _C_BOOK_CHAPTER = 0.75
@@ -131,6 +137,7 @@ class IncrementalBiblicalParser:
         self._current_book: BookResolveResult | None = None
         self._current_chapter: int | None = None
         self._current_verse: int | None = None
+        self._current_verse_end: int | None = None
         self._seen_text: str = ""
         self._correlation_id: str | None = None
         self._causation_id: str | None = None
@@ -197,6 +204,7 @@ class IncrementalBiblicalParser:
         self._current_book = None
         self._current_chapter = None
         self._current_verse = None
+        self._current_verse_end = None
         self._seen_text = ""
         self._correlation_id = None
         self._causation_id = None
@@ -280,6 +288,12 @@ class IncrementalBiblicalParser:
 
         if self._expecting == "verse":
             changed = self._try_find_verse(norm) or changed
+
+        # Sprint 23.2 — apos encontrar versiculo, tentar encontrar
+        # verse_end (intervalo "do 1 ao 3"). _try_find_verse ja setou
+        # _expecting = "done", mas podemos ter verse_end no texto.
+        if changed and self._current_verse is not None and self._current_verse_end is None:
+            self._try_find_verse_end(norm)
 
         if not changed:
             # Tentar encontrar livro mesmo em estágio avançado
@@ -405,6 +419,34 @@ class IncrementalBiblicalParser:
                         logger.debug(
                             "IncrementalParser: verse=%d (unmarked)",
                             num,
+                        )
+                        return True
+
+        return False
+
+    def _try_find_verse_end(self, norm_text: str) -> bool:
+        """Tenta identificar o versículo final de um intervalo.
+
+        Sprint 23.2 — Reading Follow Mode.
+
+        Procura por marcadores de intervalo ("ao", "a", "ate", "até")
+        seguidos de um número, após o verse_start já identificado.
+
+        Retorna True se encontrou verse_end.
+        """
+        if self._current_verse is None:
+            return False
+
+        tokens = norm_text.split()
+        for i, tok in enumerate(tokens):
+            if tok in _RANGE_END_MARKERS:
+                if i + 1 < len(tokens) and tokens[i + 1].isdigit():
+                    verse_end = int(tokens[i + 1])
+                    if verse_end > self._current_verse and verse_end <= 200:
+                        self._current_verse_end = verse_end
+                        logger.debug(
+                            "IncrementalParser: verse_end=%d (range marker=%s)",
+                            verse_end, tok,
                         )
                         return True
 
@@ -554,7 +596,7 @@ class IncrementalBiblicalParser:
             book_id=book.id,
             chapter=self._current_chapter or 0,
             verse_start=self._current_verse or 0,
-            verse_end=self._current_verse or 0,
+            verse_end=self._current_verse_end or self._current_verse or 0,
             confidence=round(confidence, 4),
             completeness=completeness,
             normalized_text=normalized,
@@ -602,7 +644,7 @@ class IncrementalBiblicalParser:
             book_id=book.id,
             chapter=self._current_chapter or 0,
             verse_start=self._current_verse or 0,
-            verse_end=self._current_verse or 0,
+            verse_end=self._current_verse_end or self._current_verse or 0,
             confidence=round(confidence, 4),
             completeness=completeness,
             normalized_text=normalized,
@@ -639,6 +681,8 @@ class IncrementalBiblicalParser:
 
         normalized = self._build_normalized(book, self._current_chapter, self._current_verse)
 
+        verse_end_val = self._current_verse_end or self._current_verse or 0
+
         event = ReferenceDetected(
             meta=meta,
             intent="OPEN_REFERENCE",
@@ -646,7 +690,7 @@ class IncrementalBiblicalParser:
             book_id=book.id,
             chapter=self._current_chapter or 0,
             verse_start=self._current_verse or 0,
-            verse_end=self._current_verse or 0,
+            verse_end=verse_end_val,
             confidence=round(confidence, 4),
             raw_text=source_event.text if hasattr(source_event, "text") else "",
             normalized_text=normalized,
@@ -654,11 +698,12 @@ class IncrementalBiblicalParser:
         self._bus.publish(event)
         self._total_detected_published += 1
         logger.info(
-            "ReferenceDetected (incremental): %s %d:%d confidence=%.2f "
+            "ReferenceDetected (incremental): %s %d:%d%s confidence=%.2f "
             "latency=%dms (corr=%s)",
             book.canonical,
             self._current_chapter or 0,
             self._current_verse or 0,
+            f"-{verse_end_val}" if verse_end_val != (self._current_verse or 0) else "",
             confidence,
             latency_ms,
             meta.correlation_id,

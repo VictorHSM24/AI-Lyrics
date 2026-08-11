@@ -14,10 +14,14 @@ import type {
   AudioDeviceDTO,
   AudioDevicesResponse,
   AudioLevelsDTO,
+  AutoVersionResultDTO,
   ConfigurationDTO,
   DiagnosticDTO,
   EventDTO,
   EventSnapshot,
+  FollowResultDTO,
+  FollowStartRequestDTO,
+  FollowStateDTO,
   HealthSnapshot,
   InfoDTO,
   MetricsDTO,
@@ -34,6 +38,8 @@ import type {
   PipelineStatusDTO,
   SessionDTO,
   SystemInfoDTO,
+  VersionListDTO,
+  VersionResultDTO,
 } from "@/types";
 import {
   notConfigured,
@@ -180,6 +186,16 @@ export interface OperatorService {
   getCurrent(options?: CallOptions): Promise<OperatorCurrentDTO>;
   /** Sprint 25 — valida referência string no backend (parser híbrido). */
   parseReference(query: string, version?: string, options?: CallOptions): Promise<OperatorParseResultDTO>;
+  // Sprint 23.2 — Reading Follow Mode
+  followStart(req: FollowStartRequestDTO, options?: CallOptions): Promise<FollowResultDTO>;
+  followStop(options?: CallOptions): Promise<FollowResultDTO>;
+  followAdvance(options?: CallOptions): Promise<FollowResultDTO>;
+  followState(options?: CallOptions): Promise<FollowStateDTO>;
+  // Sprint 23.2 — Version Management
+  getVersions(options?: CallOptions): Promise<VersionListDTO>;
+  getVersion(options?: CallOptions): Promise<{ version: string }>;
+  setVersion(version: string, options?: CallOptions): Promise<VersionResultDTO>;
+  setAutoVersion(enabled: boolean, options?: CallOptions): Promise<AutoVersionResultDTO>;
 }
 
 // ============================================================
@@ -307,6 +323,28 @@ export function createServices(client: Client): PresentationServices {
         { q: query, ...(version ? { version } : {}) },
         o,
       ),
+      // Sprint 23.2 — Reading Follow Mode
+      followStart: (req: FollowStartRequestDTO, o?) => call<FollowResultDTO>(
+        "operator.followStart",
+        req as unknown as Record<string, unknown>,
+        o,
+      ),
+      followStop: (o?) => call<FollowResultDTO>("operator.followStop", {}, o),
+      followAdvance: (o?) => call<FollowResultDTO>("operator.followAdvance", {}, o),
+      followState: (o?) => call<FollowStateDTO>("operator.followState", {}, o),
+      // Sprint 23.2 — Version Management
+      getVersions: (o?) => call<VersionListDTO>("operator.getVersions", {}, o),
+      getVersion: (o?) => call<{ version: string }>("operator.getVersion", {}, o),
+      setVersion: (version: string, o?) => call<VersionResultDTO>(
+        "operator.setVersion",
+        { version },
+        o,
+      ),
+      setAutoVersion: (enabled: boolean, o?) => call<AutoVersionResultDTO>(
+        "operator.setAutoVersion",
+        { enabled },
+        o,
+      ),
     },
   };
 }
@@ -355,6 +393,14 @@ export function createStubServices(): PresentationServices {
       getHistory: reject,
       getCurrent: reject,
       parseReference: reject,
+      followStart: reject,
+      followStop: reject,
+      followAdvance: reject,
+      followState: reject,
+      getVersions: reject,
+      getVersion: reject,
+      setVersion: reject,
+      setAutoVersion: reject,
     },
   };
 }

@@ -443,3 +443,51 @@ export interface OperatorHistoryDTO {
 export interface OperatorCurrentDTO {
   current: OperatorHistoryEntryDTO | null;
 }
+
+// ============================================================
+// Sprint 23.2 — Reading Follow Mode & Version Management.
+// ============================================================
+
+export interface FollowStateDTO {
+  active: boolean;
+  book: string;
+  book_id: number;
+  chapter: number;
+  verse_start: number;
+  verse_end: number;
+  current_verse: number;
+  version: string;
+  total_verses: number;
+  verses_read: number;
+}
+
+export interface FollowStartRequestDTO {
+  book_id: number;
+  book_name: string;
+  chapter: number;
+  verse_start: number;
+  verse_end: number;
+  version?: string;
+}
+
+export interface FollowResultDTO {
+  ok: boolean;
+  message: string;
+  state: FollowStateDTO;
+}
+
+export interface VersionListDTO {
+  versions: string[];
+}
+
+export interface VersionResultDTO {
+  ok: boolean;
+  message: string;
+  version: string;
+}
+
+export interface AutoVersionResultDTO {
+  ok: boolean;
+  message: string;
+  auto_enabled: boolean;
+}

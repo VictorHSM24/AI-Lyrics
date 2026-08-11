@@ -463,13 +463,16 @@ class VersePresentationService:
         search_result: Any,
         t0: float,
     ) -> None:
-        """Chama HolyricsClient.show_verse() e publica VersePresented/Failed."""
+        """Chama HolyricsClient.show_verse_references() e publica VersePresented/Failed.
+
+        Sprint 27 — usa show_verse_references() (texto livre) em vez de
+        show_verse() (ID BBCCCVVV) porque o Holyrics não reconhece o formato
+        de ID numérico, apenas referências em linguagem natural.
+        """
         t_holyrics_start = time.monotonic()
         try:
-            show_result = self._holyrics.show_verse(
-                book_id=search_result.book_id,
-                chapter=search_result.chapter,
-                verse=search_result.verse,
+            show_result = self._holyrics.show_verse_references(
+                references=search_result.reference,
                 version=self._version,
                 quick=self._quick,
             )
@@ -513,7 +516,7 @@ class VersePresentationService:
         logger.info(
             "Holyrics presented %s (status=%s, holyrics_latency=%dms, total=%dms)",
             search_result.reference,
-            show_result.status,
+            show_result.get("status", "unknown"),
             holyrics_latency_ms,
             total_latency_ms,
         )
@@ -658,7 +661,7 @@ class VersePresentationService:
             version=self._version,
             reference=search_result.reference,
             quick_presentation=self._quick,
-            holyrics_status=show_result.status,
+            holyrics_status=show_result.get("status", "unknown"),
             holyrics_latency_ms=holyrics_latency_ms,
             total_latency_ms=total_latency_ms,
         )
@@ -666,7 +669,7 @@ class VersePresentationService:
         logger.info(
             "VersePresented: %s (status=%s, total=%dms, correlation=%s)",
             search_result.reference,
-            show_result.status,
+            show_result.get("status", "unknown"),
             total_latency_ms,
             event.correlation_id,
         )

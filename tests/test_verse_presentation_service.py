@@ -185,6 +185,21 @@ class FakeHolyricsClient:
             raise self._fail_with
         return self._result
 
+    def show_verse_references(
+        self,
+        references: str,
+        version: str = "ACF",
+        quick: bool = False,
+    ) -> dict:
+        self.calls.append({
+            "references": references,
+            "version": version,
+            "quick": quick,
+        })
+        if self._fail_with is not None:
+            raise self._fail_with
+        return {"status": self._result.status}
+
 
 # ============================================================
 # Testes — fluxo bem-sucedido.
@@ -284,15 +299,13 @@ class TestSuccessfulPresentation(unittest.TestCase):
         self.assertEqual(call["version"], "ACF")
 
     def test_holyrics_called_with_correct_args(self):
-        """Holyrics deve ser chamado com book_id, chapter, verse, version, quick."""
+        """Holyrics deve ser chamado com references, version, quick."""
         ref = _make_reference_detected()
         self.bus.publish(ref)
 
         self.assertEqual(len(self.holyrics.calls), 1)
         call = self.holyrics.calls[0]
-        self.assertEqual(call["book_id"], 43)
-        self.assertEqual(call["chapter"], 3)
-        self.assertEqual(call["verse"], 16)
+        self.assertEqual(call["references"], "João 3:16")
         self.assertEqual(call["version"], "ACF")
         self.assertFalse(call["quick"])
 

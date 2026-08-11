@@ -193,6 +193,19 @@ class FakeHolyricsClient:
         })
         return self._result
 
+    def show_verse_references(
+        self,
+        references: str,
+        version: str = "ACF",
+        quick: bool = False,
+    ) -> dict:
+        self.calls.append({
+            "references": references,
+            "version": version,
+            "quick": quick,
+        })
+        return {"status": self._result.status}
+
 
 def _collect_events(bus: PipelineEventBus) -> list:
     """Coleta eventos publicados no bus (inscreve nos tipos relevantes)."""
@@ -374,8 +387,7 @@ class TestVersePresentationAnticipation(unittest.TestCase):
         self.bus.publish(antic)
         # Holyrics foi chamado.
         self.assertEqual(len(self.holyrics.calls), 1)
-        self.assertEqual(self.holyrics.calls[0]["book_id"], 19)
-        self.assertEqual(self.holyrics.calls[0]["chapter"], 23)
+        self.assertEqual(self.holyrics.calls[0]["references"], "Salmos 23:1")
         # VersePresented foi publicado.
         presented = [e for e in events if isinstance(e, VersePresented)]
         self.assertEqual(len(presented), 1)
@@ -456,7 +468,7 @@ class TestVersePresentationAnticipation(unittest.TestCase):
         self.assertEqual(len(self.holyrics.calls), 2,
                          "Deve apresentar novamente ao corrigir")
         # Segunda chamada é a correção (verse=4).
-        self.assertEqual(self.holyrics.calls[1]["verse"], 4)
+        self.assertEqual(self.holyrics.calls[1]["references"], "Salmos 23:4")
 
     def test_detected_without_anticipada_presents_normally(self):
         """ReferenceDetected sem antecipação prévia: fluxo normal (Fluxo A)."""

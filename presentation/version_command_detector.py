@@ -1,25 +1,36 @@
-"""VersionCommandDetector — Sprint 23.2.
+"""VersionCommandDetector — Sprint 23.2 + Sprint 28 (Fase 8).
 
-Detector determinístico de comandos de mudança de versão bíblica por voz.
+Detector determinístico de comandos de voz.
 
 Responsabilidade:
-    - Consumir SpeechTranscribed (transcrição final após pausa do VAD).
-    - Detectar padrões como "muda pra NVI", "troca para Almeida", etc.
+    - Sprint 23.2: Consumir SpeechTranscribed para mudança de versão.
+    - Sprint 28 (Fase 8): Consumir SpeechCommittedWords para comandos de
+      navegação ("verso anterior", "volta", "pula", "próximo verso",
+      "capítulo N", "versículo N").
+    - Detectar padrões de mudança de versão ("muda pra NVI", etc.).
     - Validar a versão contra uma lista de versões conhecidas.
-    - Publicar VersionChanged(source="voice") quando detectado.
+    - Publicar VersionChanged(source="voice") para mudança de versão.
+    - Publicar NavigationCommandDetected para comandos de navegação.
 
-Não usa LLM — é puramente determinístico com regex, para baixa latência.
-A mudança automática pode ser desabilitada via flag _auto_enabled.
+Não usa LLM — é puramente determinístico com regex + fuzzy match,
+para baixa latência. A mudança automática pode ser desabilitada via
+flag _auto_enabled.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 from typing import Any, Protocol
 
 from pipeline.bus import PipelineEventBus
-from pipeline.events import SpeechTranscribed, VersionChanged
+from pipeline.events import (
+    NavigationCommandDetected,
+    SpeechCommittedWords,
+    SpeechTranscribed,
+    VersionChanged,
+)
 from pipeline.metadata import EventMetadata
 
 logger = logging.getLogger(__name__)
@@ -75,6 +86,58 @@ _VERSION_ALIASES: dict[str, str] = {
 }
 
 
+# Sprint 28 (Fase 8) — Comandos de navegação por voz (§15.4).
+# Lista canônica de comandos e suas variações.
+# Threshold alto (0.90) para evitar falsos positivos durante leitura.
+_NAVIGATION_THRESHOLD = 0.90
+_NAVIGATION_THRESHOLD_GOTO = 0.85  # "capítulo N" / "versículo N"
+
+_NAVIGATION_COMMANDS_BACK: list[str] = [
+    "verso anterior",
+    "versículo anterior",
+    "volta",
+    "voltar",
+]
+
+_NAVIGATION_COMMANDS_FORWARD: list[str] = [
+    "próximo verso",
+    "próximo versículo",
+    "proximo verso",
+    "proximo versículo",
+    "pula",
+    "pular",
+]
+
+# Padrões regex para "capítulo N" e "versículo N".
+_CHAPTER_PATTERN = re.compile(
+    r"cap[ií]tulo\s+(\d+)", re.IGNORECASE,
+)
+_VERSE_PATTERN = re.compile(
+    r"vers[ií]culo\s+(\d+)", re.IGNORECASE,
+)
+
+
+def _normalize_text(text: str) -> str:
+    """Normaliza texto para comparação: lowercase, sem acentos, sem pontuação."""
+    text = text.lower().strip()
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    text = re.sub(r"[^\w\s]", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _fuzzy_similarity(text1: str, text2: str) -> float:
+    """Calcula similaridade fuzzy entre dois textos [0.0, 1.0]."""
+    try:
+        from rapidfuzz import fuzz
+        score = fuzz.partial_ratio(text1, text2)
+        return score / 100.0
+    except ImportError:
+        from difflib import SequenceMatcher
+        return SequenceMatcher(None, text1, text2).ratio()
+
+
 class HolyricsProtocol(Protocol):
     """Interface mínima do HolyricsClient para validar versões."""
 
@@ -119,17 +182,27 @@ class VersionCommandDetector:
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        """Inscreve no EventBus."""
+        """Inscreve no EventBus.
+
+        Sprint 28 (Fase 8) — adiciona SpeechCommittedWords para comandos
+        de navegação. SpeechTranscribed mantido para mudança de versão.
+        """
         if self._subscribed:
             return
         self._bus.subscribe(SpeechTranscribed, self._on_speech_transcribed)
+        self._bus.subscribe(SpeechCommittedWords, self._on_committed_words)
         self._subscribed = True
-        logger.info("VersionCommandDetector started — subscribed to SpeechTranscribed.")
+        logger.info(
+            "VersionCommandDetector started — subscribed to "
+            "SpeechTranscribed + SpeechCommittedWords."
+        )
 
     def stop(self) -> None:
         """Desinscreve do EventBus."""
         if not self._subscribed:
             return
+        self._bus.unsubscribe(SpeechTranscribed, self._on_speech_transcribed)
+        self._bus.unsubscribe(SpeechCommittedWords, self._on_committed_words)
         self._subscribed = False
         logger.info("VersionCommandDetector stopped.")
 
@@ -186,9 +259,102 @@ class VersionCommandDetector:
             old, version,
         )
 
+    def _on_committed_words(self, event: SpeechCommittedWords) -> None:
+        """Detecta comandos de navegação em SpeechCommittedWords (Sprint 28 — Fase 8).
+
+        Comandos detectados (§15.4):
+          - "verso anterior" / "versículo anterior" / "volta" / "voltar" → back
+          - "próximo verso" / "próximo versículo" / "pula" / "pular" → forward
+          - "capítulo N" → goto_chapter
+          - "versículo N" → goto_verse
+
+        Threshold alto (0.90) para evitar falsos positivos durante leitura.
+        """
+        if not self._auto_enabled:
+            return
+
+        if not event.full_committed_text:
+            return
+
+        result = self._detect_navigation_command(event.full_committed_text)
+        if result is None:
+            return
+
+        command, target_value, confidence = result
+        self._publish_navigation_command(
+            event, command, target_value, event.full_committed_text, confidence,
+        )
+        logger.info(
+            "VersionCommandDetector: navigation command detected "
+            "(command=%s, target=%d, confidence=%.2f, text=%q...)",
+            command, target_value, confidence, event.full_committed_text[:50],
+        )
+
     # ------------------------------------------------------------------
     # Lógica interna
     # ------------------------------------------------------------------
+
+    def _detect_navigation_command(
+        self, text: str,
+    ) -> tuple[str, int, float] | None:
+        """Detecta comando de navegação no texto.
+
+        Returns:
+            (command, target_value, confidence) ou None.
+            command: "back" | "forward" | "goto_chapter" | "goto_verse"
+            target_value: N para goto_chapter/goto_verse, 0 para back/forward
+            confidence: score do fuzzy match
+        """
+        norm = _normalize_text(text)
+
+        # Verificar "capítulo N" e "versículo N" primeiro (regex),
+        # pois "versículo" pode confundir com "verso anterior".
+        # Só aceitar se o texto for curto (comando, não leitura).
+        if len(norm.split()) <= 5:
+            match = _CHAPTER_PATTERN.search(text)
+            if match:
+                n = int(match.group(1))
+                return ("goto_chapter", n, _NAVIGATION_THRESHOLD_GOTO)
+
+            match = _VERSE_PATTERN.search(text)
+            if match:
+                n = int(match.group(1))
+                return ("goto_verse", n, _NAVIGATION_THRESHOLD_GOTO)
+
+        # Verificar comandos de retrocesso.
+        for canonical in _NAVIGATION_COMMANDS_BACK:
+            score = _fuzzy_similarity(norm, _normalize_text(canonical))
+            if score >= _NAVIGATION_THRESHOLD:
+                return ("back", 0, score)
+
+        # Verificar comandos de avanço.
+        for canonical in _NAVIGATION_COMMANDS_FORWARD:
+            score = _fuzzy_similarity(norm, _normalize_text(canonical))
+            if score >= _NAVIGATION_THRESHOLD:
+                return ("forward", 0, score)
+
+        return None
+
+    def _publish_navigation_command(
+        self,
+        source_event: SpeechCommittedWords,
+        command: str,
+        target_value: int,
+        raw_text: str,
+        confidence: float,
+    ) -> None:
+        """Publica NavigationCommandDetected no EventBus."""
+        meta = EventMetadata.for_next(
+            previous=source_event.meta,
+            origin="VersionCommandDetector",
+        )
+        self._bus.publish(NavigationCommandDetected(
+            meta=meta,
+            command=command,
+            target_value=target_value,
+            raw_text=raw_text,
+            confidence=confidence,
+        ))
 
     def _detect_version_command(self, text: str) -> str | None:
         """Extrai a versão do texto usando os padrões de comando."""

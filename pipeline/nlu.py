@@ -1,12 +1,19 @@
 """BiblicalNLUService — interpretação de linguagem natural bíblica (Sprint 17).
 
-Responsabilidades:
+Sprint 28 (Fase 9) — Desativado:
+  Na arquitetura streaming-first, o `IncrementalBiblicalParser` (que opera
+  em `SpeechCommittedWords`) é o único caminho de parsing. O
+  `BiblicalNLUService` deixa de assinar `SpeechTranscribed` por padrão
+  (`enabled=False`). A classe é mantida para compatibilidade retroativa
+  e pode ser reativada via `enabled=True` se necessário.
+
+Responsabilidades (quando enabled=True):
   - Assinar eventos SpeechTranscribed do EventBus.
   - Executar o Parser determinístico (sem LLM) para interpretar o texto.
   - Publicar ReferenceDetected, ReferenceInvalid, ou IntentUnknown.
   - Totalmente stateless — nenhum estado entre invocações.
 
-Fluxo:
+Fluxo (quando enabled=True):
   SpeechTranscribed
     → BiblicalNLUService.on_transcribed()
     → Parser.parse(text)
@@ -58,10 +65,16 @@ _MAX_VERSE = 200    # nenhum capítulo tem mais de 176 versículos
 class BiblicalNLUService:
     """Serviço de interpretação bíblica que consome SpeechTranscribed.
 
+    Sprint 28 (Fase 9) — por padrão `enabled=False`, o que significa que
+    o serviço não assina `SpeechTranscribed`. O parser incremental é o
+    único caminho de parsing na arquitetura streaming-first.
+
     Args:
         parser: instância de Parser (determinístico, stateless).
         bus: PipelineEventBus para assinar e publicar eventos.
         session_id: ID da sessão atual (para EventMetadata).
+        enabled: se True, assina SpeechTranscribed no start().
+            Sprint 28 (Fase 9): default=False (parser incremental é único caminho).
     """
 
     def __init__(
@@ -69,10 +82,12 @@ class BiblicalNLUService:
         parser: Parser,
         bus: PipelineEventBus,
         session_id: str,
+        enabled: bool = False,
     ) -> None:
         self._parser = parser
         self._bus = bus
         self._session_id = session_id
+        self._enabled = enabled
         self._subscribed = False
 
         # Métricas
@@ -82,15 +97,26 @@ class BiblicalNLUService:
         self._total_unknown = 0
         self._total_latency_ms = 0
 
-        logger.info("BiblicalNLUService initialized.")
+        logger.info(
+            "BiblicalNLUService initialized (enabled=%s).", enabled,
+        )
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        """Inscreve no EventBus para receber SpeechTranscribed."""
+        """Inscreve no EventBus para receber SpeechTranscribed.
+
+        Sprint 28 (Fase 9) — se enabled=False, não assina nada.
+        """
         if self._subscribed:
+            return
+        if not self._enabled:
+            logger.info(
+                "BiblicalNLUService: start() ignorado (enabled=False — "
+                "parser incremental é o único caminho)."
+            )
             return
         self._bus.subscribe(SpeechTranscribed, self._on_transcribed)
         self._subscribed = True
@@ -100,7 +126,7 @@ class BiblicalNLUService:
         """Desinscreve do EventBus."""
         if not self._subscribed:
             return
-        # EventBus não tem unsubscribe, mas marcamos como parado.
+        self._bus.unsubscribe(SpeechTranscribed, self._on_transcribed)
         self._subscribed = False
         logger.info("BiblicalNLUService stopped.")
 
@@ -306,6 +332,11 @@ class BiblicalNLUService:
     @property
     def is_running(self) -> bool:
         return self._subscribed
+
+    @property
+    def enabled(self) -> bool:
+        """Sprint 28 (Fase 9) — se True, assina SpeechTranscribed no start()."""
+        return self._enabled
 
     @property
     def total_processed(self) -> int:

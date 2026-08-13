@@ -1,31 +1,32 @@
-"""StreamingSTTService — transcrição parcial contínua (Sprint 19).
+"""StreamingSTTService — transcrição parcial contínua (Sprint 19 + Sprint 28).
 
 Responsabilidade:
   - Consumir janelas de áudio da SlidingWindow.
   - Transcrever via STTExecutor (serializa acesso ao Whisper).
-  - Comparar nova transcrição com a anterior (diff por prefixo).
-  - Publicar SpeechPartial (primeira vez) ou SpeechPartialUpdated
-    (apenas se o texto evoluiu).
+  - **Sprint 28 — LocalAgreement-2**: comparar palavras da transcrição
+    atual com a anterior; palavras que aparecem em ambas = COMMITTED.
+  - Publicar SpeechCommittedWords (palavras confirmed — fluxo primário).
+  - Publicar SpeechPartial/Updated (texto completo — fluxo de UI).
   - NUNCA chama parser, NUNCA chama Holyrics, NUNCA publica
     ReferenceDetected.
 
-Sprint 19 — Streaming Speech Pipeline:
-  Este serviço permite que referências sejam detectadas ANTES do
-  fim da fala. Ele transcreve continuamente a janela deslizante
-  e publica o texto parcial para o IncrementalBiblicalParser
-  consumir.
+Sprint 28 — LocalAgreement-2 + Committed Words:
+  O algoritmo LocalAgreement-2 (ufal/whisper_streaming, IWSLT 2022)
+  resolve o problema de estabilidade sem depender de silêncio:
 
-Janela incremental com sobreposição (Etapa 4 — decisão do usuário):
-  A cada 400ms, a SlidingWindow extrai os últimos 6s de áudio.
-  O StreamingSTTService transcreve essa janela e compara com a
-  transcrição anterior. Se o prefixo for igual, apenas o sufixo
-  novo é publicado em SpeechPartialUpdated.appended_text.
+  1. Transcreve o áudio com word_timestamps=True.
+  2. Compara as palavras da transcrição atual com a anterior.
+  3. Palavras que aparecem em AMBAS (prefixo comum) = COMMITTED.
+  4. Publica SpeechCommittedWords com as palavras newly committed.
+  5. Continua publicando SpeechPartial/Updated para UI.
 
   Exemplo:
-    Janela 1 (0-6s):  "Irmãos vamos abrir nossas Bíblias no evangelho de João"
-    Janela 2 (0.4-6.4s): "Irmãos vamos abrir nossas Bíblias no evangelho de João capítulo três"
-    Diff: "capítulo três" (novo)
-    → SpeechPartialUpdated(text=completo, appended_text="capítulo três")
+    Transcrição T1: "irmãos vamos abrir no evangelho de joão capítulo"
+    Transcrição T2: "irmãos vamos abrir no evangelho de joão capítulo três"
+    Prefixo comum: 8 palavras → COMMITTED "irmãos vamos abrir no evangelho de joão capítulo"
+    "três" é PARTIAL (só em T2, não confirmada ainda)
+    → SpeechCommittedWords(committed_text="irmãos vamos abrir no evangelho de joão capítulo")
+    → SpeechPartialUpdated(text="irmãos vamos abrir no evangelho de joão capítulo três")
 
 Thread Safety:
   - Roda na thread da SlidingWindow (callback on_window).
@@ -43,7 +44,7 @@ import numpy as np
 
 from microfone.stt_executor import STTExecutor
 from pipeline.bus import PipelineEventBus
-from pipeline.events import SpeechPartial, SpeechPartialUpdated
+from pipeline.events import SpeechCommittedWords, SpeechPartial, SpeechPartialUpdated
 from pipeline.metadata import EventMetadata
 # Sprint 21.9 — Telemetria de observabilidade (não altera comportamento).
 from telemetry import hooks as telemetry_hooks
@@ -80,6 +81,9 @@ class StreamingSTTService:
         min_text_change: int = 3,
         min_rms: float = 0.005,
         min_confidence: float = 0.30,
+        # Sprint 28 — LocalAgreement-2: proteções de buffer.
+        max_context_seconds: float = 12.0,
+        trim_margin_seconds: float = 0.2,
     ) -> None:
         self._executor = executor
         self._bus = bus
@@ -106,6 +110,17 @@ class StreamingSTTService:
         #    sem fala real).
         self._min_rms = min_rms
         self._min_confidence = min_confidence
+        # Sprint 28 — proteções de buffer para LocalAgreement-2.
+        # max_context_seconds: se o texto committed crescer além deste
+        # limite de tempo (em segundos de áudio), algo está errado
+        # (ex.: Whisper alucinando, buffer crescer indefinidamente).
+        # Nesse caso, logar warning e forçar reset de prev_words.
+        self._max_context_seconds = max_context_seconds
+        # trim_margin_seconds: margem de áudio mantida antes da última
+        # palavra committed ao fazer trim. Reservado para futura
+        # implementação de buffer trimming real (buffer acumulado vs
+        # janela fixa do SlidingWindow).
+        self._trim_margin_seconds = trim_margin_seconds
 
         # Estado do fluxo parcial atual.
         self._active = False
@@ -113,6 +128,21 @@ class StreamingSTTService:
         self._current_correlation_id: str | None = None
         self._current_causation_id: str | None = None
         self._current_language: str = "pt"
+
+        # Sprint 28 — LocalAgreement-2 state.
+        # _prev_words: palavras da transcrição anterior (lowercase, start, end).
+        # Usado para comparar com a transcrição atual e commitar palavras
+        # que aparecem em ambas (prefixo comum).
+        self._prev_words: list[tuple[str, float, float]] = []
+        # _committed_text: texto committed acumulado do fluxo atual.
+        # Cresce conforme LocalAgreement-2 confirma palavras.
+        self._committed_text: str = ""
+        # _committed_word_count: número de palavras já committed.
+        # Usado para saber quantas palavras do prefixo já foram publicadas.
+        self._committed_word_count: int = 0
+        # Métricas de LocalAgreement-2.
+        self._total_committed_published: int = 0
+        self._total_committed_words: int = 0
 
         # Métricas.
         self._total_windows = 0
@@ -141,6 +171,10 @@ class StreamingSTTService:
         self._current_text = ""
         self._current_correlation_id = None
         self._current_causation_id = None
+        # Sprint 28 — resetar estado de LocalAgreement-2.
+        self._prev_words = []
+        self._committed_text = ""
+        self._committed_word_count = 0
         logger.info("StreamingSTTService started.")
 
     def stop(self) -> None:
@@ -189,6 +223,8 @@ class StreamingSTTService:
                 "StreamingSTT: skipping silence (rms=%.6f < %.6f).",
                 rms, self._min_rms,
             )
+            # Sprint 28 — resetar prev_words em silêncio (buffer trimming implícito).
+            self._prev_words = []
             # Sprint 21.9 — telemetria.
             telemetry_hooks.stt_window(
                 correlation_id=self._current_correlation_id,
@@ -201,8 +237,10 @@ class StreamingSTTService:
         t0 = time.monotonic()
 
         try:
+            # Sprint 28 — word_timestamps=True para LocalAgreement-2.
             job = self._executor.transcribe_audio(
                 audio, sample_rate=self._sample_rate,
+                word_timestamps=True,
             )
         except Exception as e:
             logger.error("StreamingSTT transcription error: %s", e)
@@ -219,6 +257,8 @@ class StreamingSTTService:
         # Texto vazio — não publicar.
         if not new_text:
             self._total_skipped_empty += 1
+            # Sprint 28 — resetar prev_words em silêncio (buffer trimming implícito).
+            self._prev_words = []
             # Sprint 21.9 — telemetria.
             telemetry_hooks.stt_window(
                 correlation_id=self._current_correlation_id,
@@ -233,16 +273,14 @@ class StreamingSTTService:
             return
 
         # Sprint 21.3.2 — filtro de confiança anti-alucinação.
-        # Alucinações do Whisper em silêncio/ruído têm confiança baixa
-        # (~0.12-0.20). Transcrições legítimas têm confiança > 0.50.
-        # Se a confiança for muito baixa, o texto provavelmente é
-        # alucinação e não deve ser publicado.
         if result.confidence < self._min_confidence:
             self._total_skipped_low_confidence += 1
             logger.debug(
                 "StreamingSTT: skipping low-confidence text (conf=%.3f < %.3f, text=%r).",
                 result.confidence, self._min_confidence, new_text[:60],
             )
+            # Sprint 28 — resetar prev_words (não confiar em alucinação).
+            self._prev_words = []
             # Sprint 21.9 — telemetria.
             telemetry_hooks.stt_window(
                 correlation_id=self._current_correlation_id,
@@ -257,6 +295,24 @@ class StreamingSTTService:
             )
             return
 
+        # Sprint 28 — extrair palavras com timestamps do resultado.
+        current_words = self._extract_words_list(result.words, result.text)
+
+        # Sprint 28 — LocalAgreement-2: commitar palavras que aparecem
+        # em ambas as transcrições (atual e anterior).
+        new_committed = self._local_agreement(current_words)
+
+        # Publicar SpeechCommittedWords se há novas palavras committed.
+        if new_committed:
+            self._publish_committed_words(
+                new_committed_words=new_committed,
+                full_committed_text=self._committed_text,
+                confidence=result.confidence,
+                latency_ms=latency_ms,
+                audio_duration_ms=duration_ms,
+                timestamp=timestamp,
+            )
+
         # Primeira transcrição do fluxo — publicar SpeechPartial.
         if self._current_correlation_id is None or not self._current_text:
             self._publish_partial(
@@ -267,6 +323,8 @@ class StreamingSTTService:
                 timestamp,
             )
             self._current_text = new_text
+            # Sprint 28 — guardar palavras para próxima comparação.
+            self._prev_words = current_words
             # Sprint 21.9 — telemetria.
             telemetry_hooks.stt_window(
                 correlation_id=self._current_correlation_id,
@@ -280,36 +338,171 @@ class StreamingSTTService:
             )
             return
 
-        # Transcrição subsequente — comparar com texto anterior.
+        # Transcrição subsequente — comparar com texto anterior para partial.
         appended = self._compute_diff(self._current_text, new_text)
 
-        # Se não há mudança significativa, não publicar.
-        if len(appended.strip()) < self._min_text_change:
-            self._total_skipped_no_change += 1
-            # Sprint 21.9 — telemetria.
-            telemetry_hooks.stt_window(
-                correlation_id=self._current_correlation_id,
-                audio_duration_ms=duration_ms,
-                rms=rms,
-                skipped_no_change=True,
-                transcribed=True,
-                text=new_text,
+        # Se não há mudança significativa no partial, não publicar partial.
+        if len(appended.strip()) >= self._min_text_change:
+            # Publicar SpeechPartialUpdated.
+            self._publish_partial_updated(
+                full_text=new_text,
+                appended_text=appended,
                 confidence=result.confidence,
                 latency_ms=latency_ms,
-                language=self._current_language,
+                audio_duration_ms=duration_ms,
+                timestamp=timestamp,
             )
-            return
+        else:
+            self._total_skipped_no_change += 1
 
-        # Publicar SpeechPartialUpdated.
-        self._publish_partial_updated(
-            full_text=new_text,
-            appended_text=appended,
+        self._current_text = new_text
+        # Sprint 28 — guardar palavras para próxima comparação.
+        self._prev_words = current_words
+
+        # Sprint 21.9 — telemetria.
+        telemetry_hooks.stt_window(
+            correlation_id=self._current_correlation_id,
+            audio_duration_ms=duration_ms,
+            rms=rms,
+            transcribed=True,
+            text=new_text,
             confidence=result.confidence,
             latency_ms=latency_ms,
-            audio_duration_ms=duration_ms,
-            timestamp=timestamp,
+            language=self._current_language,
         )
-        self._current_text = new_text
+
+    # ------------------------------------------------------------------
+    # Sprint 28 — LocalAgreement-2
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_words_list(
+        words_tuple: tuple[tuple[str, float, float], ...],
+        full_text: str,
+    ) -> list[tuple[str, float, float]]:
+        """Extrai lista de palavras (lowercase, start, end) do STTResult.
+
+        Se word_timestamps retornou palavras, usa elas. Caso contrário
+        (ex.: backend não suporta), faz fallback splitting do texto.
+        """
+        if words_tuple:
+            return [(w.lower().strip(), s, e) for w, s, e in words_tuple if w.strip()]
+        # Fallback: sem timestamps, usar texto splitado com timestamps 0.
+        return [(w.lower().strip(), 0.0, 0.0) for w in full_text.split() if w.strip()]
+
+    def _local_agreement(
+        self,
+        current_words: list[tuple[str, float, float]],
+    ) -> list[tuple[str, float, float]]:
+        """LocalAgreement-2: commita palavras que aparecem em 2 transcrições consecutivas.
+
+        Compara ``current_words`` com ``self._prev_words`` (transcrição
+        anterior). Palavras que formam um prefixo comum entre ambas são
+        "committed" — consideradas estáveis.
+
+        Retorna apenas as palavras **novamente** committed (as que não
+        estavam committed antes). Atualiza ``self._committed_text`` e
+        ``self._committed_word_count``.
+        """
+        if not self._prev_words or not current_words:
+            return []
+
+        # Sprint 28 — proteção max_context_seconds: se a última palavra
+        # committed tem timestamp > max_context_seconds, o buffer cresceu
+        # demais. Resetar prev_words para forçar re-alinhamento.
+        if self._committed_word_count > 0:
+            last_committed_end = 0.0
+            if self._prev_words and len(self._prev_words) >= self._committed_word_count:
+                last_committed_end = self._prev_words[self._committed_word_count - 1][2]
+            if last_committed_end > self._max_context_seconds:
+                logger.warning(
+                    "StreamingSTT: committed buffer exceeded max_context_seconds "
+                    "(%.1fs > %.1fs) — resetting prev_words for re-alignment.",
+                    last_committed_end, self._max_context_seconds,
+                )
+                self._prev_words = []
+                return []
+
+        # Contar prefixo comum entre prev e current.
+        common_count = 0
+        for i in range(min(len(self._prev_words), len(current_words))):
+            if self._prev_words[i][0] == current_words[i][0]:
+                common_count += 1
+            else:
+                break
+
+        # Se o prefixo comum cresceu além do já committed, há novas palavras.
+        if common_count <= self._committed_word_count:
+            return []
+
+        # Extrair novas palavras committed.
+        new_committed = current_words[self._committed_word_count:common_count]
+
+        # Atualizar estado committed.
+        new_committed_text = " ".join(w[0] for w in new_committed)
+        if self._committed_text:
+            self._committed_text = self._committed_text + " " + new_committed_text
+        else:
+            self._committed_text = new_committed_text
+        self._committed_word_count = common_count
+
+        return new_committed
+
+    def _publish_committed_words(
+        self,
+        new_committed_words: list[tuple[str, float, float]],
+        full_committed_text: str,
+        confidence: float,
+        latency_ms: int,
+        audio_duration_ms: int,
+        timestamp: float,
+    ) -> None:
+        """Publica SpeechCommittedWords (palavras confirmed por LocalAgreement-2)."""
+        if self._current_correlation_id is None:
+            return
+
+        # Se é o primeiro evento do fluxo, criar correlation_id.
+        if self._current_causation_id is None:
+            meta = EventMetadata.for_initial(
+                session_id=self._session_id,
+                origin="StreamingSTTService",
+            )
+            self._current_correlation_id = meta.correlation_id
+            self._current_causation_id = meta.event_id
+        else:
+            meta = EventMetadata.for_next(
+                previous=EventMetadata(
+                    event_id=self._current_causation_id,
+                    correlation_id=self._current_correlation_id,
+                    causation_id=None,
+                    session_id=self._session_id,
+                    timestamp=timestamp,
+                    origin="StreamingSTTService",
+                ),
+                origin="StreamingSTTService",
+            )
+            self._current_causation_id = meta.event_id
+
+        committed_text = " ".join(w[0] for w in new_committed_words)
+        words_tuple = tuple(new_committed_words)
+
+        event = SpeechCommittedWords(
+            meta=meta,
+            committed_text=committed_text,
+            full_committed_text=full_committed_text,
+            words=words_tuple,
+            language=self._current_language,
+            confidence=confidence,
+            latency_ms=latency_ms,
+            audio_duration_ms=audio_duration_ms,
+        )
+        self._bus.publish(event)
+        self._total_committed_published += 1
+        self._total_committed_words += len(new_committed_words)
+        logger.info(
+            "SpeechCommittedWords: %r (total_committed=%d words, corr=%s)",
+            committed_text[:80], self._committed_word_count, meta.correlation_id,
+        )
 
     # ------------------------------------------------------------------
     # Diff por alinhamento de prefixo
@@ -481,6 +674,10 @@ class StreamingSTTService:
         self._current_text = ""
         self._current_correlation_id = None
         self._current_causation_id = None
+        # Sprint 28 — resetar estado de LocalAgreement-2.
+        self._prev_words = []
+        self._committed_text = ""
+        self._committed_word_count = 0
         logger.debug("StreamingSTT flow reset.")
 
     # ------------------------------------------------------------------
@@ -490,6 +687,12 @@ class StreamingSTTService:
     @property
     def current_text(self) -> str:
         return self._current_text
+
+    # Sprint 28 (Fase 10) — expor correlation_id ativo para propagação.
+    @property
+    def current_correlation_id(self) -> str | None:
+        """Correlation_id do fluxo streaming ativo, ou None se inativo."""
+        return self._current_correlation_id
 
     @property
     def total_windows(self) -> int:
@@ -515,6 +718,19 @@ class StreamingSTTService:
     @property
     def total_skipped_low_confidence(self) -> int:
         return self._total_skipped_low_confidence
+
+    # Sprint 28 — métricas de LocalAgreement-2.
+    @property
+    def total_committed_published(self) -> int:
+        return self._total_committed_published
+
+    @property
+    def total_committed_words(self) -> int:
+        return self._total_committed_words
+
+    @property
+    def committed_text(self) -> str:
+        return self._committed_text
 
     @property
     def avg_latency_ms(self) -> float:

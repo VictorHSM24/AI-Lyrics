@@ -50,13 +50,13 @@ class SemanticCache:
 
     Args:
         ttl_seconds: tempo de vida de cada entrada (default 300s = 5min).
-        max_entries: máximo de entradas (default 256).
+        max_entries: máximo de entradas (default 200 — Sprint 28).
     """
 
     def __init__(
         self,
         ttl_seconds: float = 300.0,
-        max_entries: int = 256,
+        max_entries: int = 200,
     ) -> None:
         self._ttl = ttl_seconds
         self._max = max_entries

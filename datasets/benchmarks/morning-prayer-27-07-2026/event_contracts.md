@@ -12,16 +12,17 @@ Este documento é autocontido: um desenvolvedor deve conseguir implementar compl
 2. [EventMetadata](#eventmetadata)
 3. [Eventos do Fluxo Principal](#eventos-do-fluxo-principal)
 4. [Eventos de Ciclo de Vida](#eventos-de-ciclo-de-vida)
-5. [Eventos de Referência Bíblica](#eventos-de-referência-bíblica)
-6. [Eventos de Apresentação](#eventos-de-apresentação)
-7. [Eventos Semânticos](#eventos-semânticos)
-8. [Eventos de Contexto do Sermão](#eventos-de-contexto-do-sermão)
-9. [Eventos dos RFCs (CAP-01 a CAP-07)](#eventos-dos-rfcs)
-10. [Sequências Oficiais](#sequências-oficiais)
-11. [Invalid Event Flows](#invalid-event-flows)
-12. [Event Invariants](#event-invariants)
-13. [Event Versioning](#event-versioning)
-14. [Observability](#observability)
+5. [Eventos de Fala Contínua (Sprint 16/19/28)](#eventos-de-fala-contínua)
+6. [Eventos de Referência Bíblica](#eventos-de-referência-bíblica)
+7. [Eventos de Apresentação](#eventos-de-apresentação)
+8. [Eventos Semânticos](#eventos-semânticos)
+9. [Eventos de Contexto do Sermão](#eventos-de-contexto-do-sermão)
+10. [Eventos dos RFCs (CAP-01 a CAP-07)](#eventos-dos-rfcs)
+11. [Sequências Oficiais](#sequências-oficiais)
+12. [Invalid Event Flows](#invalid-event-flows)
+13. [Event Invariants](#event-invariants)
+14. [Event Versioning](#event-versioning)
+15. [Observability](#observability)
 
 ---
 
@@ -79,7 +80,7 @@ Todo evento carrega exatamente um `EventMetadata` no campo `meta`. É o primeiro
 
 ### Fábricas
 
-- `EventMetadata.for_initial(session_id, origin)`: cria metadados para o primeiro evento de um fluxo. Gera novo `correlation_id`. `causation_id = None`.
+- `EventMetadata.for_initial(session_id, origin, correlation_id=None)`: cria metadados para o primeiro evento de um fluxo. Gera novo `correlation_id` (se não fornecido). `causation_id = None`. **Sprint 28 (Fase 10)**: se `correlation_id` fornecido, reusa-o (propagação de correlation_id do fluxo streaming ativo).
 - `EventMetadata.for_next(previous, origin)`: cria metadados para evento subsequente. Preserva `correlation_id` e `session_id`. `causation_id = previous.event_id`.
 - `EventMetadata.for_session_event(session_id, origin)`: cria metadados para eventos de ciclo de vida. Pode gerar novo `correlation_id`.
 
@@ -478,7 +479,7 @@ Estes eventos formam o pipeline linear original (Sprint 12). O fluxo principal p
 
 ---
 
-## Eventos de Fala Contínua (Sprint 16 e 19)
+## Eventos de Fala Contínua (Sprint 16, 19 e 28)
 
 ### SpeechStarted
 
@@ -486,7 +487,7 @@ Estes eventos formam o pipeline linear original (Sprint 12). O fluxo principal p
 |---|---|
 | **Nome** | `SpeechStarted` |
 | **Descrição** | VAD detectou início de fala. |
-| **Publisher** | `StreamingSTTService` |
+| **Publisher** | `SpeechPipelineService` |
 | **Subscribers** | Componentes que preparam para receber parciais |
 | **Categoria** | Operational |
 
@@ -497,7 +498,9 @@ Estes eventos formam o pipeline linear original (Sprint 12). O fluxo principal p
 | `meta` | EventMetadata | Sim | |
 | `timestamp_start` | float | Não | Timestamp de início |
 
-**Garantias:** Inicia novo `correlation_id` para o fluxo de fala contínua.
+**Garantias:**
+- Inicia novo `correlation_id` para o fluxo de fala contínua.
+- **Sprint 28 (Fase 10)**: Se há `StreamingSTTService` com correlation_id ativo, o `SpeechPipelineService` reusa-o em vez de gerar novo, garantindo que `SpeechTranscribed` case com `SpeechPartial` do mesmo fluxo.
 
 ---
 
@@ -507,7 +510,7 @@ Estes eventos formam o pipeline linear original (Sprint 12). O fluxo principal p
 |---|---|
 | **Nome** | `SpeechEnded` |
 | **Descrição** | VAD detectou fim da fala. |
-| **Publisher** | `StreamingSTTService` |
+| **Publisher** | `SpeechPipelineService` |
 | **Categoria** | Operational |
 
 **Payload:**
@@ -526,7 +529,7 @@ Estes eventos formam o pipeline linear original (Sprint 12). O fluxo principal p
 |---|---|
 | **Nome** | `SpeechSegmentCreated` |
 | **Descrição** | Segmento criado e enfileirado para transcrição. |
-| **Publisher** | `StreamingSTTService` |
+| **Publisher** | `SpeechPipelineService` |
 | **Categoria** | Operational |
 
 **Payload:**
@@ -547,7 +550,7 @@ Estes eventos formam o pipeline linear original (Sprint 12). O fluxo principal p
 |---|---|
 | **Nome** | `SpeechTranscribing` |
 | **Descrição** | Worker começou a transcrever o segmento. |
-| **Publisher** | `StreamingSTTService` |
+| **Publisher** | `SpeechWorker` |
 | **Categoria** | Operational |
 
 **Payload:**
@@ -564,14 +567,14 @@ Estes eventos formam o pipeline linear original (Sprint 12). O fluxo principal p
 | Campo | Valor |
 |---|---|
 | **Nome** | `SpeechTranscribed` |
-| **Descrição** | Transcrição completada com texto reconhecido. |
-| **Publisher** | `StreamingSTTService` |
+| **Descrição** | Confirmação de finalização — texto final após VAD fechar o segmento. **Sprint 28**: Não dispara mais parsing (o parser incremental já tratou em `SpeechCommittedWords`). |
+| **Publisher** | `SpeechWorker` |
 | **Publisher secundário** | `RecognitionHandler` (via `SpeechRecognized`) |
-| **Subscribers** | `BiblicalNLUService`, `SermonMemoryEngine`, `StateOrchestrator` (CAP-01) |
-| **Quando é publicado** | Quando a transcrição de um segmento é finalizada. |
-| **Quando NÃO deve ser publicado** | Durante streaming parcial (usar `SpeechPartial`). |
+| **Subscribers** | `SermonMemoryEngine`, `StateOrchestrator` (CAP-01: confirma/corrige/limpa), `ReadingFollowService` (fallback), `VersionCommandDetector` (mantém para mudança de versão) |
+| **Quando é publicado** | Quando a transcrição de um segmento VAD é finalizada. |
+| **Quando NÃO deve ser publicado** | Durante streaming parcial (usar `SpeechPartial`/`SpeechCommittedWords`). |
 | **Predecessores** | `SpeechTranscribing` ou `SpeechRecognized` |
-| **Sucessores** | `ReferenceDetected`, `ReferenceInvalid`, `IntentUnknown` |
+| **Sucessores** | `StateChanged` (confirmação/correção/limpeza), `ReadingFollowAdvanced` (fallback) |
 | **Categoria** | Operational |
 
 **Payload:**
@@ -585,7 +588,10 @@ Estes eventos formam o pipeline linear original (Sprint 12). O fluxo principal p
 | `latency_ms` | int | Não | Latência total (captura até transcrição) |
 | `duration_ms` | int | Não | Duração do áudio transcrito |
 
-**Garantias:** `correlation_id` preservado do fluxo de fala. Texto é final (não muda).
+**Garantias:**
+- `correlation_id` preservado do fluxo de fala. **Sprint 28 (Fase 10)**: `correlation_id` é propagado do fluxo streaming ativo (`StreamingSTTService.current_correlation_id`), garantindo que `SpeechTranscribed.correlation_id == SpeechPartial.correlation_id` do mesmo fluxo.
+- Texto é final (não muda).
+- **Sprint 28 (Fase 9)**: `BiblicalNLUService` não é mais subscriber por padrão (`enabled=False`). O parser incremental é o único caminho de parsing.
 
 **Exemplo positivo:** "Abra comigo no livro de Primeiro Coríntios" com confidence 0.95.
 **Exemplo negativo:** Texto vazio (deveria publicar `IntentUnknown` com `reason="empty_text"`).
@@ -599,7 +605,7 @@ Estes eventos formam o pipeline linear original (Sprint 12). O fluxo principal p
 | **Nome** | `SpeechPartial` |
 | **Descrição** | Transcrição parcial de streaming. |
 | **Publisher** | `StreamingSTTService` |
-| **Subscribers** | `IncrementalBiblicalParser`, `SemanticEngine` |
+| **Subscribers** | `IncrementalBiblicalParser` (Sprint 28: `SemanticEngine` migrou para `SpeechCommittedWords`) |
 | **Quando é publicado** | Quando uma janela de áudio é transcrita pela primeira vez (~400ms). |
 | **Quando NÃO deve ser publicado** | Após `SpeechEnded` (usar `SpeechTranscribed`). |
 | **Predecessores** | `SpeechStarted` |
@@ -629,7 +635,7 @@ Estes eventos formam o pipeline linear original (Sprint 12). O fluxo principal p
 | **Nome** | `SpeechPartialUpdated` |
 | **Descrição** | Atualização de transcrição parcial de streaming. |
 | **Publisher** | `StreamingSTTService` |
-| **Subscribers** | `IncrementalBiblicalParser`, `SemanticEngine` |
+| **Subscribers** | `IncrementalBiblicalParser` (Sprint 28: `SemanticEngine` migrou para `SpeechCommittedWords`) |
 | **Categoria** | Operational |
 
 **Payload:**
@@ -646,6 +652,43 @@ Estes eventos formam o pipeline linear original (Sprint 12). O fluxo principal p
 | `is_stable` | bool | Não | True se texto não deve mudar mais |
 
 **Garantias:** `text` contém o texto completo (não apenas o diff). `appended_text` contém apenas o trecho novo.
+
+---
+
+### SpeechCommittedWords
+
+| Campo | Valor |
+|---|---|
+| **Nome** | `SpeechCommittedWords` |
+| **Descrição** | Palavras confirmed por LocalAgreement-2 (duas transcrições concordam). Fluxo operacional primário para parser, semântica, contexto, estado, reading follow. |
+| **Publisher** | `StreamingSTTService` (após LocalAgreement-2 confirmar palavras) |
+| **Subscribers** | `IncrementalBiblicalParser`, `SemanticEngine`, `ReadingFollowService`, `SermonMemoryEngine`, `ContextEngine`, `VersionCommandDetector` |
+| **Quando é publicado** | A cada ciclo onde novas palavras são committed (~1s). |
+| **Quando NÃO deve ser publicado** | Durante partials não-confirmed. Após `SpeechEnded`. |
+| **Predecessores** | `SpeechPartial` ou `SpeechPartialUpdated` |
+| **Sucessores** | `ReferenceCandidate`, `ReferenceDetected`, `IntentCandidate`, `NavigationCommandDetected` |
+| **Categoria** | Operational |
+
+**Payload:**
+
+| Campo | Tipo | Obrigatório | Descrição |
+|---|---|---|---|
+| `meta` | EventMetadata | Sim | |
+| `committed_text` | str | Sim | Palavras novas confirmed nesta janela |
+| `full_committed_text` | str | Sim | Texto acumulado de todas as palavras committed |
+| `words` | tuple | Não | Lista de (word, start, end) |
+| `language` | str | Não | Idioma |
+| `confidence` | float | Não | Confiança média |
+| `latency_ms` | int | Não | Latência |
+| `audio_duration_ms` | int | Não | Duração da janela de áudio |
+
+**Garantias:**
+- `correlation_id` é o mesmo do `SpeechPartial` que originou o fluxo.
+- `full_committed_text` é acumulativo (contém todas as palavras committed desde o início do fluxo).
+- Palavras committed são estáveis por definição (LocalAgreement-2: duas transcrições concordam).
+- **Sprint 28**: Este é o fluxo operacional primário. Parser, semântica, contexto, estado e reading follow operam em committed words durante fala contínua, sem esperar `SpeechTranscribed`.
+
+**Idempotência:** Não é idempotente. Cada evento carrega palavras novas.
 
 ---
 
@@ -700,9 +743,9 @@ Estes eventos formam o pipeline linear original (Sprint 12). O fluxo principal p
 | **Nome** | `ReferenceDetected` |
 | **Descrição** | Referência bíblica detectada e validada. Evento definitivo que dispara apresentação. |
 | **Publisher primário** | `IncrementalBiblicalParser` (via `_publish_detected`) |
-| **Publisher secundário** | `BiblicalNLUService` (via `_publish_detected` a partir de `SpeechTranscribed`) |
-| **Publisher terciário** | `ReferenceResolver` (a partir de `IntentCandidate` do LLM, após validação lexical CAP-06) |
-| **Publisher quaternário** | `StateOrchestrator` (CAP-02: completar referência cross-segmento) |
+| **Publisher secundário** | `ReferenceResolver` (a partir de `IntentCandidate` do LLM, após validação lexical CAP-06) |
+| **Publisher terciário** | `StateOrchestrator` (CAP-02: completar referência cross-segmento) |
+| **Nota Sprint 28 (Fase 9)** | `BiblicalNLUService` não é mais publisher — desativado por padrão (`enabled=False`). O parser incremental é o único caminho de parsing. |
 | **Subscribers** | `VersePresentationService`, `StateOrchestrator` (CAP-01), `SermonMemoryEngine` |
 | **Quando é publicado** | Quando uma referência bíblica é completamente identificada com confiança >= 0.90 (parser) ou validada via Searcher (resolver). |
 | **Quando NÃO deve ser publicado** | Se a referência está incompleta (publicar `ReferenceCandidate`). Se a referência é inválida (publicar `ReferenceInvalid`). Se o livro não foi explicitamente mencionado e a fonte é LLM (CAP-06 rejeita). |
@@ -749,8 +792,8 @@ Estes eventos formam o pipeline linear original (Sprint 12). O fluxo principal p
 | Campo | Valor |
 |---|---|
 | **Nome** | `ReferenceInvalid` |
-| **Descrição** | Referência bíblica inválida detectada pelo parser. |
-| **Publisher** | `BiblicalNLUService` (via `_publish_invalid`) |
+| **Descrição** | Referência bíblica inválida detectada pelo parser. **Sprint 28 (Fase 9)**: `BiblicalNLUService` desativado por padrão; evento só é publicado em modo de compatibilidade (`enabled=True`). |
+| **Publisher** | `BiblicalNLUService` (via `_publish_invalid` — apenas com `enabled=True`) |
 | **Subscribers** | `StateOrchestrator` (CAP-01), componentes de telemetria |
 | **Quando é publicado** | Quando o parser identifica um livro mas capítulo/versículo são inválidos. |
 | **Quando NÃO deve ser publicado** | Se a referência é válida (publicar `ReferenceDetected`). Se nenhum livro foi identificado (publicar `IntentUnknown`). |
@@ -777,8 +820,8 @@ Estes eventos formam o pipeline linear original (Sprint 12). O fluxo principal p
 | Campo | Valor |
 |---|---|
 | **Nome** | `IntentUnknown` |
-| **Descrição** | Intenção não reconhecida pelo parser. |
-| **Publisher** | `BiblicalNLUService` (via `_publish_unknown`) |
+| **Descrição** | Intenção não reconhecida pelo parser. **Sprint 28 (Fase 9)**: `BiblicalNLUService` desativado por padrão; evento só é publicado em modo de compatibilidade (`enabled=True`). |
+| **Publisher** | `BiblicalNLUService` (via `_publish_unknown` — apenas com `enabled=True`) |
 | **Subscribers** | `StateOrchestrator` (CAP-01), componentes de telemetria |
 | **Quando é publicado** | Quando o parser não identifica nem referência nem navegação nem gatilhos bíblicos. |
 | **Quando NÃO deve ser publicado** | Se uma referência foi detectada (publicar `ReferenceDetected` ou `ReferenceInvalid`). |
@@ -828,6 +871,85 @@ Estes eventos formam o pipeline linear original (Sprint 12). O fluxo principal p
 - `completeness` é sempre "chapter" ou "verse", nunca "book".
 - Pode ser confirmada por `ReferenceDetected` posterior com mesmo `correlation_id`.
 - Pode ser corrigida por `ReferenceDetected` posterior com mesmo `correlation_id` mas referência diferente.
+
+---
+
+### NavigationCommandDetected
+
+| Campo | Valor |
+|---|---|
+| **Nome** | `NavigationCommandDetected` |
+| **Descrição** | Comando de navegação por voz detectado em `SpeechCommittedWords` (Sprint 28 — Fase 8). |
+| **Publisher** | `VersionCommandDetector` |
+| **Subscribers** | `ReadingFollowService` (executa retrocesso/avanço/pulo) |
+| **Quando é publicado** | Quando o detector identifica comandos como "verso anterior", "volta", "pula", "próximo verso", "capítulo N", "versículo N" com confiança >= 0.90 (0.85 para goto). |
+| **Quando NÃO deve ser publicado** | Durante leitura normal (threshold alto evita falsos positivos). Se texto vazio. |
+| **Predecessores** | `SpeechCommittedWords` |
+| **Sucessores** | `ReadingFollowAdvanced` (reason="voice_command_back"/"voice_command_forward"/"voice_command_goto") |
+| **Categoria** | Operational |
+
+**Payload:**
+
+| Campo | Tipo | Obrigatório | Descrição |
+|---|---|---|---|
+| `meta` | EventMetadata | Sim | |
+| `command` | str | Sim | "back", "forward", "goto_chapter", "goto_verse" |
+| `target_value` | int | Não | N para "capítulo N" / "versículo N" (0 para back/forward) |
+| `raw_text` | str | Não | Texto original que disparou o comando |
+| `confidence` | float | Sim | Score do fuzzy match (>= 0.90 para back/forward, >= 0.85 para goto) |
+
+**Garantias:**
+- `command` é um dos quatro valores canônicos.
+- `confidence` >= 0.90 para comandos de retrocesso/avanço.
+- `confidence` >= 0.85 para comandos de pulo (goto_chapter/goto_verse).
+- Threshold alto evita falsos positivos durante leitura normal.
+- `correlation_id` é o mesmo do `SpeechCommittedWords` que originou o comando.
+
+**Comandos suportados (§15.4):**
+
+| Comando (PT-BR) | Ação | Confiança mínima |
+|---|---|---|
+| "verso anterior" / "versículo anterior" | Retrocede 1 versículo | 0.90 |
+| "volta" / "voltar" | Retrocede 1 versículo | 0.90 |
+| "próximo verso" / "próximo versículo" | Avança 1 versículo | 0.90 |
+| "pula" / "pular" | Avança 1 versículo | 0.90 |
+| "capítulo N" | Pula para capítulo N, versículo 1 | 0.85 |
+| "versículo N" | Pula para versículo N do capítulo atual | 0.85 |
+
+---
+
+### ReadingFollowAdvanced
+
+| Campo | Valor |
+|---|---|
+| **Nome** | `ReadingFollowAdvanced` |
+| **Descrição** | Reading Follow avançou para um novo versículo durante leitura contínua (Sprint 28 — Fases 7/8). |
+| **Publisher** | `ReadingFollowService` |
+| **Subscribers** | Componentes de telemetria, UI (para acompanhar leitura) |
+| **Quando é publicado** | Quando o fuzzy match atinge threshold adaptativo em `SpeechCommittedWords`, ou quando comando de voz navega. |
+| **Quando NÃO deve ser publicado** | Se Reading Follow inativo. Se buffer < 5 palavras. |
+| **Predecessores** | `SpeechCommittedWords` (fuzzy match) ou `NavigationCommandDetected` (comando de voz) |
+| **Sucessores** | `VersePresented` (apresentação do novo versículo) |
+| **Categoria** | Operational |
+
+**Payload:**
+
+| Campo | Tipo | Obrigatório | Descrição |
+|---|---|---|---|
+| `meta` | EventMetadata | Sim | |
+| `book` | str | Sim | Nome do livro |
+| `book_id` | int | Sim | ID do livro |
+| `chapter` | int | Sim | Capítulo |
+| `verse` | int | Sim | Novo versículo apresentado |
+| `reason` | str | Sim | "fuzzy_match", "voice_command_forward", "voice_command_back", "voice_command_goto" |
+| `confidence` | float | Não | Score do fuzzy match (0 se comando de voz) |
+
+**Garantias:**
+- `reason` é um dos quatro valores canônicos.
+- `verse` está dentro do range ativo `[verse_start, verse_end]`.
+- Threshold adaptativo: `< 30` palavras → `0.65`; `30-79` → `0.70`; `>= 80` → `0.75`.
+- Buffer resetado após avanço.
+- `correlation_id` é o mesmo do `SpeechCommittedWords` ou `NavigationCommandDetected`.
 
 ---
 
@@ -1177,7 +1299,7 @@ Estes eventos formam o pipeline linear original (Sprint 12). O fluxo principal p
 
 ## Eventos dos RFCs
 
-Estes eventos são definidos pelos RFCs CAP-01 a CAP-07 e ainda não existem no código. São especificados aqui como contratos formais para implementação futura.
+Estes eventos são definidos pelos RFCs CAP-01 a CAP-07. **Sprint 28**: `StateChanged` e `StateOrchestrator` já estão implementados (Fase 5). Os demais permanecem como contratos formais para implementação futura.
 
 ### StateChanged
 
@@ -1334,7 +1456,7 @@ Estes eventos são definidos pelos RFCs CAP-01 a CAP-07 e ainda não existem no 
 
 ## Sequências Oficiais
 
-### Fluxo Principal (Streaming First)
+### Fluxo Principal (Streaming First — Sprint 28)
 
 ```
 SpeechStarted
@@ -1343,9 +1465,15 @@ SpeechPartial
     ↓
 SpeechPartialUpdated (múltiplos)
     ↓
+SpeechCommittedWords (LocalAgreement-2 confirma palavras — fluxo operacional primário)
+    ↓
     ├─→ IncrementalBiblicalParser
     │       ↓
     │   ReferenceCandidate (confiança crescente)
+    │       ↓
+    │   ReferenceAntecipada (anticipation_threshold <= confidence < detection_threshold)
+    │       ↓
+    │   VersePresented (apresentação antecipada)
     │       ↓
     │   ReferenceDetected (quando confidence >= 0.90)
     │       ↓
@@ -1353,37 +1481,68 @@ SpeechPartialUpdated (múltiplos)
     │       ↓
     │   VerseResolving → VerseResolved → VersePresented
     │
-    └─→ SemanticEngine
+    ├─→ SemanticEngine
+    │       ↓
+    │   IntentCandidate
+    │       ↓
+    │   ReferenceResolver
+    │       ↓
+    │   ├─→ ReferenceDetected (se aceito e validado)
+    │   │       ↓
+    │   │   StateChanged (PRESENT)
+    │   │       ↓
+    │   │   VerseResolving → VerseResolved → VersePresented
+    │   │
+    │   ├─→ IntentRejected (se rejeitado por CAP-06)
+    │   │
+    │   └─→ SemanticResolutionCompleted (telemetria)
+    │
+    ├─→ ReadingFollowService (se Reading Follow ativo)
+    │       ↓
+    │   ReadingFollowAdvanced (fuzzy_match em committed words)
+    │       ↓
+    │   VersePresented
+    │
+    └─→ VersionCommandDetector
             ↓
-        IntentCandidate
+        NavigationCommandDetected (comando de voz)
             ↓
-        ReferenceResolver
+        ReadingFollowAdvanced (voice_command_*)
             ↓
-        ├─→ ReferenceDetected (se aceito e validado)
-        │       ↓
-        │   StateChanged (PRESENT)
-        │       ↓
-        │   VerseResolving → VerseResolved → VersePresented
-        │
-        ├─→ IntentRejected (se rejeitado por CAP-06)
-        │
-        └─→ SemanticResolutionCompleted (telemetria)
+        VersePresented
 ```
 
-### Fluxo de Referência Incompleta (PREPARE)
+### Fluxo de Finalização (Sprint 28 — Fase 9/10)
 
 ```
-SpeechPartial
+[VAD fecha segmento]
+    ↓
+SpeechEnded
+    ↓
+SpeechTranscribed (corr_id = mesmo do SpeechPartial — Fase 10)
+    ↓
+    ├─→ StateOrchestrator (confirma/corrige/limpa estado)
+    ├─→ ReadingFollowService (fallback se committed words não avançaram)
+    ├─→ VersionCommandDetector (mudança de versão)
+    └─→ Frontend (exibe transcrição final)
+    
+[Nota: BiblicalNLUService NÃO consome — desativado por padrão (Fase 9)]
+```
+
+### Fluxo de Referência Incompleta (PREPARE — Sprint 28)
+
+```
+SpeechCommittedWords
     ↓
 ReferenceCandidate (completeness="book", confidence=0.40)
     ↓
 StateChanged (WAIT → PREPARE, reason="book_detected")
     ↓
-[próximo segmento]
+[mais committed words no mesmo fluxo]
     ↓
-SpeechTranscribed
+SpeechCommittedWords (capítulo e versículo completam)
     ↓
-ReferenceDetected (capítulo e versículo completam a referência)
+ReferenceDetected (confidence >= 0.90)
     ↓
 StateChanged (PREPARE → PRESENT, reason="reference_complete")
     ↓
@@ -1420,10 +1579,10 @@ StateChanged (→ PRESENT, reason="repeat", repeat=true)
 [VersePresentationService suprime re-apresentação]
 ```
 
-### Fluxo de Menção Narrativa (CAP-03)
+### Fluxo de Menção Narrativa (CAP-03 — Sprint 28)
 
 ```
-SpeechTranscribed ("pregava ontem sobre Gênesis")
+SpeechCommittedWords ("pregava ontem sobre Gênesis")
     ↓
 IntentClassified (intent_type="NARRATIVE_MENTION")
     ↓
@@ -1432,10 +1591,10 @@ StateChanged (WAIT → IGNORE, reason="narrative_mention")
 [nenhum ReferenceDetected, nenhum VersePresented]
 ```
 
-### Fluxo de Inferência Rejeitada (CAP-06)
+### Fluxo de Inferência Rejeitada (CAP-06 — Sprint 28)
 
 ```
-SpeechPartial ("igreja de Tessalônica")
+SpeechCommittedWords ("igreja de Tessalônica")
     ↓
 SemanticEngine
     ↓
@@ -1612,6 +1771,13 @@ Invariantes que devem ser verdade em TODO momento. Violação de qualquer invari
 24. **`causation_id` aponta para o `event_id` do evento predecessor na cadeia.**
 25. **Eventos `TelemetryEvent` não são persistidos no `EventStore`.**
 26. **Eventos `OperationalEvent` são persistidos no `EventStore`.**
+27. **`SpeechCommittedWords.correlation_id` é o mesmo do `SpeechPartial` do mesmo fluxo.** (Sprint 28)
+28. **`SpeechTranscribed.correlation_id` é o mesmo do `SpeechPartial` do mesmo fluxo.** (Sprint 28 — Fase 10)
+29. **`NavigationCommandDetected.command` é um de {"back", "forward", "goto_chapter", "goto_verse"}.** (Sprint 28)
+30. **`NavigationCommandDetected.confidence` >= 0.90 para back/forward, >= 0.85 para goto.** (Sprint 28)
+31. **`ReadingFollowAdvanced.reason` é um de {"fuzzy_match", "voice_command_forward", "voice_command_back", "voice_command_goto"}.** (Sprint 28)
+32. **`BiblicalNLUService` desativado por padrão em produção (`enabled=False`).** (Sprint 28 — Fase 9)
+33. **Parser incremental é o único caminho de parsing em produção.** (Sprint 28 — Fase 9)
 
 ---
 
@@ -1643,6 +1809,14 @@ Invariantes que devem ser verdade em TODO momento. Violação de qualquer invari
 - `IntentClassified`: v1 (CAP-03).
 - `IntentRejected`: v1 (CAP-06).
 
+### Versionamento de Eventos do Sprint 28
+
+- `SpeechCommittedWords`: v1 (Sprint 28 — Fase 1). Novo evento. Fluxo operacional primário.
+- `NavigationCommandDetected`: v1 (Sprint 28 — Fase 8). Novo evento.
+- `ReadingFollowAdvanced`: v1 (Sprint 28 — Fase 7). v1.1 adiciona `reason` (Fase 8). Campo `reason` tem default `"fuzzy_match"`, então consumidores v1 não quebram.
+- `SpeechTranscribed`: v1 (Sprint 16). v2 (Sprint 28 — Fase 9) muda semântica: não dispara mais parsing. v2.1 (Fase 10) propaga `correlation_id` do fluxo streaming ativo.
+- `BiblicalNLUService`: desativado por padrão em Sprint 28 (Fase 9). `enabled=True` mantém comportamento legacy para testes.
+
 ### Backward Compatibility
 
 Consumidores devem ser resilientes a campos desconhecidos. Se um evento contém um campo que o consumidor não conhece, o consumidor deve ignorar o campo e processar o evento normalmente. Não deve lançar exceção.
@@ -1660,6 +1834,7 @@ Consumidores devem ser resilientes a campos desconhecidos. Se um evento contém 
 | `SpeechTranscribed` | Sim | Texto final, replay |
 | `SpeechPartial` | Não | Alta frequência, valor transitório |
 | `SpeechPartialUpdated` | Não | Alta frequência, valor transitório |
+| `SpeechCommittedWords` | Sim | Sprint 28 — fluxo operacional primário, rastreabilidade |
 | `SpeechStarted` | Sim | Início de fluxo de fala |
 | `SpeechEnded` | Sim | Fim de fluxo de fala |
 | `SpeechSegmentCreated` | Sim | Criação de segmento |
@@ -1668,6 +1843,8 @@ Consumidores devem ser resilientes a campos desconhecidos. Se um evento contém 
 | `ReferenceDetected` | Sim | Evento crítico, replay, benchmark |
 | `ReferenceInvalid` | Sim | Auditoria de referências inválidas |
 | `ReferenceAntecipada` | Sim | Rastreabilidade de antecipação |
+| `NavigationCommandDetected` | Sim | Sprint 28 — auditoria de comandos de voz |
+| `ReadingFollowAdvanced` | Sim | Sprint 28 — rastreabilidade de leitura contínua |
 | `IntentUnknown` | Sim | Rastreabilidade de segmentos sem referência |
 | `IntentCandidate` | Sim | Auditoria de inferência do LLM |
 | `IntentRejected` | Sim | Auditoria de rejeições conservadoras |
@@ -1711,6 +1888,9 @@ O replay do benchmark (ADR-009) consome eventos persistidos para comparar com o 
 | `IntentClassified` | Sim | Rastreabilidade de classificação |
 | `VersePresented` | Sim | Confirmação de apresentação |
 | `SpeechTranscribed` | Sim | Input do benchmark |
+| `SpeechCommittedWords` | Sim | Sprint 28 — fluxo operacional primário |
+| `NavigationCommandDetected` | Sim | Sprint 28 — auditoria de comandos de voz |
+| `ReadingFollowAdvanced` | Sim | Sprint 28 — rastreabilidade de leitura contínua |
 | Todos os outros | Não | Não fazem parte do benchmark |
 
 ### Eventos no Benchmark

@@ -683,3 +683,117 @@ Nenhum. Esta decisão formaliza a relação já implícita entre os documentos.
 - Estabelecer processo formal para adição de novos benchmarks (revisão, aprovação, versionamento).
 - Avaliar versionamento do benchmark (ex.: `benchmark-v1.yaml`, `benchmark-v2.yaml`) se mudanças forem necessárias sem invalidar implementações existentes.
 - Considerar se o benchmark deve incluir casos negativos explícitos (ex.: "este segmento NÃO deve gerar evento") além dos 11 eventos positivos.
+
+---
+
+# ADR-011
+
+## Streaming-first com LocalAgreement-2 — SpeechCommittedWords como fluxo operacional primário
+
+Status: Accepted (Sprint 28)
+
+## Context
+
+O pipeline original aguardava o VAD fechar o segmento (silêncio prolongado) antes de disparar parsing, semântica, contexto e apresentação. Isso introduzia latência indesejada: o pregador podia falar "Gênesis 3:17" e o sistema só reagia após 500ms+ de silêncio.
+
+O `SpeechPartial`/`SpeechPartialUpdated` era a única alternativa, mas partials são instáveis (texto muda a cada janela) e geravam falsos positivos no parser e na semântica.
+
+## Decision
+
+Adicionar `SpeechCommittedWords` — palavras confirmed por LocalAgreement-2 (duas transcrições consecutivas concordam). Este evento é o **fluxo operacional primário** para:
+- `IncrementalBiblicalParser` (detecção incremental de referências)
+- `SemanticEngine` (inferência semântica)
+- `ReadingFollowService` (leitura contínua)
+- `SermonMemoryEngine` (contexto do sermão)
+- `VersionCommandDetector` (comandos de voz)
+
+`SpeechTranscribed` permanece como **confirmação/finalização**, consumido por:
+- `StateOrchestrator` (confirma/corrige/limpa estado)
+- `ReadingFollowService` (fallback)
+- `VersionCommandDetector` (mudança de versão)
+- Frontend (exibição final)
+
+## Alternatives considered
+
+### Alternativa 1: Operar em SpeechPartial diretamente
+
+Rejeitada porque partials são instáveis e geram falsos positivos. O LocalAgreement-2 garante estabilidade sem esperar silêncio.
+
+### Alternativa 2: Aguardar SpeechTranscribed apenas
+
+Rejeitada porque introduz latência indesejada (esperar silêncio). O objetivo é processar enquanto o pregador fala.
+
+## Pros
+
+- Latência reduzida: parsing e semântica operam durante a fala.
+- Estabilidade: LocalAgreement-2 garante que palavras committed não mudam.
+- Sem pipeline paralelo STT: reutiliza o mesmo StreamingSTTService.
+
+## Cons
+
+- Complexidade adicional: novo evento, novo estado em StreamingSTTService.
+- Múltiplos fluxos: partials para UI, committed words para processamento, transcribed para confirmação.
+
+## Consequences
+
+**Simples:** downstream opera em committed words durante fala contínua.
+
+**Complexo:** `SpeechTranscribed` muda de semântica (não dispara mais parsing). `BiblicalNLUService` é desativado (ADR-012).
+
+## Migration impact
+
+- `SemanticEngine` migra de `SpeechPartial` para `SpeechCommittedWords`.
+- `IncrementalBiblicalParser` continua em partials (detecção antecipada) mas também consome committed words.
+- `BiblicalNLUService` é desativado (ADR-012).
+
+---
+
+# ADR-012
+
+## Desativar BiblicalNLUService — parser incremental é o único caminho
+
+Status: Accepted (Sprint 28 — Fase 9)
+
+## Context
+
+O `BiblicalNLUService` era o parser determinístico stateless que consumia `SpeechTranscribed` e publicava `ReferenceDetected`/`ReferenceInvalid`/`IntentUnknown`. Com o streaming-first (ADR-011), o `IncrementalBiblicalParser` já detecta referências em `SpeechCommittedWords` antes do `SpeechTranscribed` chegar. Ter dois parsers causava:
+- Duplicação de `ReferenceDetected` para a mesma referência.
+- Conflito de dedup entre parser incremental e NLU.
+- Latência desnecessária (NLU só dispara após silêncio).
+
+## Decision
+
+Desativar `BiblicalNLUService` por padrão (`enabled=False` no CompositionRoot). O parser incremental é o único caminho de parsing em produção. A classe é mantida com `enabled=True` para testes de compatibilidade e legado.
+
+## Alternatives considered
+
+### Alternativa 1: Remover BiblicalNLUService completamente
+
+Rejeitada porque quebraria testes existentes e removeria um fallback potencial. Manter com `enabled=False` é mais seguro.
+
+### Alternativa 2: Manter BiblicalNLUService ativo como fallback
+
+Rejeitada porque causaria duplicação e conflito de dedup. O parser incremental é mais rápido e já cobre o caso de uso.
+
+## Pros
+
+- Caminho único de parsing: sem duplicação, sem conflito.
+- Latência reduzida: não espera `SpeechTranscribed`.
+- Testes legacy preservados com `enabled=True`.
+
+## Cons
+
+- Se o parser incremental falhar, não há fallback determinístico em `SpeechTranscribed`.
+- Manutenção de código legacy (BiblicalNLUService) que não é usado em produção.
+
+## Consequences
+
+**Simples:** um único parser em produção.
+
+**Complexo:** se o parser incremental tem um bug, não há rede de segurança via NLU. Testes do parser incremental devem ser rigorosos.
+
+## Migration impact
+
+- `api/startup/composition.py` instancia NLU com `enabled=False`.
+- Testes legacy usam `enabled=True` explicitamente.
+- `SpeechTranscribed` não dispara mais parsing.

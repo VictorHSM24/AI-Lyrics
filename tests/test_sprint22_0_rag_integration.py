@@ -19,8 +19,7 @@ import pytest
 
 from pipeline.bus import PipelineEventBus
 from pipeline.events import (
-    SpeechPartial,
-    SpeechPartialUpdated,
+    SpeechCommittedWords,
     IntentCandidate,
 )
 from pipeline.metadata import EventMetadata
@@ -48,16 +47,16 @@ def _make_meta(
     )
 
 
-def _make_partial_updated(
+def _make_committed(
     text: str,
-    appended: str = "",
     correlation_id: str | None = None,
-) -> SpeechPartialUpdated:
+) -> SpeechCommittedWords:
+    """Cria SpeechCommittedWords (Sprint 28 — substitui _make_partial_updated)."""
     meta = _make_meta(correlation_id=correlation_id)
-    return SpeechPartialUpdated(
-        meta=meta, text=text, appended_text=appended or text,
-        language="pt", confidence=0.9, latency_ms=100,
-        audio_duration_ms=2000, is_stable=False,
+    return SpeechCommittedWords(
+        meta=meta, committed_text=text, full_committed_text=text,
+        words=tuple(), language="pt",
+        confidence=0.9, latency_ms=100, audio_duration_ms=2000,
     )
 
 
@@ -138,7 +137,7 @@ class TestRAGIntegration:
 
         collector = _EventCollector(bus, [IntentCandidate])
 
-        bus.publish(_make_partial_updated(
+        bus.publish(_make_committed(
             "Porque Deus amou o mundo de tal maneira",
             correlation_id="test-corr-1",
         ))
@@ -167,7 +166,7 @@ class TestRAGIntegration:
 
         collector = _EventCollector(bus, [IntentCandidate])
 
-        bus.publish(_make_partial_updated(
+        bus.publish(_make_committed(
             "O Senhor te abençoe e te guarde",
             correlation_id="test-corr-num",
         ))
@@ -194,7 +193,7 @@ class TestRAGIntegration:
         collector = _EventCollector(bus, [IntentCandidate])
 
         # "o texto onde Jesus conversa com nicodemos" está nos stubs.
-        bus.publish(_make_partial_updated(
+        bus.publish(_make_committed(
             "o texto onde Jesus conversa com nicodemos",
             correlation_id="test-corr-2",
         ))
@@ -219,7 +218,7 @@ class TestRAGIntegration:
         collector = _EventCollector(bus, [IntentCandidate])
 
         # Texto que não corresponde a nenhum versículo (palavras raras).
-        bus.publish(_make_partial_updated(
+        bus.publish(_make_committed(
             "xyzzyqwerty nonsense blargh zzz",
             correlation_id="test-corr-3",
         ))

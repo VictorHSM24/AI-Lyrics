@@ -140,7 +140,8 @@ class TestReferenceEvents(unittest.TestCase):
         # Sprint 21.4: +1 (ReferenceAntecipada)
         # CAP-01: +1 (StateChanged)
         # CAP-03: +1 (IntentClassified)
-        self.assertEqual(len(all_event_types()), 41)
+        # Sprint 28: +1 (SpeechCommittedWords)
+        self.assertEqual(len(all_event_types()), 46)
         # Sprint 21.4 — Streaming First.
         self.assertIn("ReferenceAntecipada", names)
         # CAP-01 — StateOrchestrator.

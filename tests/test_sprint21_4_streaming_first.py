@@ -289,13 +289,13 @@ class TestIncrementalParserAnticipation(unittest.TestCase):
         self.parser.stop()
 
     def _publish_partial(self, text: str, correlation_id: str = "corr-1"):
-        """Publica um SpeechPartial com o texto dado."""
-        from pipeline.events import SpeechPartial
+        """Publica um SpeechCommittedWords com o texto dado (Sprint 28)."""
+        from pipeline.events import SpeechCommittedWords
         meta = _make_meta(correlation_id=correlation_id, event_id="evt-p1")
-        self.bus.publish(SpeechPartial(
-            meta=meta, text=text, language="pt",
+        self.bus.publish(SpeechCommittedWords(
+            meta=meta, committed_text=text, full_committed_text=text,
+            words=tuple(), language="pt",
             confidence=0.9, latency_ms=100, audio_duration_ms=6000,
-            is_stable=False,
         ))
 
     def test_book_only_does_not_publish_anticipation(self):
@@ -329,10 +329,10 @@ class TestIncrementalParserAnticipation(unittest.TestCase):
     def test_anticipation_published_only_once_per_flow(self):
         """Apenas uma ReferenceAntecipada por fluxo (não republica)."""
         events = _collect_events(self.bus)
-        # Primeira parcial: "Salmos 23" → publica antecipada.
+        # Primeira committed: "Salmos 23" → publica antecipada.
         self._publish_partial("Salmos 23", correlation_id="corr-1")
-        # Segunda parcial com mesmo correlation_id: não deve republicar.
-        from pipeline.events import SpeechPartialUpdated
+        # Segunda committed com mesmo correlation_id: não deve republicar.
+        from pipeline.events import SpeechCommittedWords
         meta2 = EventMetadata.for_next(
             previous=EventMetadata(
                 event_id="evt-p1", correlation_id="corr-1",
@@ -341,10 +341,10 @@ class TestIncrementalParserAnticipation(unittest.TestCase):
             ),
             origin="StreamingSTTService",
         )
-        self.bus.publish(SpeechPartialUpdated(
-            meta=meta2, text="Salmos 23 1", appended_text="1",
-            language="pt", confidence=0.9, latency_ms=100,
-            audio_duration_ms=6000, is_stable=False,
+        self.bus.publish(SpeechCommittedWords(
+            meta=meta2, committed_text="1", full_committed_text="Salmos 23 1",
+            words=tuple(), language="pt", confidence=0.9, latency_ms=100,
+            audio_duration_ms=6000,
         ))
         anticipations = [e for e in events if isinstance(e, ReferenceAntecipada)]
         self.assertEqual(len(anticipations), 1,

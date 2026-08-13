@@ -1,4 +1,4 @@
-"""semantic/ollama_backend.py — Backend nativo do Ollama (Sprint 21.3).
+"""semantic/ollama_backend.py — Backend nativo do Ollama (Sprint 21.3 + 28).
 
 Implementa LLMBackend usando o endpoint NATIVO do Ollama:
 
@@ -14,6 +14,13 @@ Diferenças em relação ao endpoint OpenAI-compatible (/v1/chat/completions):
    campos distintos — não há necessidade de sanitização.
 4. Opções de geração vão em `options` (não no raiz do payload).
 
+Sprint 28 — Semaphore de concorrência:
+  Ollama processa um modelo por vez na GPU. Sem controle de concorrência,
+  múltiplas inferências podem causar timeouts e contenção. Adicionamos
+  um semaphore máximo 1 no send_request para serializar acesso ao Ollama.
+  Se o semaphore estiver ocupado, a chamada espera (não descarta) —
+  o SemanticEngine faz coalescing via debounce antes de chamar.
+
 Sprint 21.3 — Etapa 3 + 4: endpoint nativo + mecanismo oficial de thinking.
 """
 
@@ -22,6 +29,7 @@ from __future__ import annotations
 import json
 import logging
 import socket
+import threading
 import urllib.error
 import urllib.request
 from typing import Any
@@ -60,11 +68,23 @@ class OllamaBackend(LLMBackend):
         base_url: str = "http://localhost:11434",
         model: str = "qwen3:8b-q4_K_M",
         api_key: str = "",
+        # Sprint 28 — semaphore de concorrência.
+        # Ollama processa um modelo por vez. Semaphore máximo 1 serializa
+        # acesso para evitar timeouts e contenção de GPU.
+        max_concurrency: int = 1,
     ) -> None:
         # Garantir que base_url NÃO termina com /v1 (endpoint nativo).
         self._base_url = base_url.rstrip("/").removesuffix("/v1")
         self._model = model
         self._api_key = api_key
+        # Sprint 28 — semaphore para serializar acesso ao Ollama.
+        self._semaphore = threading.Semaphore(max_concurrency)
+        self._max_concurrency = max_concurrency
+        # Métricas de queue depth.
+        self._total_acquired = 0
+        self._total_released = 0
+        self._current_in_flight = 0
+        self._metrics_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Identificação
@@ -177,7 +197,29 @@ class OllamaBackend(LLMBackend):
     def send_request(
         self, payload: dict[str, Any], timeout_s: float,
     ) -> BackendResponse:
-        """Envia POST /api/chat e retorna BackendResponse padronizada."""
+        """Envia POST /api/chat e retorna BackendResponse padronizada.
+
+        Sprint 28 — usa semaphore para serializar acesso ao Ollama
+        (Ollama processa um modelo por vez na GPU).
+        """
+        import time
+        # Sprint 28 — adquirir semaphore antes de enviar (serializa GPU).
+        self._semaphore.acquire()
+        with self._metrics_lock:
+            self._total_acquired += 1
+            self._current_in_flight += 1
+        try:
+            return self._send_request_impl(payload, timeout_s)
+        finally:
+            self._semaphore.release()
+            with self._metrics_lock:
+                self._total_released += 1
+                self._current_in_flight -= 1
+
+    def _send_request_impl(
+        self, payload: dict[str, Any], timeout_s: float,
+    ) -> BackendResponse:
+        """Implementação interna do send_request (sem semaphore)."""
         import time
         body = json.dumps(payload).encode("utf-8")
         url = self.endpoint
@@ -283,11 +325,17 @@ class OllamaBackend(LLMBackend):
     # ------------------------------------------------------------------
 
     def get_telemetry(self) -> dict[str, Any]:
-        return {
-            "backend_name": self.name,
-            "endpoint": self.endpoint,
-            "base_url": self._base_url,
-            "model": self._model,
-            "supports_think_parameter": self.supports_think_parameter(),
-            "protocol": "ollama-native",
-        }
+        with self._metrics_lock:
+            return {
+                "backend_name": self.name,
+                "endpoint": self.endpoint,
+                "base_url": self._base_url,
+                "model": self._model,
+                "supports_think_parameter": self.supports_think_parameter(),
+                "protocol": "ollama-native",
+                # Sprint 28 — métricas de semaphore/queue.
+                "max_concurrency": self._max_concurrency,
+                "current_in_flight": self._current_in_flight,
+                "total_acquired": self._total_acquired,
+                "total_released": self._total_released,
+            }

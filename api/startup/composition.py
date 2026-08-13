@@ -502,6 +502,9 @@ def create_composition_root() -> CompositionRoot:
         logger.warning("Sprint 16: STT initialization failed — speech pipeline disabled: %s", e)
 
     # Sprint 17 — Biblical NLU Service (Parser determinístico).
+    # Sprint 28 (Fase 9) — desativado: parser incremental é o único caminho.
+    # A classe é instanciada para compatibilidade retroativa, mas não assina
+    # SpeechTranscribed (enabled=False por padrão).
     nlu_service = None
     try:
         from parser.books import load_parser_books
@@ -514,9 +517,13 @@ def create_composition_root() -> CompositionRoot:
             parser=parser_instance,
             bus=bus,
             session_id=session.session_id,
+            enabled=False,  # Sprint 28 (Fase 9)
         )
-        nlu_service.start()
-        logger.info("Sprint 17: BiblicalNLUService started.")
+        nlu_service.start()  # no-op quando enabled=False
+        logger.info(
+            "Sprint 17/28: BiblicalNLUService instantiated (enabled=False — "
+            "parser incremental é o único caminho)."
+        )
     except Exception as e:
         logger.warning("Sprint 17: NLU initialization failed: %s", e)
 
@@ -740,12 +747,16 @@ def create_composition_root() -> CompositionRoot:
             )
 
             # StreamingSTTService — transcreve janelas e publica
-            # SpeechPartial / SpeechPartialUpdated.
+            # SpeechPartial / SpeechPartialUpdated / SpeechCommittedWords.
+            # Sprint 28 — LocalAgreement-2 com max_context_seconds e
+            # trim_margin_seconds para proteção de buffer.
             streaming_stt = StreamingSTTService(
                 executor=stt_executor,
                 bus=bus,
                 session_id=session.session_id,
                 sample_rate=int(audio_sr),
+                max_context_seconds=12.0,
+                trim_margin_seconds=0.2,
             )
             streaming_stt.start()
 
@@ -800,6 +811,11 @@ def create_composition_root() -> CompositionRoot:
             # no audio_capture — a fiação real será feita no startup
             # do servidor, onde o AudioCaptureService.start() é chamado.
             audio_capture._ring_buffer = ring_buffer
+
+            # Sprint 28 (Fase 10) — injetar StreamingSTTService no
+            # SpeechPipelineService para propagação de correlation_id.
+            if speech_pipeline is not None:
+                speech_pipeline.set_streaming_stt_service(streaming_stt)
 
             logger.info(
                 "Sprint 19: Streaming Speech Pipeline started "
@@ -973,9 +989,13 @@ def create_composition_root() -> CompositionRoot:
 
             # 4. ContextEngine — recebe sermon_context_fn para enriquecer
             #    o SemanticContext com a memória contínua da pregação.
+            # Sprint 28 (Fase 4) — passa bus para cache incremental
+            # (inscrição em SpeechCommittedWords + ReferenceDetected),
+            # em vez de varrer bus.history() a cada build().
             context_engine = ContextEngine(
-                history_fn=bus.history,
+                history_fn=bus.history,  # fallback best-effort
                 sermon_context_fn=sermon_memory_engine.get_context,
+                bus=bus,
             )
 
             # 5. SemanticCache.
@@ -1091,6 +1111,12 @@ def create_composition_root() -> CompositionRoot:
     )
     state_orchestrator.start()
     logger.info("CAP-01: StateOrchestrator started.")
+
+    # Sprint 28 (Fase 6) — injetar StateOrchestrator no VersePresentationService
+    # para coordenação (verificar current_state == PRESENT + dedup).
+    if verse_presentation_service is not None:
+        verse_presentation_service.set_state_orchestrator(state_orchestrator)
+        logger.info("Sprint 28 (Fase 6): VersePresentationService coordenado com StateOrchestrator.")
 
     return CompositionRoot(
         bus=bus,

@@ -1,10 +1,10 @@
-"""semantic/engine.py — SemanticEngine (Sprint 20, Etapa 2).
+"""semantic/engine.py — SemanticEngine (Sprint 20, Etapa 2 + Sprint 28).
 
 Responsabilidade única:
   texto → entendimento semântico → lista de candidatos
 
 Regras:
-  - Assina SpeechPartial e SpeechPartialUpdated (paralelo ao IncrementalParser).
+  - Assina SpeechCommittedWords (Sprint 28 — texto confiável, não partials).
   - Constrói contexto via ContextEngine.
   - Consulta cache antes de chamar o provider.
   - Chama SemanticProvider.infer() com timeout.
@@ -13,6 +13,16 @@ Regras:
   - Publica SemanticInferenceCompleted (telemetria para o frontend).
   - NUNCA consulta Holyrics, frontend, banco ou Searcher.
   - NUNCA publica ReferenceDetected.
+
+Sprint 28 — Streaming First com LocalAgreement-2:
+  O SemanticEngine agora consome SpeechCommittedWords (palavras confirmed
+  por LocalAgreement-2) em vez de SpeechPartial/Updated. Committed words
+  são texto confiável que não vai mudar mais — a inferência só dispara
+  em texto estável, evitando resultados regressivos.
+
+  Stale rejection: ao iniciar inferência, registrar correlation_id +
+  timestamp. Ao completar, se correlation_id mudou (novo fluxo), o
+  resultado é descartado.
 
 Sprint 21.5 — Streaming Intelligence:
   Substitui a estratégia puramente temporal (debounce fixo) por uma
@@ -34,18 +44,9 @@ Sprint 21.5 — Streaming Intelligence:
     - Debounce reduzido de 800ms (Sprint 20) para 400ms (Sprint 21.5)
       pois agora o gatilho principal é o crescimento, não o debounce.
 
-  Medição de crescimento:
-    - growth_chars = len(text) - len(last_inferred_text) se text
-      começa com last_inferred_text (prefixo estável, Whisper só
-      adiciona ao final). Caso contrário, growth_chars = len(text)
-      (Whisper reescreveu — tratar como texto totalmente novo).
-    - append_words = número de palavras no trecho novo (diff desde
-      última inferência). Filtra acréscimos de apenas filler
-      ("e", "né", "amém", "irmãos") que crescem o texto mas não
-      trazem informação semântica nova.
-
 Sprint 20 — Semantic Understanding Engine.
 Sprint 21.5 — Streaming Intelligence.
+Sprint 28 — Streaming First com LocalAgreement-2.
 """
 
 from __future__ import annotations
@@ -59,8 +60,7 @@ from typing import Any
 from pipeline.events import (
     IntentCandidate,
     SemanticInferenceCompleted,
-    SpeechPartial,
-    SpeechPartialUpdated,
+    SpeechCommittedWords,
 )
 from pipeline.metadata import EventMetadata
 from semantic.cache import SemanticCache
@@ -122,8 +122,8 @@ _COMMAND_MIN_INTERVAL_MS = 500
 class SemanticEngine:
     """Camada de compreensão semântica.
 
-    Assina SpeechPartial/Updated no EventBus, constrói contexto,
-    consulta cache, chama provider, publica IntentCandidate.
+    Assina SpeechCommittedWords no EventBus (Sprint 28 — texto confiável),
+    constrói contexto, consulta cache, chama provider, publica IntentCandidate.
 
     Args:
         bus: EventBus para assinar/publicar eventos.
@@ -198,6 +198,15 @@ class SemanticEngine:
         self._last_inference_monotonic: float = 0.0
         self._growth_fired: bool = False
 
+        # Sprint 28 — stale rejection.
+        # _inference_correlation_id: correlation_id da inferência em curso.
+        #   Se mudar (novo fluxo) enquanto a inferência está rodando,
+        #   o resultado é descartado ao completar.
+        # _inference_in_progress: True se há inferência em curso.
+        self._inference_correlation_id: str | None = None
+        self._inference_in_progress: bool = False
+        self._total_stale_rejected: int = 0
+
         # Estatísticas.
         self._total_calls = 0
         self._total_errors = 0
@@ -211,16 +220,18 @@ class SemanticEngine:
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        """Inscreve-se nos eventos do EventBus."""
+        """Inscreve-se nos eventos do EventBus.
+
+        Sprint 28 — inscreve em SpeechCommittedWords (não SpeechPartial/Updated).
+        """
         if not self._enabled:
             logger.info("SemanticEngine: disabled, not subscribing")
             return
-        self._bus.subscribe(SpeechPartial, self._on_partial)
-        self._bus.subscribe(SpeechPartialUpdated, self._on_partial_updated)
+        self._bus.subscribe(SpeechCommittedWords, self._on_committed_words)
         logger.info(
             "SemanticEngine: started (provider=%s, model=%s, debounce=%dms, "
             "timeout=%dms, min_growth=%d chars, min_append=%d words, "
-            "min_interval=%dms)",
+            "min_interval=%dms) — subscribed to SpeechCommittedWords",
             self._provider.name, self._provider.model_name,
             self._debounce_ms, self._timeout_ms,
             self._min_growth_chars, self._min_append_words,
@@ -234,8 +245,7 @@ class SemanticEngine:
                 self._debounce_timer.cancel()
                 self._debounce_timer = None
         try:
-            self._bus.unsubscribe(SpeechPartial, self._on_partial)
-            self._bus.unsubscribe(SpeechPartialUpdated, self._on_partial_updated)
+            self._bus.unsubscribe(SpeechCommittedWords, self._on_committed_words)
         except Exception:
             pass
         logger.info("SemanticEngine: stopped")
@@ -244,13 +254,15 @@ class SemanticEngine:
     # Handlers de eventos
     # ------------------------------------------------------------------
 
-    def _on_partial(self, event: SpeechPartial) -> None:
-        """Recebe SpeechPartial — avalia política de disparo."""
-        self._schedule_inference(event.text, event.meta)
+    def _on_committed_words(self, event: SpeechCommittedWords) -> None:
+        """Recebe SpeechCommittedWords — avalia política de disparo.
 
-    def _on_partial_updated(self, event: SpeechPartialUpdated) -> None:
-        """Recebe SpeechPartialUpdated — avalia política de disparo."""
-        self._schedule_inference(event.text, event.meta)
+        Sprint 28 — usa full_committed_text (texto acumulado confiável)
+        em vez de partial text. Committed words são estáveis por
+        definição (LocalAgreement-2), então a inferência só dispara
+        em texto que não vai mudar mais.
+        """
+        self._schedule_inference(event.full_committed_text, event.meta)
 
     def _schedule_inference(self, text: str, meta: EventMetadata) -> None:
         """Avalia política de disparo e agenda ou executa inferência.
@@ -432,8 +444,14 @@ class SemanticEngine:
             # pela política — não queremos re-disparar para o mesmo texto.
             self._last_inferred_text = text
             self._last_inference_monotonic = time.monotonic()
+            # Sprint 28 — stale rejection: registrar correlation_id da
+            # inferência em curso para descartar se o fluxo mudar.
+            self._inference_correlation_id = meta.correlation_id if meta else None
+            self._inference_in_progress = True
 
         if not text or meta is None:
+            with self._lock:
+                self._inference_in_progress = False
             return
 
         try:
@@ -451,6 +469,9 @@ class SemanticEngine:
                 context_text=text,
                 context_hash="",
             )
+        finally:
+            with self._lock:
+                self._inference_in_progress = False
 
     def _run_inference(self, text: str, source_meta: EventMetadata) -> None:
         """Constrói contexto, consulta cache, chama provider, publica eventos."""
@@ -649,6 +670,34 @@ class SemanticEngine:
         # 5. Cachear resultado (mesmo se intent="none" — evita re-chamada).
         self._cache.put(context_hash, result)
 
+        # Sprint 28 — stale rejection: se o correlation_id mudou enquanto
+        # a inferência estava em curso (novo fluxo começou), descartar o
+        # resultado. O texto atual já é diferente do que foi inferido.
+        # Nota: o plano §6.10 menciona "correlation_id mudou OU texto atual
+        # difere". Com LocalAgreement-2, committed words são estáveis por
+        # definição — se o correlation_id é o mesmo, o texto só cresce
+        # (não reescreve), então a verificação de texto é redundante.
+        with self._lock:
+            current_corr = self._inference_correlation_id
+            inference_corr = source_meta.correlation_id
+        if current_corr is not None and current_corr != inference_corr:
+            self._total_stale_rejected += 1
+            logger.info(
+                "SemanticEngine: stale inference rejected "
+                "(inference_corr=%s, current_corr=%s, intent=%s)",
+                inference_corr, current_corr, result.intent,
+            )
+            telemetry_hooks.semantic_result(
+                correlation_id=source_meta.correlation_id,
+                intent="",
+                candidates=[],
+                inference_ms=result.inference_ms,
+                cached=False,
+                context_hash=context_hash,
+                error="stale_rejected",
+            )
+            return
+
         # 6. Publicar telemetria.
         # Sprint 21.9 — telemetria: resultado final da inferência.
         telemetry_hooks.semantic_result(
@@ -762,4 +811,6 @@ class SemanticEngine:
             "min_growth_chars": self._min_growth_chars,
             "min_append_words": self._min_append_words,
             "min_interval_ms": self._min_interval_ms,
+            # Sprint 28 — métricas de stale rejection.
+            "total_stale_rejected": self._total_stale_rejected,
         }

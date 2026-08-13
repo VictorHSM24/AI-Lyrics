@@ -88,6 +88,10 @@ class STTResult:
     processing_ms: int
     audio_duration_ms: int
     segments_raw: tuple[Any, ...] = ()
+    # Sprint 28 — palavras com timestamps para LocalAgreement-2.
+    # Tupla de (word: str, start: float, end: float) em segundos
+    # relativos ao início do áudio. Vazio se word_timestamps=False.
+    words: tuple[tuple[str, float, float], ...] = ()
 
 
 @dataclass
@@ -386,11 +390,18 @@ class FasterWhisperBackend:
         beam_size: int,
         vad_filter: bool,
         chunk_length: int,
+        word_timestamps: bool = False,
     ) -> tuple[str, str, float, tuple[Any, ...]]:
         """Transcreve áudio com faster-whisper.
 
         Returns:
             (texto, idioma, avg_logprob, segmentos_brutos)
+
+        Args:
+            word_timestamps: se True, solicita timestamps por palavra
+                do faster-whisper. Os segmentos retornados terão
+                ``.words`` com (word, start, end, probability).
+                Necessário para LocalAgreement-2 com buffer trimming.
         """
         if self._model is None:
             raise STTError("model not loaded — call load() first")
@@ -423,6 +434,7 @@ class FasterWhisperBackend:
                 no_speech_threshold=0.6,
                 log_prob_threshold=-1.0,
                 hallucination_silence_threshold=2.0,
+                word_timestamps=word_timestamps,
             )
             # Consumir o iterador (faster-whisper é lazy)
             segments = list(segments_iter)
@@ -644,11 +656,13 @@ class STT:
         )
         return FasterWhisperBackend(resolved_config)
 
-    def transcribe(self, segment: SpeechSegment) -> STTResult:
+    def transcribe(self, segment: SpeechSegment, word_timestamps: bool = False) -> STTResult:
         """Transcreve um SpeechSegment em texto.
 
         Args:
             segment: SpeechSegment com PCM 16kHz mono 16-bit.
+            word_timestamps: se True, solicita timestamps por palavra.
+                Necessário para LocalAgreement-2 no StreamingSTTService.
 
         Returns:
             STTResult com texto, language, confidence, timing.
@@ -688,6 +702,7 @@ class STT:
                 beam_size=self._config.beam_size,
                 vad_filter=self._config.vad_filter,
                 chunk_length=self._config.chunk_length_s,
+                word_timestamps=word_timestamps,
             )
         except STTError:
             self._metrics.failed += 1
@@ -732,6 +747,11 @@ class STT:
             self._metrics.moving_avg_rtf,
         )
 
+        # Sprint 28 — extrair palavras com timestamps se word_timestamps=True.
+        words: tuple[tuple[str, float, float], ...] = ()
+        if word_timestamps:
+            words = self._extract_words(segments_raw)
+
         return STTResult(
             text=text,
             language=language,
@@ -739,7 +759,33 @@ class STT:
             processing_ms=processing_ms,
             audio_duration_ms=audio_duration_ms,
             segments_raw=segments_raw,
+            words=words,
         )
+
+    @staticmethod
+    def _extract_words(segments: tuple[Any, ...]) -> tuple[tuple[str, float, float], ...]:
+        """Extrai palavras com timestamps dos segmentos do faster-whisper.
+
+        Cada segmento pode ter ``.words`` (lista de WordTiming) quando
+        ``word_timestamps=True``. WordTiming tem ``.word``, ``.start``,
+        ``.end``, ``.probability``.
+
+        Returns:
+            Tupla de (word, start_seconds, end_seconds).
+        """
+        words: list[tuple[str, float, float]] = []
+        for seg in segments:
+            seg_words = getattr(seg, "words", None)
+            if not seg_words:
+                continue
+            for w in seg_words:
+                word_text = getattr(w, "word", "").strip()
+                if not word_text:
+                    continue
+                start = float(getattr(w, "start", 0.0))
+                end = float(getattr(w, "end", 0.0))
+                words.append((word_text, start, end))
+        return tuple(words)
 
     def transcribe_pcm(self, pcm: bytes, sample_rate: int = 16000) -> STTResult:
         """Transcreve PCM bytes diretamente (sem SpeechSegment).

@@ -26,8 +26,7 @@ from pipeline.bus import PipelineEventBus
 from pipeline.events import (
     IntentCandidate,
     SemanticInferenceCompleted,
-    SpeechPartial,
-    SpeechPartialUpdated,
+    SpeechCommittedWords,
 )
 from pipeline.metadata import EventMetadata
 from semantic.cache import SemanticCache
@@ -52,25 +51,16 @@ def _make_meta(
     )
 
 
-def _make_partial_updated(
+def _make_committed(
     text: str,
-    appended: str = "",
     correlation_id: str | None = None,
-) -> SpeechPartialUpdated:
+) -> SpeechCommittedWords:
+    """Cria SpeechCommittedWords (Sprint 28 — substitui _make_partial)."""
     meta = _make_meta(correlation_id=correlation_id)
-    return SpeechPartialUpdated(
-        meta=meta, text=text, appended_text=appended or text,
-        language="pt", confidence=0.9, latency_ms=100,
-        audio_duration_ms=2000, is_stable=False,
-    )
-
-
-def _make_partial(text: str, correlation_id: str | None = None) -> SpeechPartial:
-    meta = _make_meta(correlation_id=correlation_id)
-    return SpeechPartial(
-        meta=meta, text=text, language="pt",
+    return SpeechCommittedWords(
+        meta=meta, committed_text=text, full_committed_text=text,
+        words=tuple(), language="pt",
         confidence=0.9, latency_ms=100, audio_duration_ms=2000,
-        is_stable=False,
     )
 
 
@@ -195,7 +185,7 @@ class TestGrowthTrigger(unittest.TestCase):
         engine.start()
         try:
             # "O Senhor é meu pastor" = 22 chars, 5 palavras.
-            bus.publish(_make_partial_updated("O Senhor é meu pastor"))
+            bus.publish(_make_committed("O Senhor é meu pastor"))
             time.sleep(0.05)  # tempo para execução síncrona
             telemetries = collector.of_type(SemanticInferenceCompleted)
             # Deve ter disparado imediatamente (não esperou debounce 10000ms).
@@ -221,7 +211,7 @@ class TestGrowthTrigger(unittest.TestCase):
                 "O Senhor é meu pastor",  # 22 chars, 5 words — dispara!
             ]
             for text in texts:
-                bus.publish(_make_partial_updated(text))
+                bus.publish(_make_committed(text))
                 time.sleep(0.06)  # > min_interval_ms=50
 
             telemetries = collector.of_type(SemanticInferenceCompleted)
@@ -240,7 +230,7 @@ class TestGrowthTrigger(unittest.TestCase):
         )
         engine.start()
         try:
-            bus.publish(_make_partial_updated("oi"))  # 2 chars < 8
+            bus.publish(_make_committed("oi"))  # 2 chars < 8
             time.sleep(0.05)
             self.assertEqual(len(collector.of_type(IntentCandidate)), 0)
         finally:
@@ -267,13 +257,13 @@ class TestRateLimiting(unittest.TestCase):
         engine.start()
         try:
             # Primeiro: dispara (22 chars, 5 words, elapsed=inf).
-            bus.publish(_make_partial_updated("O Senhor é meu pastor"))
+            bus.publish(_make_committed("O Senhor é meu pastor"))
             time.sleep(0.05)
             count1 = len(collector.of_type(SemanticInferenceCompleted))
             self.assertEqual(count1, 1)
 
             # Segundo: 22+ chars novos, 3+ words novas, mas < 500ms.
-            bus.publish(_make_partial_updated(
+            bus.publish(_make_committed(
                 "O Senhor é meu pastor e nada me faltará agora"))
             time.sleep(0.05)
             count2 = len(collector.of_type(SemanticInferenceCompleted))
@@ -295,7 +285,7 @@ class TestRateLimiting(unittest.TestCase):
         engine.start()
         try:
             # Primeiro disparo.
-            bus.publish(_make_partial_updated("O Senhor é meu pastor"))
+            bus.publish(_make_committed("O Senhor é meu pastor"))
             time.sleep(0.05)
             self.assertEqual(len(collector.of_type(SemanticInferenceCompleted)), 1)
 
@@ -303,7 +293,7 @@ class TestRateLimiting(unittest.TestCase):
             time.sleep(0.08)  # > 100ms total
 
             # Segundo disparo: 22+ chars novos, 3+ words novas.
-            bus.publish(_make_partial_updated(
+            bus.publish(_make_committed(
                 "O Senhor é meu pastor e nada me faltará hoje sim"))
             time.sleep(0.05)
             self.assertEqual(len(collector.of_type(SemanticInferenceCompleted)), 2,
@@ -341,13 +331,13 @@ class TestFillerFilter(unittest.TestCase):
         engine.start()
         try:
             # Primeiro: dispara (22 chars, 5 words).
-            bus.publish(_make_partial_updated("O Senhor é meu pastor"))
+            bus.publish(_make_committed("O Senhor é meu pastor"))
             time.sleep(0.05)
             self.assertEqual(len(calls), 1)
 
             # Segundo: 22+ chars novos mas só 1 palavra nova.
             # "O Senhor é meu pastor" + " amémamémamémamémamémamém" (25 chars, 1 word)
-            bus.publish(_make_partial_updated(
+            bus.publish(_make_committed(
                 "O Senhor é meu pastor amémamémamémamémamémamém"))
             time.sleep(0.05)
             # Não deve ter disparado (append_words < 3).
@@ -378,7 +368,7 @@ class TestDebounceFallback(unittest.TestCase):
         )
         engine.start()
         try:
-            bus.publish(_make_partial_updated(
+            bus.publish(_make_committed(
                 "O texto onde Jesus conversa com Nicodemos"))
             time.sleep(0.2)  # esperar debounce 80ms
             intents = collector.of_type(IntentCandidate)
@@ -401,9 +391,9 @@ class TestDebounceFallback(unittest.TestCase):
         engine.start()
         try:
             # Publicar parcial e cancelar antes de debounce expirar.
-            bus.publish(_make_partial_updated("O texto onde Jesus conversa"))
+            bus.publish(_make_committed("O texto onde Jesus conversa"))
             time.sleep(0.05)  # < 200ms
-            bus.publish(_make_partial_updated(
+            bus.publish(_make_committed(
                 "O texto onde Jesus conversa com Nicodemos"))
             time.sleep(0.05)  # < 200ms — debounce resetado
             # Não deve ter disparado ainda (debounce foi resetado).
@@ -432,7 +422,7 @@ class TestStreamingMetrics(unittest.TestCase):
         )
         engine.start()
         try:
-            bus.publish(_make_partial_updated("O Senhor é meu pastor"))
+            bus.publish(_make_committed("O Senhor é meu pastor"))
             time.sleep(0.05)
             stats = engine.stats()
             self.assertGreaterEqual(stats["total_growth_triggers"], 1)
@@ -449,7 +439,7 @@ class TestStreamingMetrics(unittest.TestCase):
         )
         engine.start()
         try:
-            bus.publish(_make_partial_updated(
+            bus.publish(_make_committed(
                 "O texto onde Jesus conversa com Nicodemos"))
             time.sleep(0.2)
             stats = engine.stats()
@@ -492,7 +482,7 @@ class TestSemanticReferenceScenarios(unittest.TestCase):
         )
         engine.start()
         try:
-            bus.publish(_make_partial_updated("O Senhor é meu pastor"))
+            bus.publish(_make_committed("O Senhor é meu pastor"))
             time.sleep(0.1)
             intents = collector.of_type(IntentCandidate)
             self.assertGreaterEqual(len(intents), 1,
@@ -515,7 +505,7 @@ class TestSemanticReferenceScenarios(unittest.TestCase):
         )
         engine.start()
         try:
-            bus.publish(_make_partial_updated("Porque Deus amou o mundo"))
+            bus.publish(_make_committed("Porque Deus amou o mundo"))
             time.sleep(0.1)
             intents = collector.of_type(IntentCandidate)
             self.assertGreaterEqual(len(intents), 1)
@@ -538,7 +528,7 @@ class TestSemanticReferenceScenarios(unittest.TestCase):
         )
         engine.start()
         try:
-            bus.publish(_make_partial_updated("Tudo posso naquele que me"))
+            bus.publish(_make_committed("Tudo posso naquele que me"))
             time.sleep(0.1)
             intents = collector.of_type(IntentCandidate)
             self.assertGreaterEqual(len(intents), 1)
@@ -561,7 +551,7 @@ class TestSemanticReferenceScenarios(unittest.TestCase):
         )
         engine.start()
         try:
-            bus.publish(_make_partial_updated("A armadura de Deus para"))
+            bus.publish(_make_committed("A armadura de Deus para"))
             time.sleep(0.1)
             intents = collector.of_type(IntentCandidate)
             self.assertGreaterEqual(len(intents), 1)
@@ -583,7 +573,7 @@ class TestSemanticReferenceScenarios(unittest.TestCase):
         )
         engine.start()
         try:
-            bus.publish(_make_partial_updated("Ainda que eu andasse pelo vale da sombra"))
+            bus.publish(_make_committed("Ainda que eu andasse pelo vale da sombra"))
             time.sleep(0.1)
             intents = collector.of_type(IntentCandidate)
             self.assertGreaterEqual(len(intents), 1)
@@ -626,9 +616,9 @@ class TestStreamingCompatibility(unittest.TestCase):
         try:
             # Mesmo texto duas vezes — segunda deve ser cache hit.
             text = "O texto onde Jesus conversa com Nicodemos"
-            bus.publish(_make_partial_updated(text))
+            bus.publish(_make_committed(text))
             time.sleep(0.2)
-            bus.publish(_make_partial_updated(text))
+            bus.publish(_make_committed(text))
             time.sleep(0.2)
             # Provider só deve ter sido chamado 1 vez (segunda é cache).
             self.assertEqual(len(calls), 1,
@@ -649,7 +639,7 @@ class TestStreamingCompatibility(unittest.TestCase):
         )
         engine.start()
         try:
-            bus.publish(_make_partial_updated("O Senhor é meu pastor"))
+            bus.publish(_make_committed("O Senhor é meu pastor"))
             time.sleep(0.2)
             self.assertEqual(len(collector.of_type(IntentCandidate)), 0)
         finally:
@@ -672,7 +662,7 @@ class TestStreamingCompatibility(unittest.TestCase):
         )
         engine.start()
         try:
-            bus.publish(_make_partial_updated(
+            bus.publish(_make_committed(
                 "O texto onde Jesus conversa com Nicodemos"))
             time.sleep(0.2)
             telemetries = collector.of_type(SemanticInferenceCompleted)
@@ -708,7 +698,7 @@ class TestMultipleInferences(unittest.TestCase):
                 "O Senhor é meu pastor e nada me faltará hoje e sempre",
             ]
             for text in phrases:
-                bus.publish(_make_partial_updated(text))
+                bus.publish(_make_committed(text))
                 time.sleep(0.08)  # > min_interval_ms=50
 
             telemetries = collector.of_type(SemanticInferenceCompleted)
@@ -730,12 +720,12 @@ class TestMultipleInferences(unittest.TestCase):
         engine.start()
         try:
             text = "O Senhor é meu pastor"
-            bus.publish(_make_partial_updated(text))
+            bus.publish(_make_committed(text))
             time.sleep(0.05)
             count1 = len(collector.of_type(SemanticInferenceCompleted))
 
             # Mesmo texto — growth=0, append_words=0.
-            bus.publish(_make_partial_updated(text))
+            bus.publish(_make_committed(text))
             time.sleep(0.05)
             count2 = len(collector.of_type(SemanticInferenceCompleted))
 

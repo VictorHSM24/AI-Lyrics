@@ -30,7 +30,7 @@ from pipeline.bus import PipelineEventBus
 from pipeline.events import (
     IntentCandidate,
     ReferenceDetected,
-    SpeechPartialUpdated,
+    SpeechCommittedWords,
 )
 from pipeline.metadata import EventMetadata
 from semantic.engine import SemanticEngine
@@ -107,14 +107,15 @@ def _make_meta(correlation_id: str | None = None) -> EventMetadata:
     )
 
 
-def _make_partial_updated(
+def _make_committed(
     text: str, correlation_id: str | None = None,
-) -> SpeechPartialUpdated:
-    return SpeechPartialUpdated(
+) -> SpeechCommittedWords:
+    """Cria SpeechCommittedWords (Sprint 28 — substitui _make_partial_updated)."""
+    return SpeechCommittedWords(
         meta=_make_meta(correlation_id=correlation_id),
-        text=text, appended_text=text,
-        language="pt", confidence=0.9, latency_ms=100,
-        audio_duration_ms=2000, is_stable=False,
+        committed_text=text, full_committed_text=text,
+        words=tuple(), language="pt",
+        confidence=0.9, latency_ms=100, audio_duration_ms=2000,
     )
 
 
@@ -253,7 +254,7 @@ class TestCasoAceitacao1:
         engine.start()
         collector = _EventCollector(bus, [IntentCandidate])
 
-        bus.publish(_make_partial_updated(
+        bus.publish(_make_committed(
             "O Senhor te abençoe e te guarde",
             correlation_id="caso1",
         ))
@@ -300,7 +301,7 @@ class TestCasoAceitacao1:
             context_policy=context_policy,
         )
         engine.start()
-        bus.publish(_make_partial_updated(
+        bus.publish(_make_committed(
             "O Senhor te abençoe e te guarde", correlation_id="spy1",
         ))
         time.sleep(0.3)
@@ -335,7 +336,7 @@ class TestCasoAceitacao2:
         engine.start()
         collector = _EventCollector(bus, [IntentCandidate])
 
-        bus.publish(_make_partial_updated(
+        bus.publish(_make_committed(
             "Portanto, vão e façam discípulos de todas as nações",
             correlation_id="caso2",
         ))
@@ -375,7 +376,7 @@ class TestCasoAceitacao2:
             context_policy=context_policy,
         )
         engine.start()
-        bus.publish(_make_partial_updated(
+        bus.publish(_make_committed(
             "Portanto, vão e façam discípulos", correlation_id="spy2",
         ))
         time.sleep(0.3)
@@ -419,7 +420,7 @@ class TestCasoAceitacao3:
             context_policy=context_policy,
         )
         engine.start()
-        bus.publish(_make_partial_updated(
+        bus.publish(_make_committed(
             "Porque Deus mostra o seu amor", correlation_id="caso3",
         ))
         time.sleep(0.3)
@@ -445,7 +446,7 @@ class TestCasoAceitacao3:
         )
         engine.start()
         collector = _EventCollector(bus, [IntentCandidate])
-        bus.publish(_make_partial_updated(
+        bus.publish(_make_committed(
             "Porque Deus mostra o seu amor", correlation_id="caso3b",
         ))
         time.sleep(0.3)
@@ -527,7 +528,7 @@ class TestCasoAceitacao4:
             context_policy=context_policy,
         )
         engine.start()
-        bus.publish(_make_partial_updated(
+        bus.publish(_make_committed(
             "O Senhor te abençoe", correlation_id="caso4",
         ))
         time.sleep(0.3)

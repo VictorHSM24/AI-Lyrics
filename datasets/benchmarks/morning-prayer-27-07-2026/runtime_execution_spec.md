@@ -47,27 +47,40 @@ Captura de áudio (PortAudio thread)
     ↓
     ├─→ VAD Thread → SpeechQueue → SpeechWorker Thread → SpeechTranscribed
     │                                                    ↓
-    │                                              BiblicalNLUService
-    │                                                    ↓
-    │                                              ReferenceDetected
+    │                                              [Sprint 28: confirmação/finalização]
+    │                                              StateOrchestrator (confirma/corrige/limpa)
+    │                                              ReadingFollowService (fallback)
+    │                                              [BiblicalNLUService desativado por padrão]
     │
     └─→ RingBuffer → SlidingWindow Thread → StreamingSTTService
                                               ↓
                                         SpeechPartial / SpeechPartialUpdated
                                               ↓
+                                        SpeechCommittedWords (LocalAgreement-2 — fluxo primário)
+                                              ↓
                                     ├─→ IncrementalBiblicalParser
                                     │       ↓
-                                    │   ReferenceCandidate / ReferenceDetected
+                                    │   ReferenceCandidate / ReferenceAntecipada / ReferenceDetected
                                     │
-                                    └─→ SemanticEngine (debounce/growth timer)
+                                    ├─→ SemanticEngine (debounce em committed words)
+                                    │       ↓
+                                    │   IntentCandidate
+                                    │       ↓
+                                    │   ReferenceResolver
+                                    │       ↓
+                                    │   ReferenceDetected (se validado)
+                                    │
+                                    ├─→ ReadingFollowService (leitura contínua)
+                                    │       ↓
+                                    │   ReadingFollowAdvanced (fuzzy_match)
+                                    │
+                                    └─→ VersionCommandDetector
                                             ↓
-                                        IntentCandidate
+                                        NavigationCommandDetected (comandos de voz)
                                             ↓
-                                        ReferenceResolver
-                                            ↓
-                                        ReferenceDetected (se validado)
+                                        ReadingFollowAdvanced (voice_command_*)
                                     ↓
-                                StateOrchestrator (CAP-01, futuro)
+                                StateOrchestrator (CAP-01 — implementado Sprint 28)
                                     ↓
                                 StateChanged
                                     ↓

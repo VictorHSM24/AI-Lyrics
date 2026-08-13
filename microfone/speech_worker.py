@@ -116,7 +116,12 @@ class SpeechWorker:
         logger.info("SpeechWorker thread exiting.")
 
     def _transcribe_segment(self, segment: SpeechSegment) -> None:
-        """Transcreve um segmento e publica eventos."""
+        """Transcreve um segmento e publica eventos.
+
+        Sprint 28 (Fase 10) — se o segmento carregar um correlation_id
+        do fluxo streaming ativo, reusa-o no SpeechTranscribed para
+        garantir que a finalização case com antecipadas do mesmo fluxo.
+        """
         t0 = time.monotonic()
 
         # Sprint 17.3 — Tempo de espera na fila (segment.end_time → agora).
@@ -128,19 +133,31 @@ class SpeechWorker:
         except Exception:
             pass
 
+        # Sprint 28 (Fase 10) — se o segmento tem correlation_id do fluxo
+        # streaming ativo, reusa-o; caso contrário, gera novo (compatibilidade).
+        streaming_corr_id = segment.correlation_id
+
         # Publicar evento SpeechTranscribing.
-        meta_transcribing = EventMetadata.for_initial(
-            session_id=self._session_id,
-            origin="SpeechWorker",
-        )
+        if streaming_corr_id:
+            meta_transcribing = EventMetadata.for_initial(
+                session_id=self._session_id,
+                origin="SpeechWorker",
+                correlation_id=streaming_corr_id,
+            )
+        else:
+            meta_transcribing = EventMetadata.for_initial(
+                session_id=self._session_id,
+                origin="SpeechWorker",
+            )
         transcribing_event = SpeechTranscribing(
             meta=meta_transcribing,
             duration_ms=segment.duration_ms,
         )
         self._bus.publish(transcribing_event)
         logger.info(
-            "Transcribing segment (duration=%d ms, queue_wait=%d ms)...",
+            "Transcribing segment (duration=%d ms, queue_wait=%d ms, corr=%s)...",
             segment.duration_ms, queue_wait_ms,
+            streaming_corr_id or "new",
         )
 
         # Transcrever com Whisper.

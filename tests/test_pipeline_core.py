@@ -197,17 +197,17 @@ class TestPipelineEvents(unittest.TestCase):
         )
 
     def test_all_event_types_count(self):
-        """Deve haver 41 tipos de evento (CAP-01: +1 StateChanged, CAP-03: +1 IntentClassified)."""
+        """Deve haver 46 tipos de evento (Sprint 28 Fase 8: +1 NavigationCommandDetected)."""
         types = all_event_types()
         # 15 + 5 Sprint 16 + 3 Sprint 17 + 4 Sprint 18 + 3 Sprint 19
         # + 3 Sprint 20 + 4 Sprint 21 + 1 Sprint 21.1 + 1 Sprint 21.4
-        # + 1 CAP-01 + 1 CAP-03 = 41
-        self.assertEqual(len(types), 41)
+        # + 1 CAP-01 + 1 CAP-03 + 1 Sprint 28 + 1 Sprint 28 Fase 8 = 46
+        self.assertEqual(len(types), 46)
 
     def test_all_event_type_names(self):
         names = all_event_type_names()
-        # CAP-01: +1 (StateChanged), CAP-03: +1 (IntentClassified)
-        self.assertEqual(len(names), 41)
+        # Sprint 28 Fase 8: +1 (NavigationCommandDetected)
+        self.assertEqual(len(names), 46)
         self.assertIn("SpeechSegmentReceived", names)
         self.assertIn("PipelineError", names)
         # Sprint 16 — Continuous Speech Pipeline

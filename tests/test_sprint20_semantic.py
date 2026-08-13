@@ -30,8 +30,8 @@ from pipeline.events import (
     ReferenceInvalid,
     SemanticInferenceCompleted,
     SemanticResolutionCompleted,
+    SpeechCommittedWords,
     SpeechPartial,
-    SpeechPartialUpdated,
 )
 from pipeline.metadata import EventMetadata
 from semantic import (
@@ -63,29 +63,17 @@ def _make_meta(session_id="test-session", origin="StreamingSTTService"):
     return EventMetadata.for_initial(session_id=session_id, origin=origin)
 
 
-def _make_partial(text, session_id="test-session", correlation_id=None):
+def _make_committed(text, session_id="test-session", correlation_id=None):
+    """Cria SpeechCommittedWords (Sprint 28 — substitui _make_partial)."""
     meta = EventMetadata.for_initial(
         session_id=session_id,
         origin="StreamingSTTService",
         correlation_id=correlation_id,
     )
-    return SpeechPartial(
-        meta=meta, text=text, language="pt",
+    return SpeechCommittedWords(
+        meta=meta, committed_text=text, full_committed_text=text,
+        words=tuple(), language="pt",
         confidence=0.9, latency_ms=100, audio_duration_ms=2000,
-        is_stable=False,
-    )
-
-
-def _make_partial_updated(text, session_id="test-session", correlation_id=None):
-    meta = EventMetadata.for_initial(
-        session_id=session_id,
-        origin="StreamingSTTService",
-        correlation_id=correlation_id,
-    )
-    return SpeechPartialUpdated(
-        meta=meta, text=text, appended_text=text,
-        language="pt", confidence=0.9, latency_ms=100,
-        audio_duration_ms=2000, is_stable=False,
     )
 
 
@@ -350,7 +338,12 @@ class TestContextEngine:
 
     def test_with_recent_partial(self):
         bus = _make_bus()
-        bus.publish(_make_partial("texto anterior do pregador"))
+        # ContextEngine ainda consome SpeechPartial do bus.history (Fase 4).
+        bus.publish(SpeechPartial(
+            meta=_make_meta(), text="texto anterior do pregador",
+            language="pt", confidence=0.9, latency_ms=100,
+            audio_duration_ms=2000, is_stable=False,
+        ))
         ce = ContextEngine(history_fn=bus.history)
         ctx = ce.build(current_text="Nicodemos")
         assert "texto anterior" in ctx.recent_text
@@ -385,7 +378,7 @@ class TestContextEngine:
 
     def test_current_text_not_in_recent(self):
         bus = _make_bus()
-        bus.publish(_make_partial("texto atual"))
+        bus.publish(_make_committed("texto atual"))
         ce = ContextEngine(history_fn=bus.history)
         ctx = ce.build(current_text="texto atual")
         # current_text não deve aparecer em recent_text (evita duplicação).
@@ -456,7 +449,7 @@ class TestSemanticEngine:
         )
         engine.start()
         try:
-            bus.publish(_make_partial_updated("o texto onde Jesus conversa com Nicodemos"))
+            bus.publish(_make_committed("o texto onde Jesus conversa com Nicodemos"))
             time.sleep(0.2)  # esperar debounce + inferência
             intents = collector.of_type(IntentCandidate)
             assert len(intents) == 1
@@ -479,7 +472,7 @@ class TestSemanticEngine:
         )
         engine.start()
         try:
-            bus.publish(_make_partial_updated("oi"))  # < 8 chars
+            bus.publish(_make_committed("oi"))  # < 8 chars
             time.sleep(0.15)
             assert len(collector.of_type(IntentCandidate)) == 0
         finally:
@@ -513,9 +506,9 @@ class TestSemanticEngine:
         engine.start()
         try:
             # Mesmo texto duas vezes → provider chamado 1x, cache hit 1x.
-            bus.publish(_make_partial_updated("Nicodemos conversando"))
+            bus.publish(_make_committed("Nicodemos conversando"))
             time.sleep(0.15)
-            bus.publish(_make_partial_updated("Nicodemos conversando"))
+            bus.publish(_make_committed("Nicodemos conversando"))
             time.sleep(0.15)
             assert len(calls) == 1
             # Segunda chamada veio do cache.
@@ -543,7 +536,7 @@ class TestSemanticEngine:
         )
         engine.start()
         try:
-            bus.publish(_make_partial_updated("o texto onde Jesus conversa com Nicodemos"))
+            bus.publish(_make_committed("o texto onde Jesus conversa com Nicodemos"))
             time.sleep(0.15)
             teles = collector.of_type(SemanticInferenceCompleted)
             assert len(teles) == 1
@@ -570,7 +563,7 @@ class TestSemanticEngine:
         )
         engine.start()
         try:
-            bus.publish(_make_partial_updated("o texto onde Jesus conversa com Nicodemos"))
+            bus.publish(_make_committed("o texto onde Jesus conversa com Nicodemos"))
             time.sleep(0.15)
             teles = collector.of_type(SemanticInferenceCompleted)
             assert len(teles) == 1
@@ -589,7 +582,7 @@ class TestSemanticEngine:
         )
         engine.start()  # não assina nada
         try:
-            bus.publish(_make_partial_updated("o texto onde Jesus conversa com Nicodemos"))
+            bus.publish(_make_committed("o texto onde Jesus conversa com Nicodemos"))
             time.sleep(0.15)
             assert len(collector.of_type(IntentCandidate)) == 0
         finally:
@@ -798,7 +791,7 @@ class TestIntegration:
         engine.start()
         resolver.start()
         try:
-            bus.publish(_make_partial_updated(
+            bus.publish(_make_committed(
                 "o texto onde Jesus conversa com Nicodemos"
             ))
             time.sleep(0.3)
@@ -836,7 +829,7 @@ class TestIntegration:
             # O parser (que não está rodando neste teste) normalmente publicaria
             # ReferenceDetected. Simulamos isso manualmente.
             corr_id = "test-corr-parser-wins"
-            partial = _make_partial_updated(
+            partial = _make_committed(
                 "vamos para João 3:16", correlation_id=corr_id,
             )
             bus.publish(partial)
@@ -880,7 +873,7 @@ class TestIntegration:
         engine.start()
         resolver.start()
         try:
-            bus.publish(_make_partial_updated("hoje está chovendo muito forte"))
+            bus.publish(_make_committed("hoje está chovendo muito forte"))
             time.sleep(0.2)
             assert len(collector.of_type(ReferenceDetected)) == 0
         finally:
@@ -913,9 +906,9 @@ class TestIntegration:
         )
         engine.start()
         try:
-            bus.publish(_make_partial_updated("Nicodemos conversando com Jesus"))
+            bus.publish(_make_committed("Nicodemos conversando com Jesus"))
             time.sleep(0.15)
-            bus.publish(_make_partial_updated("Nicodemos conversando com Jesus"))
+            bus.publish(_make_committed("Nicodemos conversando com Jesus"))
             time.sleep(0.15)
             assert len(calls) == 1
             teles = collector.of_type(SemanticInferenceCompleted)

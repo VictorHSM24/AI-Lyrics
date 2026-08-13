@@ -593,6 +593,46 @@ class SpeechPartialUpdated(OperationalEvent):
 
 
 @dataclass(frozen=True)
+class SpeechCommittedWords(OperationalEvent):
+    """Palavras confirmadas por LocalAgreement-2 (Sprint 28).
+
+    Emitido pelo StreamingSTTService quando 2 transcrições consecutivas
+    concordam em um prefixo de palavras. Essas palavras são consideradas
+    "committed" — estáveis, não devem mudar mais.
+
+    Este evento é o **fluxo operacional primário** para downstream:
+      - IncrementalBiblicalParser faz parsing apenas em committed words.
+      - SemanticEngine dispara inferência apenas em committed words.
+      - ReadingFollowService faz fuzzy match apenas em committed words.
+      - SermonMemoryEngine atualiza contexto em committed words.
+
+    Diferente de SpeechPartial/Updated (que podem mudar a cada janela),
+    SpeechCommittedWords carrega texto confiável que pode ser processado
+    sem risco de retrabalho.
+
+    O campo ``committed_text`` contém apenas as palavras **novamente**
+    committed nesta iteração. O campo ``full_committed_text`` contém
+    todo o texto committed acumulado do fluxo atual.
+
+    O campo ``words`` é uma tupla de (word, start_time, end_time) com
+    timestamps em segundos relativos ao início do buffer de áudio.
+    Esses timestamps são usados pelo StreamingSTTService para fazer
+    trim do buffer de áudio (buffer trimming), mantendo o buffer curto
+    e o Whisper rápido.
+
+    correlation_id é o mesmo do SpeechPartial que originou o fluxo.
+    """
+
+    committed_text: str = ""        # palavras newly committed (apenas as novas)
+    full_committed_text: str = ""   # todo o texto committed acumulado
+    words: tuple = field(default_factory=tuple)  # (word, start_s, end_s)[]
+    language: str = ""
+    confidence: float = 0.0
+    latency_ms: int = 0
+    audio_duration_ms: int = 0
+
+
+@dataclass(frozen=True)
 class ReferenceCandidate(OperationalEvent):
     """Candidato a referência bíblica detectada incrementalmente (Sprint 19).
 
@@ -945,6 +985,10 @@ class ReadingFollowAdvanced(OperationalEvent):
 
     Emitido após o fuzzy matching detectar que o versículo atual foi lido
     e o sistema avançar para o próximo versículo do intervalo.
+
+    Sprint 28 (Fase 8) — reason adicionado para distinguir avanço por
+    fuzzy match ("fuzzy_match") de avanço/retrocesso por comando de voz
+    ("voice_command_forward" / "voice_command_back").
     """
 
     book: str = ""
@@ -954,6 +998,7 @@ class ReadingFollowAdvanced(OperationalEvent):
     current_verse: int = 0
     version: str = ""
     match_score: float = 0.0
+    reason: str = ""  # "fuzzy_match" | "voice_command_forward" | "voice_command_back"
 
 
 @dataclass(frozen=True)
@@ -983,6 +1028,24 @@ class VersionChanged(OperationalEvent):
     old_version: str = ""
     new_version: str = ""
     source: str = ""  # "voice" | "manual"
+
+
+@dataclass(frozen=True)
+class NavigationCommandDetected(OperationalEvent):
+    """Comando de navegação por voz detectado (Sprint 28 — Fase 8).
+
+    Emitido pelo VersionCommandDetector quando detecta comandos como
+    "verso anterior", "volta", "pula", "próximo verso", "capítulo N",
+    "versículo N" em SpeechCommittedWords.
+
+    O ReadingFollowService consome este evento e executa a ação
+    correspondente (retroceder/avançar/pular versículo).
+    """
+
+    command: str = ""  # "back" | "forward" | "goto_chapter" | "goto_verse"
+    target_value: int = 0  # N para "capítulo N" / "versículo N"
+    raw_text: str = ""  # texto original que disparou o comando
+    confidence: float = 0.0  # score do fuzzy match
 
 
 # ---------------------------------------------------------------------------
@@ -1047,6 +1110,8 @@ _ALL_EVENT_TYPES = (
     ReadingFollowAdvanced,
     ReadingFollowEnded,
     VersionChanged,
+    # Sprint 28 (Fase 8) — Voice Commands
+    NavigationCommandDetected,
 )
 
 _ALL_EVENT_TYPE_NAMES = tuple(c.__name__ for c in _ALL_EVENT_TYPES)

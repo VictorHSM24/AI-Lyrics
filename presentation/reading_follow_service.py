@@ -1,4 +1,4 @@
-"""ReadingFollowService — Sprint 23.2.
+"""ReadingFollowService — Sprint 23.2 + Sprint 28 (Fase 7).
 
 Modo de acompanhamento de leitura.
 
@@ -7,12 +7,14 @@ Responsabilidade:
       (ReferenceDetected com verse_end != verse_start) ou manualmente via API.
     - Pré-carregar os textos de todos os versículos do intervalo.
     - Apresentar o versículo inicial no Holyrics.
-    - Consumir SpeechTranscribed (transcrição final após pausa do VAD).
-    - Comparar o texto transcrito com o versículo atual via fuzzy matching.
+    - Sprint 28 (Fase 7) — Consumir SpeechCommittedWords (primário, contínuo)
+      com debounce 300ms, threshold adaptativo e mínimo 5 palavras.
+    - Manter SpeechTranscribed como fallback (finalização).
+    - Comparar o texto com o versículo atual via fuzzy matching.
     - Quando a similaridade >= threshold, avançar para o próximo versículo.
     - Desativar automaticamente ao concluir o intervalo ou manualmente.
 
-Fluxo de eventos:
+Fluxo de eventos (Sprint 28 — Fase 7):
     ReferenceDetected (verse_end != verse_start)
         ↓
     ReadingFollowService._on_reference_detected()
@@ -23,16 +25,28 @@ Fluxo de eventos:
         ↓
     publicar ReadingFollowStarted
         ↓
-    SpeechTranscribed
+    SpeechCommittedWords (contínuo)
+        ↓
+    _on_committed_words()
+        ↓
+    acumula full_committed_text em _reading_buffer
+        ↓
+    debounce 300ms
+        ↓
+    se len(buffer.split()) >= 5:
+        fuzzy match (rapidfuzz) buffer vs versículo atual
+        ↓
+        se similaridade >= threshold_adaptativo:
+            current_verse += 1
+            _reading_buffer = "" (reset)
+            se current_verse > verse_end → ReadingFollowEnded(reason="completed")
+            senão → HolyricsClient.show_verse(current_verse) + ReadingFollowAdvanced
+
+    SpeechTranscribed (fallback)
         ↓
     _on_speech_transcribed()
         ↓
-    fuzzy match (rapidfuzz) texto transcrito vs versículo atual
-        ↓
-    se similaridade >= threshold:
-        current_verse += 1
-        se current_verse > verse_end → publicar ReadingFollowEnded(reason="completed")
-        senão → HolyricsClient.show_verse(current_verse) + publicar ReadingFollowAdvanced
+    fuzzy match texto final (fallback se committed não avançou)
 
 VersionChanged → recarregar versículos na nova versão e reapresentar versículo atual.
 """
@@ -40,6 +54,7 @@ VersionChanged → recarregar versículos na nova versão e reapresentar versíc
 from __future__ import annotations
 
 import logging
+import threading
 import time
 import unicodedata
 from dataclasses import dataclass
@@ -49,10 +64,12 @@ from integracao_holyrics.client import HolyricsClient
 from integracao_holyrics.exceptions import HolyricsError
 from pipeline.bus import PipelineEventBus
 from pipeline.events import (
+    NavigationCommandDetected,
     ReadingFollowAdvanced,
     ReadingFollowEnded,
     ReadingFollowStarted,
     ReferenceDetected,
+    SpeechCommittedWords,
     SpeechTranscribed,
     VersionChanged,
 )
@@ -60,10 +77,14 @@ from pipeline.metadata import EventMetadata
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["ReadingFollowService", "SearcherProtocol"]
+__all__ = ["ReadingFollowService", "SearcherProtocol", "adaptive_threshold"]
 
 
 _DEFAULT_FUZZY_THRESHOLD = 0.70
+
+# Sprint 28 (Fase 7) — Continuous Reading Follow.
+_DEFAULT_DEBOUNCE_MS = 300
+_DEFAULT_MIN_WORDS = 5
 
 
 class SearcherProtocol(Protocol):
@@ -105,6 +126,21 @@ def _fuzzy_similarity(text1: str, text2: str) -> float:
         return SequenceMatcher(None, text1, text2).ratio()
 
 
+def adaptive_threshold(verse_word_count: int) -> float:
+    """Threshold adaptativo de fuzzy match (Sprint 28 — Fase 7, §15.5).
+
+    Versículos curtos (< 30 palavras): 0.65 (mais tolerante).
+    Versículos médios (30-79 palavras): 0.70 (padrão).
+    Versículos longos (>= 80 palavras): 0.75 (mais estrito).
+    """
+    if verse_word_count < 30:
+        return 0.65
+    elif verse_word_count < 80:
+        return 0.70
+    else:
+        return 0.75
+
+
 @dataclass
 class FollowState:
     """Estado imutável do modo de acompanhamento."""
@@ -137,13 +173,23 @@ class FollowState:
 class ReadingFollowService:
     """Serviço de acompanhamento de leitura de versículos.
 
+    Sprint 28 (Fase 7) — Continuous Reading Follow:
+        - Consome SpeechCommittedWords (primário, contínuo) com debounce.
+        - Threshold adaptativo (0.65/0.70/0.75) baseado no tamanho do versículo.
+        - Mínimo 5 committed words antes de fuzzy-match.
+        - Mantém SpeechTranscribed como fallback.
+
     Args:
         searcher: Searcher (ou mock) para resolver versículos.
         holyrics: HolyricsClient para apresentar versículos.
         bus: PipelineEventBus para assinar e publicar eventos.
         session_id: ID da sessão atual.
         version: versão bíblica padrão.
-        fuzzy_threshold: similaridade mínima para considerar versículo lido.
+        fuzzy_threshold: similaridade mínima para considerar versículo lido
+            (fallback; threshold adaptativo é usado quando versículo está
+            disponível).
+        debounce_ms: debounce em ms após committed words antes de fuzzy-match.
+        min_words: mínimo de committed words antes de fuzzy-match.
     """
 
     def __init__(
@@ -154,6 +200,9 @@ class ReadingFollowService:
         session_id: str,
         version: str = "ACF",
         fuzzy_threshold: float = _DEFAULT_FUZZY_THRESHOLD,
+        # Sprint 28 (Fase 7) — Continuous Reading Follow.
+        debounce_ms: int = _DEFAULT_DEBOUNCE_MS,
+        min_words: int = _DEFAULT_MIN_WORDS,
     ) -> None:
         self._searcher = searcher
         self._holyrics = holyrics
@@ -163,12 +212,19 @@ class ReadingFollowService:
         self._fuzzy_threshold = fuzzy_threshold
         self._subscribed = False
 
+        # Sprint 28 (Fase 7) — Continuous Reading Follow.
+        self._debounce_ms = debounce_ms
+        self._min_words = min_words
+        self._reading_buffer = ""
+        self._debounce_timer: threading.Timer | None = None
+        self._buffer_lock = threading.Lock()
+
         self._state = FollowState(version=version)
 
         logger.info(
             "ReadingFollowService initialized "
-            "(version=%s, fuzzy_threshold=%.2f).",
-            version, fuzzy_threshold,
+            "(version=%s, fuzzy_threshold=%.2f, debounce_ms=%d, min_words=%d).",
+            version, fuzzy_threshold, debounce_ms, min_words,
         )
 
     # ------------------------------------------------------------------
@@ -176,19 +232,39 @@ class ReadingFollowService:
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        """Inscreve no EventBus."""
+        """Inscreve no EventBus.
+
+        Sprint 28 (Fase 7) — adiciona SpeechCommittedWords (primário).
+        Sprint 28 (Fase 8) — adiciona NavigationCommandDetected.
+        """
         if self._subscribed:
             return
         self._bus.subscribe(ReferenceDetected, self._on_reference_detected)
+        self._bus.subscribe(SpeechCommittedWords, self._on_committed_words)
         self._bus.subscribe(SpeechTranscribed, self._on_speech_transcribed)
         self._bus.subscribe(VersionChanged, self._on_version_changed)
+        self._bus.subscribe(NavigationCommandDetected, self._on_navigation_command)
         self._subscribed = True
-        logger.info("ReadingFollowService started — subscribed to events.")
+        logger.info(
+            "ReadingFollowService started — subscribed to "
+            "ReferenceDetected, SpeechCommittedWords, SpeechTranscribed, "
+            "VersionChanged, NavigationCommandDetected."
+        )
 
     def stop(self) -> None:
         """Desinscreve do EventBus."""
         if not self._subscribed:
             return
+        self._bus.unsubscribe(ReferenceDetected, self._on_reference_detected)
+        self._bus.unsubscribe(SpeechCommittedWords, self._on_committed_words)
+        self._bus.unsubscribe(SpeechTranscribed, self._on_speech_transcribed)
+        self._bus.unsubscribe(VersionChanged, self._on_version_changed)
+        self._bus.unsubscribe(NavigationCommandDetected, self._on_navigation_command)
+        # Cancelar debounce timer se ativo.
+        with self._buffer_lock:
+            if self._debounce_timer is not None:
+                self._debounce_timer.cancel()
+                self._debounce_timer = None
         self._subscribed = False
         logger.info("ReadingFollowService stopped.")
 
@@ -343,8 +419,99 @@ class ReadingFollowService:
             version=self._version,
         )
 
+    def _on_committed_words(self, event: SpeechCommittedWords) -> None:
+        """Consome SpeechCommittedWords (Sprint 28 — Fase 7, primário).
+
+        Atualiza _reading_buffer com full_committed_text (que já é o
+        texto acumulado de toda a fala), aplica debounce de 300ms, e
+        se buffer tiver >= 5 palavras, faz fuzzy match contra o
+        versículo atual.
+        """
+        if not self._state.active:
+            return
+
+        if not event.full_committed_text:
+            return
+
+        with self._buffer_lock:
+            # full_committed_text já é o texto acumulado — substitui o buffer.
+            self._reading_buffer = event.full_committed_text
+
+            # Cancelar debounce anterior e agendar novo.
+            if self._debounce_timer is not None:
+                self._debounce_timer.cancel()
+
+            self._debounce_timer = threading.Timer(
+                self._debounce_ms / 1000.0,
+                self._try_advance_from_buffer,
+            )
+            self._debounce_timer.daemon = True
+            self._debounce_timer.start()
+
+    def _try_advance_from_buffer(self) -> None:
+        """Tenta avançar versículo via fuzzy match no _reading_buffer.
+
+        Chamado pelo debounce timer. Verifica mínimo de palavras e
+        threshold adaptativo.
+        """
+        if not self._state.active:
+            return
+
+        with self._buffer_lock:
+            buffer_text = self._reading_buffer
+            # Limpar timer reference.
+            self._debounce_timer = None
+
+        if not buffer_text:
+            return
+
+        if self._state.verse_texts is None:
+            return
+
+        current_text = self._state.verse_texts.get(self._state.current_verse)
+        if not current_text:
+            return
+
+        norm_buffer = _normalize_text(buffer_text)
+        norm_verse = _normalize_text(current_text)
+
+        if not norm_buffer or not norm_verse:
+            return
+
+        # Verificar mínimo de palavras.
+        word_count = len(norm_buffer.split())
+        if word_count < self._min_words:
+            logger.debug(
+                "ReadingFollowService: buffer tem %d palavras (< %d mínimo), "
+                "aguardando mais committed words.",
+                word_count, self._min_words,
+            )
+            return
+
+        # Threshold adaptativo baseado no tamanho do versículo.
+        verse_word_count = len(norm_verse.split())
+        threshold = adaptive_threshold(verse_word_count)
+
+        score = _fuzzy_similarity(norm_buffer, norm_verse)
+        logger.info(
+            "ReadingFollowService: fuzzy match (committed) score=%.2f "
+            "(verse=%d, threshold=%.2f, verse_words=%d, buffer_words=%d)",
+            score, self._state.current_verse, threshold,
+            verse_word_count, word_count,
+        )
+
+        if score >= threshold:
+            # Resetar buffer após avanço bem-sucedido.
+            with self._buffer_lock:
+                self._reading_buffer = ""
+            self._advance_verse(score)
+
     def _on_speech_transcribed(self, event: SpeechTranscribed) -> None:
-        """Compara texto transcrito com versículo atual e avança se lido."""
+        """Compara texto transcrito com versículo atual e avança se lido.
+
+        Sprint 28 (Fase 7) — fallback: se committed words não avançou,
+        SpeechTranscribed faz fuzzy match com texto final.
+        """
         if not self._state.active:
             return
 
@@ -364,13 +531,21 @@ class ReadingFollowService:
         if not norm_transcribed or not norm_verse:
             return
 
+        # Threshold adaptativo baseado no tamanho do versículo.
+        verse_word_count = len(norm_verse.split())
+        threshold = adaptive_threshold(verse_word_count)
+
         score = _fuzzy_similarity(norm_transcribed, norm_verse)
         logger.info(
-            "ReadingFollowService: fuzzy match score=%.2f (verse=%d, text=%q...)",
-            score, self._state.current_verse, event.text[:80],
+            "ReadingFollowService: fuzzy match (transcribed) score=%.2f "
+            "(verse=%d, threshold=%.2f)",
+            score, self._state.current_verse, threshold,
         )
 
-        if score >= self._fuzzy_threshold:
+        if score >= threshold:
+            # Resetar buffer após avanço.
+            with self._buffer_lock:
+                self._reading_buffer = ""
             self._advance_verse(score)
 
     def _on_version_changed(self, event: VersionChanged) -> None:
@@ -396,6 +571,135 @@ class ReadingFollowService:
         logger.info(
             "ReadingFollowService: version changed via event to %s.",
             event.new_version,
+        )
+
+    def _on_navigation_command(self, event: NavigationCommandDetected) -> None:
+        """Processa NavigationCommandDetected (Sprint 28 — Fase 8).
+
+        Executa retrocesso/avanço/pulo conforme o comando detectado.
+        Só age se o modo de acompanhamento estiver ativo.
+        """
+        if not self._state.active:
+            return
+
+        if event.command == "back":
+            self._navigate_back(event.confidence)
+        elif event.command == "forward":
+            self._navigate_forward(event.confidence)
+        elif event.command == "goto_verse":
+            self._navigate_to_verse(event.target_value, event.confidence)
+        elif event.command == "goto_chapter":
+            # goto_chapter não é suportado dentro do ReadingFollow
+            # (que opera em um intervalo fixo). Logar e ignorar.
+            logger.info(
+                "ReadingFollowService: goto_chapter(%d) ignorado "
+                "(não suportado em modo de acompanhamento).",
+                event.target_value,
+            )
+
+    def _navigate_back(self, confidence: float) -> None:
+        """Retrocede 1 versículo (mínimo = verse_start)."""
+        prev = self._state.current_verse
+        new_verse = max(self._state.verse_start, prev - 1)
+        if new_verse == prev:
+            logger.info(
+                "ReadingFollowService: back ignorado (já no versículo inicial %d).",
+                prev,
+            )
+            return
+
+        self._state = FollowState(
+            active=True,
+            book=self._state.book,
+            book_id=self._state.book_id,
+            chapter=self._state.chapter,
+            verse_start=self._state.verse_start,
+            verse_end=self._state.verse_end,
+            current_verse=new_verse,
+            version=self._state.version,
+            verse_texts=self._state.verse_texts,
+        )
+        # Resetar buffer de leitura.
+        with self._buffer_lock:
+            self._reading_buffer = ""
+            if self._debounce_timer is not None:
+                self._debounce_timer.cancel()
+                self._debounce_timer = None
+
+        self._present_verse(new_verse)
+        self._publish_advanced(prev, new_verse, confidence, reason="voice_command_back")
+        logger.info(
+            "ReadingFollowService: voice command back → %s %d:%d.",
+            self._state.book, self._state.chapter, new_verse,
+        )
+
+    def _navigate_forward(self, confidence: float) -> None:
+        """Avança 1 versículo (máximo = verse_end)."""
+        prev = self._state.current_verse
+        new_verse = min(self._state.verse_end, prev + 1)
+        if new_verse == prev:
+            # No último versículo — desativar.
+            self._do_deactivate(reason="completed")
+            return
+
+        self._state = FollowState(
+            active=True,
+            book=self._state.book,
+            book_id=self._state.book_id,
+            chapter=self._state.chapter,
+            verse_start=self._state.verse_start,
+            verse_end=self._state.verse_end,
+            current_verse=new_verse,
+            version=self._state.version,
+            verse_texts=self._state.verse_texts,
+        )
+        # Resetar buffer de leitura.
+        with self._buffer_lock:
+            self._reading_buffer = ""
+            if self._debounce_timer is not None:
+                self._debounce_timer.cancel()
+                self._debounce_timer = None
+
+        self._present_verse(new_verse)
+        self._publish_advanced(prev, new_verse, confidence, reason="voice_command_forward")
+        logger.info(
+            "ReadingFollowService: voice command forward → %s %d:%d.",
+            self._state.book, self._state.chapter, new_verse,
+        )
+
+    def _navigate_to_verse(self, verse: int, confidence: float) -> None:
+        """Pula para versículo N do capítulo atual (dentro do intervalo)."""
+        if verse < self._state.verse_start or verse > self._state.verse_end:
+            logger.info(
+                "ReadingFollowService: goto_verse(%d) fora do intervalo [%d-%d].",
+                verse, self._state.verse_start, self._state.verse_end,
+            )
+            return
+
+        prev = self._state.current_verse
+        self._state = FollowState(
+            active=True,
+            book=self._state.book,
+            book_id=self._state.book_id,
+            chapter=self._state.chapter,
+            verse_start=self._state.verse_start,
+            verse_end=self._state.verse_end,
+            current_verse=verse,
+            version=self._state.version,
+            verse_texts=self._state.verse_texts,
+        )
+        # Resetar buffer de leitura.
+        with self._buffer_lock:
+            self._reading_buffer = ""
+            if self._debounce_timer is not None:
+                self._debounce_timer.cancel()
+                self._debounce_timer = None
+
+        self._present_verse(verse)
+        self._publish_advanced(prev, verse, confidence, reason="voice_command_goto")
+        logger.info(
+            "ReadingFollowService: voice command goto_verse → %s %d:%d.",
+            self._state.book, self._state.chapter, verse,
         )
 
     # ------------------------------------------------------------------
@@ -435,6 +739,13 @@ class ReadingFollowService:
             verse_texts=verse_texts,
         )
 
+        # Sprint 28 (Fase 7) — limpar buffer de leitura ao ativar.
+        with self._buffer_lock:
+            self._reading_buffer = ""
+            if self._debounce_timer is not None:
+                self._debounce_timer.cancel()
+                self._debounce_timer = None
+
         self._present_verse(verse_start)
         self._publish_started()
         logger.info(
@@ -449,6 +760,12 @@ class ReadingFollowService:
         book = self._state.book
         chapter = self._state.chapter
         self._state = FollowState(version=self._version)
+        # Sprint 28 (Fase 7) — limpar buffer e cancelar debounce timer.
+        with self._buffer_lock:
+            self._reading_buffer = ""
+            if self._debounce_timer is not None:
+                self._debounce_timer.cancel()
+                self._debounce_timer = None
         self._publish_ended(book, chapter, last_verse, reason)
         logger.info(
             "ReadingFollowService: deactivated (reason=%s, last_verse=%d).",
@@ -572,6 +889,7 @@ class ReadingFollowService:
 
     def _publish_advanced(
         self, prev_verse: int, current_verse: int, match_score: float,
+        reason: str = "fuzzy_match",
     ) -> None:
         meta = EventMetadata.for_session_event(
             session_id=self._session_id,
@@ -586,6 +904,7 @@ class ReadingFollowService:
             current_verse=current_verse,
             version=self._state.version,
             match_score=round(match_score, 4),
+            reason=reason,
         ))
 
     def _publish_ended(

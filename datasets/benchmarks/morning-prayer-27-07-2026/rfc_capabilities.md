@@ -4,6 +4,8 @@ Documento de especificação arquitetural para as 7 capacidades aprovadas no `ca
 
 Cada RFC é independente: um desenvolvedor pode implementar a capacidade apenas lendo sua seção.
 
+> **Nota Sprint 28**: CAP-01 (`StateOrchestrator`) está implementado (Fase 5). O fluxo operacional primário agora é `SpeechCommittedWords` (LocalAgreement-2), não `SpeechTranscribed`. `BiblicalNLUService` está desativado por padrão (`enabled=False`); o parser incremental é o único caminho de parsing em produção. Ver ADR-011 e ADR-012.
+
 ---
 
 ## RFC CAP-01

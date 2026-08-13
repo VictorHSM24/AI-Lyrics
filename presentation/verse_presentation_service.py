@@ -114,6 +114,20 @@ class SearcherProtocol(Protocol):
 class VersePresentationService:
     """Consome ReferenceDetected e apresenta o versículo no Holyrics.
 
+    Sprint 28 (Fase 6) — Coordenação com StateOrchestrator:
+        Antes de apresentar, verifica:
+          1. StateOrchestrator.current_state == PRESENT
+          2. (book_id, chapter, verse) != _last_presented_key (dedup interno)
+        Se StateOrchestrator não estiver disponível (None), funciona como
+        antes (apresenta diretamente — fallback best-effort).
+
+        Nota sobre dedup: o plano §14.1 menciona "consulta
+        last_presented_reference", mas como o StateOrchestrator é inscrito
+        primeiro no EventBus, ele atualiza last_presented_reference ANTES
+        do VPS processar o evento. Para evitar falso dedup, o VPS mantém
+        seu próprio _last_presented_key, atualizado apenas após
+        apresentação bem-sucedida no Holyrics.
+
     Args:
         searcher: Searcher (ou mock) para resolver a referência.
         holyrics: HolyricsClient (ou mock) para apresentar o versículo.
@@ -121,6 +135,10 @@ class VersePresentationService:
         session_id: ID da sessão atual (para EventMetadata).
         version: versão bíblica padrão (ex.: "ACF").
         quick_presentation: se True, usa quick_presentation no Holyrics.
+        state_orchestrator: StateOrchestrator opcional (Sprint 28). Se
+            fornecido, o serviço consulta current_state antes de
+            apresentar. Pode ser injetado tardiamente via
+            set_state_orchestrator().
     """
 
     def __init__(
@@ -131,6 +149,8 @@ class VersePresentationService:
         session_id: str,
         version: str = "ACF",
         quick_presentation: bool = False,
+        # Sprint 28 (Fase 6) — coordenação com StateOrchestrator.
+        state_orchestrator: Any = None,
     ) -> None:
         self._searcher = searcher
         self._holyrics = holyrics
@@ -139,6 +159,8 @@ class VersePresentationService:
         self._version = version
         self._quick = quick_presentation
         self._subscribed = False
+        # Sprint 28 (Fase 6) — StateOrchestrator para coordenação.
+        self._state_orchestrator = state_orchestrator
 
         # Métricas internas (não expostas via evento — apenas para logging).
         self._total_detected = 0
@@ -149,6 +171,12 @@ class VersePresentationService:
         self._total_anticipations = 0
         self._total_confirmations = 0
         self._total_corrections = 0
+        # Sprint 28 (Fase 6) — métricas de coordenação.
+        self._total_state_rejected = 0
+        self._total_dedup_rejected = 0
+        # Sprint 28 (Fase 6) — dedup interno por (book_id, chapter, verse).
+        # Atualizado quando o VPS apresenta com sucesso no Holyrics.
+        self._last_presented_key: tuple[int, int, int] | None = None
 
         # Sprint 21.4 — Streaming First.
         # Track de antecipações pendentes por correlation_id, para dedup
@@ -165,9 +193,22 @@ class VersePresentationService:
         self._pending_anticipations: dict[str, tuple[int, int, int]] = {}
 
         logger.info(
-            "VersePresentationService initialized: version=%s quick=%s",
+            "VersePresentationService initialized: version=%s quick=%s "
+            "state_orchestrator=%s",
             version,
             quick_presentation,
+            "yes" if state_orchestrator else "no",
+        )
+
+    def set_state_orchestrator(self, orchestrator: Any) -> None:
+        """Injeção tardia de StateOrchestrator (Sprint 28 — Fase 6).
+
+        Permite que o StateOrchestrator seja criado após o
+        VersePresentationService no CompositionRoot e injetado depois.
+        """
+        self._state_orchestrator = orchestrator
+        logger.info(
+            "VersePresentationService: StateOrchestrator injected (coordenação ativa)."
         )
 
     # ------------------------------------------------------------------
@@ -205,6 +246,59 @@ class VersePresentationService:
     # Callback do EventBus — ponto de entrada do fluxo.
     # ------------------------------------------------------------------
 
+    # Sprint 28 (Fase 6) — Coordenação com StateOrchestrator.
+    # ------------------------------------------------------------------
+
+    def _should_present(
+        self,
+        book_id: int,
+        chapter: int,
+        verse: int,
+    ) -> tuple[bool, str]:
+        """Verifica se a referência deve ser apresentada (Sprint 28 — Fase 6).
+
+        Consulta StateOrchestrator.current_state para verificar se o
+        estado permite apresentação. O dedup por (book_id, chapter, verse)
+        é feito internamente pelo VPS via _last_presented_key, NÃO via
+        last_presented_reference do StateOrchestrator (que é atualizado
+        antes do VPS processar o evento, causando falso dedup).
+
+        Returns:
+            (should_present, reason): should_present=True se deve
+            apresentar; False caso contrário com reason explicando.
+        """
+        if self._state_orchestrator is None:
+            # Fallback — sem StateOrchestrator, apresenta sempre.
+            return True, "no_orchestrator"
+
+        # Verificar estado atual.
+        from pipeline.state_orchestrator import State
+        current = self._state_orchestrator.current_state
+        if current != State.PRESENT:
+            self._total_state_rejected += 1
+            logger.info(
+                "VersePresentationService: rejeitado por estado "
+                "(current=%s, esperado=PRESENT, ref=(%d,%d,%d))",
+                current.value, book_id, chapter, verse,
+            )
+            return False, f"state_not_present:{current.value}"
+
+        # Dedup interno por (book_id, chapter, verse).
+        # Não consulta last_presented_reference do StateOrchestrator
+        # porque esse campo é atualizado quando o StateOrchestrator
+        # processa o evento (antes do VPS), causando falso dedup.
+        ref_key = (book_id, chapter, verse)
+        if self._last_presented_key == ref_key:
+            self._total_dedup_rejected += 1
+            logger.info(
+                "VersePresentationService: rejeitado por dedup interno "
+                "(ref=%s já apresentada)",
+                ref_key,
+            )
+            return False, "dedup"
+
+        return True, "ok"
+
     def _on_reference_anticipada(self, event: ReferenceAntecipada) -> None:
         """Recebe ReferenceAntecipada e apresenta antecipadamente (Sprint 21.4).
 
@@ -212,6 +306,14 @@ class VersePresentationService:
         DURANTE a fala e dispara a apresentação antecipada no Holyrics. A
         referência pode ser confirmada ou corrigida por um ReferenceDetected
         posterior (mesma correlation_id).
+
+        Sprint 28 (Fase 6) — antecipadas NÃO consultam StateOrchestrator
+        para dedup, pois são o primeiro sinal que faz o estado transitar
+        para PRESENT. O StateOrchestrator processa ReferenceAntecipada
+        e transita para PRESENT; o VersePresentationService então
+        apresenta. A verificação de estado é feita apenas para evitar
+        apresentação quando o estado já não é PRESENT (ex.: WAIT após
+        IntentUnknown).
 
         Fluxo:
           1. Resolver versículo no Searcher (igual ao fluxo definitivo).
@@ -240,10 +342,36 @@ class VersePresentationService:
             # _resolve_verse já publicou VersePresentationFailed.
             return
 
+        # Sprint 28 (Fase 6) — verificar coordenação com StateOrchestrator.
+        # Antecipadas verificam apenas o estado (current_state == PRESENT),
+        # NÃO o dedup interno. Motivo: a antecipada é o primeiro sinal que
+        # faz o StateOrchestrator transitar para PRESENT. Se o estado já
+        # não for PRESENT (ex.: WAIT após IntentUnknown), a antecipada é
+        # rejeitada. Mas se for PRESENT, a antecipada é apresentada mesmo
+        # que _last_presented_key coincida (pode ser uma re-leitura).
+        should, reason = self._should_present(
+            search_result.book_id,
+            search_result.chapter,
+            search_result.verse or 0,
+        )
+        if not should and "state_not_present" in reason:
+            logger.info(
+                "VersePresentationService: antecipada rejeitada (%s)",
+                reason,
+            )
+            return
+
         # Etapa 2 — Apresentar no Holyrics.
         # _present_verse usa .meta, .correlation_id, .normalized_text
         # — todos presentes em ReferenceAntecipada.
         self._present_verse(event, search_result, t0)  # type: ignore[arg-type]
+
+        # Sprint 28 (Fase 6) — atualizar dedup interno.
+        self._last_presented_key = (
+            search_result.book_id,
+            search_result.chapter,
+            search_result.verse or 0,
+        )
 
         # Etapa 3 — Registrar antecipação pendente para dedup.
         with self._anticipation_lock:
@@ -303,10 +431,23 @@ class VersePresentationService:
                     anticipated_key, detected_key, event.correlation_id,
                 )
                 self._total_corrections += 1
+                # Sprint 28 (Fase 6) — verificar coordenação antes de
+                # apresentar a correção.
+                should, reason = self._should_present(*detected_key)
+                if not should:
+                    logger.info(
+                        "VersePresentationService: correção rejeitada (%s)",
+                        reason,
+                    )
+                    # Publicar VerseResolved mesmo sem apresentar.
+                    self._publish_resolved(event, search_result)
+                    return
                 # Continuar com o fluxo normal para apresentar a nova.
                 self._publish_resolving(event)
                 self._publish_resolved(event, search_result)
                 self._present_verse(event, search_result, t0)
+                # Sprint 28 (Fase 6) — atualizar dedup interno.
+                self._last_presented_key = detected_key
                 return
 
         # Fluxo normal (sem antecipação prévia).
@@ -322,8 +463,25 @@ class VersePresentationService:
         # Etapa 3 — Publicar VerseResolved.
         self._publish_resolved(event, search_result)
 
+        # Sprint 28 (Fase 6) — verificar coordenação com StateOrchestrator
+        # antes de apresentar no Holyrics.
+        detected_key = (
+            search_result.book_id,
+            search_result.chapter,
+            search_result.verse or 0,
+        )
+        should, reason = self._should_present(*detected_key)
+        if not should:
+            logger.info(
+                "VersePresentationService: apresentação rejeitada (%s, ref=%s)",
+                reason, detected_key,
+            )
+            return
+
         # Etapa 4 — Apresentar no Holyrics.
         self._present_verse(event, search_result, t0)
+        # Sprint 28 (Fase 6) — atualizar dedup interno.
+        self._last_presented_key = detected_key
 
     def _confirm_anticipation(
         self,

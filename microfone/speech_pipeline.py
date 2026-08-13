@@ -59,6 +59,11 @@ class SpeechPipelineService:
         speech_queue: SpeechQueue para enfileirar segmentos.
         session_id: ID da sessão atual (para EventMetadata).
         segmenter: VadSegmenter (criado internamente se omitido).
+        streaming_stt_service: StreamingSTTService opcional (Sprint 28 —
+            Fase 10). Se fornecido, o correlation_id do fluxo streaming
+            ativo é reusado em SpeechStarted/SpeechSegment, garantindo
+            que SpeechTranscribed carregue o mesmo correlation_id do
+            SpeechPartial do mesmo fluxo.
     """
 
     def __init__(
@@ -69,12 +74,15 @@ class SpeechPipelineService:
         speech_queue: SpeechQueue,
         session_id: str,
         segmenter: VadSegmenter | None = None,
+        # Sprint 28 (Fase 10) — propagação de correlation_id.
+        streaming_stt_service: Any = None,
     ) -> None:
         self._capture = capture_service
         self._config = audio_config
         self._bus = bus
         self._queue = speech_queue
         self._session_id = session_id
+        self._streaming_stt = streaming_stt_service
 
         # VadSegmenter — criado a partir da config se não fornecido.
         self._segmenter = segmenter or VadSegmenter(
@@ -150,6 +158,22 @@ class SpeechPipelineService:
         logger.info("SpeechPipelineService stopped.")
 
     # ------------------------------------------------------------------
+    # Sprint 28 (Fase 10) — Injeção tardia de StreamingSTTService
+    # ------------------------------------------------------------------
+
+    def set_streaming_stt_service(self, streaming_stt: Any) -> None:
+        """Injeta StreamingSTTService para propagação de correlation_id.
+
+        Sprint 28 (Fase 10) — permite que o StreamingSTTService seja
+        criado depois do SpeechPipelineService e injetado tardiamente.
+        """
+        self._streaming_stt = streaming_stt
+        logger.info(
+            "SpeechPipelineService: StreamingSTTService injetado para "
+            "propagação de correlation_id."
+        )
+
+    # ------------------------------------------------------------------
     # Callback do AudioCaptureService (thread PortAudio)
     # ------------------------------------------------------------------
 
@@ -214,17 +238,39 @@ class SpeechPipelineService:
     # ------------------------------------------------------------------
 
     def _emit_speech_started(self, timestamp: float) -> None:
-        """Publica evento SpeechStarted."""
-        meta = EventMetadata.for_initial(
-            session_id=self._session_id,
-            origin="SpeechPipelineService",
-        )
+        """Publica evento SpeechStarted.
+
+        Sprint 28 (Fase 10) — se há StreamingSTTService com correlation_id
+        ativo, reusa-o para que SpeechTranscribed case com SpeechPartial.
+        """
+        # Sprint 28 (Fase 10) — tentar reusar correlation_id do streaming.
+        streaming_corr_id: str | None = None
+        if self._streaming_stt is not None:
+            try:
+                streaming_corr_id = self._streaming_stt.current_correlation_id
+            except Exception:
+                pass
+
+        if streaming_corr_id:
+            meta = EventMetadata.for_initial(
+                session_id=self._session_id,
+                origin="SpeechPipelineService",
+                correlation_id=streaming_corr_id,
+            )
+        else:
+            meta = EventMetadata.for_initial(
+                session_id=self._session_id,
+                origin="SpeechPipelineService",
+            )
         self._current_correlation_id = meta.correlation_id
         self._current_causation_id = meta.event_id
 
         event = SpeechStarted(meta=meta, timestamp_start=timestamp)
         self._bus.publish(event)
-        logger.info("Speech started at %.3f", timestamp)
+        logger.info(
+            "Speech started at %.3f (corr=%s)",
+            timestamp, self._current_correlation_id,
+        )
 
     def _emit_speech_ended(self, segment: SpeechSegment) -> None:
         """Publica evento SpeechEnded."""
@@ -253,7 +299,12 @@ class SpeechPipelineService:
         logger.info("Speech ended (duration=%d ms)", segment.duration_ms)
 
     def _emit_segment(self, segment: SpeechSegment) -> None:
-        """Publica evento SpeechSegmentCreated e enfileira na SpeechQueue."""
+        """Publica evento SpeechSegmentCreated e enfileira na SpeechQueue.
+
+        Sprint 28 (Fase 10) — propaga o correlation_id do fluxo streaming
+        ativo para o SpeechSegment, permitindo que o SpeechWorker reuse
+        o correlation_id ao publicar SpeechTranscribed.
+        """
         if self._current_correlation_id is None or self._current_causation_id is None:
             return
 
@@ -269,6 +320,17 @@ class SpeechPipelineService:
             origin="SpeechPipelineService",
         )
 
+        # Sprint 28 (Fase 10) — anexar correlation_id ao segmento.
+        # SpeechSegment é frozen, então criamos nova instância.
+        segment_with_corr = SpeechSegment(
+            audio=segment.audio,
+            start_time=segment.start_time,
+            end_time=segment.end_time,
+            duration_ms=segment.duration_ms,
+            chunk_count=segment.chunk_count,
+            correlation_id=self._current_correlation_id,
+        )
+
         event = SpeechSegmentCreated(
             meta=meta,
             duration_ms=segment.duration_ms,
@@ -279,12 +341,13 @@ class SpeechPipelineService:
         self._bus.publish(event)
         self._current_causation_id = meta.event_id
 
-        # Enfileirar segmento para o SpeechWorker.
-        self._queue.put(segment)
+        # Enfileirar segmento (com correlation_id) para o SpeechWorker.
+        self._queue.put(segment_with_corr)
         logger.info(
-            "Segment created (duration=%d ms, chunks=%d) — queued",
+            "Segment created (duration=%d ms, chunks=%d, corr=%s) — queued",
             segment.duration_ms,
             segment.chunk_count,
+            self._current_correlation_id,
         )
 
     # ------------------------------------------------------------------

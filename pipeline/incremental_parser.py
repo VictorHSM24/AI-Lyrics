@@ -1,28 +1,31 @@
-"""IncrementalBiblicalParser — parser incremental de referências (Sprint 19).
+"""IncrementalBiblicalParser — parser incremental de referências (Sprint 19 + 28).
 
 Responsabilidade:
-  - Consumir SpeechPartial / SpeechPartialUpdated do StreamingSTTService.
+  - Consumir SpeechCommittedWords do StreamingSTTService (Sprint 28).
   - Manter estado incremental: book → chapter → verse.
   - Publicar ReferenceCandidate (confiança crescente).
   - Publicar ReferenceDetected quando confidence >= threshold.
+  - Resetar estado em SpeechTranscribed (finalização do fluxo).
 
-Sprint 19 — Streaming Speech Pipeline:
-  Diferente do Parser determinístico (que processa texto completo
-  e é stateless), este parser evolui estado a cada SpeechPartialUpdated.
+Sprint 28 — Streaming First com LocalAgreement-2:
+  O parser agora consome SpeechCommittedWords (palavras confirmed por
+  LocalAgreement-2) em vez de SpeechPartial/Updated. Committed words
+  são texto confiável que não vai mudar mais — o parser pode processar
+  sem risco de retrabalho por revisão regressiva do Whisper.
 
   Exemplo:
-    "joão"                          → ReferenceCandidate(book=João, conf=0.40)
-    "joão capítulo três"            → ReferenceCandidate(book=João, chapter=3, conf=0.75)
-    "joão capítulo três versículo dezesseis"
-                                    → ReferenceDetected(book=João, chapter=3, verse=16, conf=0.98)
+    committed "joão"                          → ReferenceCandidate(book=João, conf=0.40)
+    committed "joão capítulo três"            → ReferenceCandidate(book=João, chapter=3, conf=0.75)
+    committed "joão capítulo três versículo dezesseis"
+                                              → ReferenceDetected(book=João, chapter=3, verse=16, conf=0.98)
 
   O parser NUNCA chama Holyrics diretamente. Quando publica
   ReferenceDetected, o VersePresentationService existente cuida
   da apresentação.
 
-Evitar retrabalho (Etapa 7):
+Evitar retrabalho:
   O parser mantém estado entre chamadas. Quando recebe
-  SpeechPartialUpdated com appended_text, apenas processa o
+  SpeechCommittedWords com committed_text, apenas processa o
   trecho novo — não reprocessa o texto já visto.
 
   Estado mantido:
@@ -35,8 +38,6 @@ Evitar retrabalho (Etapa 7):
 Thread Safety:
   - O parser é chamado na thread do StreamingSTTService (via EventBus).
   - Como mantém estado, NÃO é stateless — uma instância por fluxo.
-  - O BiblicalNLUService existente (stateless) continua processando
-    SpeechTranscribed em paralelo, sem interferir.
 """
 
 from __future__ import annotations
@@ -53,8 +54,8 @@ from pipeline.events import (
     ReferenceAntecipada,
     ReferenceCandidate,
     ReferenceDetected,
-    SpeechPartial,
-    SpeechPartialUpdated,
+    SpeechCommittedWords,
+    SpeechTranscribed,
 )
 from pipeline.metadata import EventMetadata
 # Sprint 21.9 — Telemetria de observabilidade (não altera comportamento).
@@ -95,7 +96,7 @@ _VERSE_EXTENSO = frozenset({"vers", "versiculo", "versiculo:", "v"})
 
 
 class IncrementalBiblicalParser:
-    """Parser incremental que evolui estado a cada SpeechPartial.
+    """Parser incremental que evolui estado a cada SpeechCommittedWords.
 
     Args:
         books: ParserBookTable para resolução de livros.
@@ -107,7 +108,7 @@ class IncrementalBiblicalParser:
             (default 0.90). Abaixo disso, publica ReferenceCandidate.
 
     Lifecycle:
-        start() — inscreve em SpeechPartial e SpeechPartialUpdated.
+        start() — inscreve em SpeechCommittedWords e SpeechTranscribed.
         stop()  — desinscreve (marca como parado).
         reset() — reseta estado incremental (chamado a novo fluxo).
     """
@@ -177,15 +178,20 @@ class IncrementalBiblicalParser:
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        """Inscreve no EventBus para receber SpeechPartial/Updated."""
+        """Inscreve no EventBus para receber SpeechCommittedWords e SpeechTranscribed.
+
+        Sprint 28 — o parser agora consome SpeechCommittedWords (palavras
+        confirmed por LocalAgreement-2) em vez de SpeechPartial/Updated.
+        SpeechTranscribed é usado para reset (finalização do fluxo).
+        """
         if self._subscribed:
             return
-        self._bus.subscribe(SpeechPartial, self._on_partial)
-        self._bus.subscribe(SpeechPartialUpdated, self._on_partial_updated)
+        self._bus.subscribe(SpeechCommittedWords, self._on_committed_words)
+        self._bus.subscribe(SpeechTranscribed, self._on_transcribed)
         self._subscribed = True
         logger.info(
             "IncrementalBiblicalParser started — subscribed to "
-            "SpeechPartial and SpeechPartialUpdated."
+            "SpeechCommittedWords and SpeechTranscribed."
         )
 
     def stop(self) -> None:
@@ -198,8 +204,8 @@ class IncrementalBiblicalParser:
     def reset(self) -> None:
         """Reseta estado incremental para um novo fluxo.
 
-        Chamado quando um novo SpeechPartial chega (novo correlation_id)
-        ou externamente quando o VAD fecha um segmento.
+        Chamado quando um novo SpeechCommittedWords chega (novo correlation_id),
+        quando SpeechTranscribed fecha o segmento, ou externamente.
         """
         self._current_book = None
         self._current_chapter = None
@@ -219,24 +225,36 @@ class IncrementalBiblicalParser:
     # Handlers do EventBus
     # ------------------------------------------------------------------
 
-    def _on_partial(self, event: SpeechPartial) -> None:
-        """Recebe SpeechPartial (primeira transcrição do fluxo)."""
-        self._process(event.text, event, is_first=True)
+    def _on_committed_words(self, event: SpeechCommittedWords) -> None:
+        """Recebe SpeechCommittedWords (palavras confirmed por LocalAgreement-2).
 
-    def _on_partial_updated(self, event: SpeechPartialUpdated) -> None:
-        """Recebe SpeechPartialUpdated (evolução da transcrição).
-
-        Usa appended_text (diff) para evitar reprocessar texto já visto.
+        Sprint 28 — processa apenas committed_text (palavras novas
+        confirmed nesta iteração). Como committed words são estáveis
+        por definição (2 transcrições concordaram), não há risco de
+        retrabalho por revisão regressiva.
         """
         # Se é um novo correlation_id, resetar estado.
         if (self._correlation_id is not None
                 and event.correlation_id != self._correlation_id):
             self.reset()
 
-        # Processar apenas o trecho novo (appended_text).
-        # Se appended_text estiver vazio, usar text completo (fallback).
-        text_to_process = event.appended_text or event.text
-        self._process(text_to_process, event, is_first=False)
+        # Processar apenas as palavras novas committed.
+        text_to_process = event.committed_text
+        self._process(text_to_process, event, is_first=(self._correlation_id is None))
+
+    def _on_transcribed(self, event: SpeechTranscribed) -> None:
+        """Recebe SpeechTranscribed (finalização do fluxo).
+
+        Sprint 28 — resetar estado incremental para o próximo fluxo.
+        O parser não processa SpeechTranscribed (o incremental já
+        detectou em committed words). Apenas limpa o estado.
+        """
+        logger.debug(
+            "IncrementalBiblicalParser: SpeechTranscribed received — resetting "
+            "(corr=%s, text=%r).",
+            event.correlation_id, event.text[:60],
+        )
+        self.reset()
 
     # ------------------------------------------------------------------
     # Processamento incremental
@@ -245,7 +263,7 @@ class IncrementalBiblicalParser:
     def _process(
         self,
         text: str,
-        source_event: SpeechPartial | SpeechPartialUpdated,
+        source_event: SpeechCommittedWords | SpeechTranscribed,
         is_first: bool,
     ) -> None:
         """Processa texto incremental e publica eventos conforme apropriado."""
@@ -458,7 +476,7 @@ class IncrementalBiblicalParser:
 
     def _evaluate_and_publish(
         self,
-        source_event: SpeechPartial | SpeechPartialUpdated,
+        source_event: SpeechCommittedWords | SpeechTranscribed,
         latency_ms: int,
     ) -> None:
         """Avalia estado atual e publica ReferenceCandidate ou ReferenceDetected."""
@@ -568,7 +586,7 @@ class IncrementalBiblicalParser:
 
     def _publish_candidate(
         self,
-        source_event: SpeechPartial | SpeechPartialUpdated,
+        source_event: SpeechCommittedWords,
         book: Any,
         confidence: float,
         completeness: str,
@@ -610,7 +628,7 @@ class IncrementalBiblicalParser:
 
     def _publish_anticipation(
         self,
-        source_event: SpeechPartial | SpeechPartialUpdated,
+        source_event: SpeechCommittedWords,
         book: Any,
         confidence: float,
         completeness: str,
@@ -660,7 +678,7 @@ class IncrementalBiblicalParser:
 
     def _publish_detected(
         self,
-        source_event: SpeechPartial | SpeechPartialUpdated,
+        source_event: SpeechCommittedWords,
         book: Any,
         confidence: float,
         latency_ms: int,
@@ -692,7 +710,7 @@ class IncrementalBiblicalParser:
             verse_start=self._current_verse or 0,
             verse_end=verse_end_val,
             confidence=round(confidence, 4),
-            raw_text=source_event.text if hasattr(source_event, "text") else "",
+            raw_text=getattr(source_event, "full_committed_text", "") or getattr(source_event, "text", ""),
             normalized_text=normalized,
         )
         self._bus.publish(event)

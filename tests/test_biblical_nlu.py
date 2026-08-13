@@ -74,10 +74,13 @@ class TestBiblicalNLUService(unittest.TestCase):
     def setUp(self):
         self.store = MagicMock()
         self.bus = PipelineEventBus(store=self.store)
+        # Sprint 28 (Fase 9) — default é enabled=False; usar True para
+        # testes de comportamento do NLU.
         self.nlu = BiblicalNLUService(
             parser=self.parser,
             bus=self.bus,
             session_id="test-session",
+            enabled=True,
         )
         self.nlu.start()
 
@@ -294,11 +297,13 @@ class TestBiblicalNLUService(unittest.TestCase):
         self.assertEqual(ev.normalized_text, "joao 3:16")
 
     def test_start_stop(self):
-        """start/stop controlam subscrição."""
+        """start/stop controlam subscrição (com enabled=True)."""
+        # Sprint 28 (Fase 9) — default é enabled=False; usar True para teste.
         nlu2 = BiblicalNLUService(
             parser=self.parser,
             bus=self.bus,
             session_id="test",
+            enabled=True,
         )
         self.assertFalse(nlu2.is_running)
         nlu2.start()

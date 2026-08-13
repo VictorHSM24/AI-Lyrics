@@ -131,6 +131,7 @@ class MockBackend:
         beam_size: int,
         vad_filter: bool,
         chunk_length: int,
+        word_timestamps: bool = False,
     ) -> tuple[str, str, float, tuple[Any, ...]]:
         self.transcribe_calls.append({
             "audio_len": len(audio) if hasattr(audio, "__len__") else 0,
@@ -138,6 +139,7 @@ class MockBackend:
             "beam_size": beam_size,
             "vad_filter": vad_filter,
             "chunk_length": chunk_length,
+            "word_timestamps": word_timestamps,
         })
         seg = MockSegment(text=self._text, avg_logprob=self._avg_logprob)
         return self._text, self._language, self._avg_logprob, (seg,)

@@ -130,6 +130,7 @@ class STTExecutor:
         self,
         audio: np.ndarray,
         sample_rate: int = 16000,
+        word_timestamps: bool = False,
     ) -> STTJobResult:
         """Transcreve áudio float32 diretamente (fluxo StreamingSTT).
 
@@ -140,6 +141,8 @@ class STTExecutor:
         Args:
             audio: ndarray float32 [-1.0, 1.0]. Shape (N,) para mono.
             sample_rate: taxa de amostragem (default 16000).
+            word_timestamps: se True, solicita timestamps por palavra
+                do faster-whisper. Necessário para LocalAgreement-2.
 
         Returns:
             STTJobResult com resultado + métricas de espera.
@@ -176,7 +179,7 @@ class STTExecutor:
         t_enqueue = time.monotonic()
         with self._lock:
             t_start = time.monotonic()
-            result = self._stt.transcribe(segment)
+            result = self._stt.transcribe(segment, word_timestamps=word_timestamps)
             t_end = time.monotonic()
 
         queue_wait_ms = int((t_start - t_enqueue) * 1000)

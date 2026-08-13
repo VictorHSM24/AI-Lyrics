@@ -82,6 +82,11 @@ class SpeechSegment:
         end_time: timestamp (time.time()) do fim da fala.
         duration_ms: duração total em milissegundos.
         chunk_count: número de chunks acumulados.
+        correlation_id: correlation_id do fluxo streaming ativo
+            (Sprint 28 — Fase 10). Permite que o SpeechWorker reuse
+            o correlation_id ao publicar SpeechTranscribed, garantindo
+            que a finalização case com antecipadas do mesmo fluxo.
+            Vazio se não houver fluxo streaming ativo.
     """
 
     audio: bytes
@@ -89,6 +94,7 @@ class SpeechSegment:
     end_time: float
     duration_ms: int
     chunk_count: int
+    correlation_id: str = ""
 
 
 @dataclass

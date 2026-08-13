@@ -1,4 +1,4 @@
-"""StateOrchestrator — máquina de estados do sistema (CAP-01).
+"""StateOrchestrator — máquina de estados do sistema (CAP-01 + Sprint 28).
 
 Responsabilidade:
   - Centralizar a decisão de estado do sistema (WAIT, PREPARE, PRESENT, IGNORE).
@@ -22,11 +22,12 @@ Thread Safety:
   - Contexto interno protegido por threading.Lock.
   - Publicação de StateChanged ocorre FORA do lock.
 
-Estado atual: ESQUELETO (Passo 1).
-  - Handlers existem mas não contêm lógica de negócio.
-  - Nenhuma transição é implementada.
-  - Nenhum StateChanged é publicado.
-  - TODOs marcam onde a lógica será implementada nos Passos 2-6.
+Sprint 28 (Fase 5) — Implementação completa:
+  - Transições WAIT/PREPARE/PRESENT/IGNORE implementadas.
+  - StateChanged publicado em toda transição.
+  - Inscrição em ReferenceAntecipada + SpeechCommittedWords.
+  - Dedup por last_presented_reference.
+  - Correção de antecipada (ReferenceAntecipada → ReferenceDetected).
 """
 
 from __future__ import annotations
@@ -42,10 +43,14 @@ from pipeline.bus import PipelineEventBus
 from pipeline.events import (
     IntentCandidate,
     IntentUnknown,
+    ReferenceAntecipada,
     ReferenceCandidate,
     ReferenceDetected,
+    SpeechCommittedWords,
+    StateChanged,
     SpeechTranscribed,
 )
+from pipeline.metadata import EventMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +110,9 @@ class OrchestratorContext:
     segment_count_since_last_state_change: int = 0
     has_biblical_content: bool = False
     _state_entered_at: float = field(default_factory=time.monotonic)
+    # Sprint 28 (Fase 5) — rastrear se a última apresentação foi antecipada.
+    # Usado para correção de antecipada (§13.5).
+    last_was_anticipation: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -152,19 +160,25 @@ class StateOrchestrator:
     # ------------------------------------------------------------------
 
     def start(self) -> None:
-        """Inscreve handlers no EventBus para receber eventos do pipeline."""
+        """Inscreve handlers no EventBus para receber eventos do pipeline.
+
+        Sprint 28 (Fase 5) — adiciona ReferenceAntecipada e SpeechCommittedWords.
+        """
         if self._subscribed:
             return
         self._bus.subscribe(ReferenceCandidate, self._handle_reference_candidate)
         self._bus.subscribe(ReferenceDetected, self._handle_reference_detected)
+        self._bus.subscribe(ReferenceAntecipada, self._handle_reference_antecipada)
         self._bus.subscribe(IntentUnknown, self._handle_intent_unknown)
         self._bus.subscribe(SpeechTranscribed, self._handle_speech_transcribed)
+        self._bus.subscribe(SpeechCommittedWords, self._handle_committed_words)
         self._bus.subscribe(IntentCandidate, self._handle_intent_candidate)
         self._subscribed = True
         logger.info(
             "StateOrchestrator started — subscribed to "
-            "ReferenceCandidate, ReferenceDetected, IntentUnknown, "
-            "SpeechTranscribed, IntentCandidate."
+            "ReferenceCandidate, ReferenceDetected, ReferenceAntecipada, "
+            "IntentUnknown, SpeechTranscribed, SpeechCommittedWords, "
+            "IntentCandidate."
         )
 
     def stop(self) -> None:
@@ -173,8 +187,10 @@ class StateOrchestrator:
             return
         self._bus.unsubscribe(ReferenceCandidate, self._handle_reference_candidate)
         self._bus.unsubscribe(ReferenceDetected, self._handle_reference_detected)
+        self._bus.unsubscribe(ReferenceAntecipada, self._handle_reference_antecipada)
         self._bus.unsubscribe(IntentUnknown, self._handle_intent_unknown)
         self._bus.unsubscribe(SpeechTranscribed, self._handle_speech_transcribed)
+        self._bus.unsubscribe(SpeechCommittedWords, self._handle_committed_words)
         self._bus.unsubscribe(IntentCandidate, self._handle_intent_candidate)
         self._subscribed = False
         logger.info("StateOrchestrator stopped.")
@@ -207,84 +223,326 @@ class StateOrchestrator:
                 segment_count_since_last_state_change=self._ctx.segment_count_since_last_state_change,
                 has_biblical_content=self._ctx.has_biblical_content,
                 _state_entered_at=self._ctx._state_entered_at,
+                last_was_anticipation=self._ctx.last_was_anticipation,
             )
 
     # ------------------------------------------------------------------
-    # Handlers — esqueleto (Passo 1)
-    #
-    # Cada handler possui a assinatura correta e documentação.
-    # Nenhuma lógica de negócio é implementada nesta etapa.
-    # TODOs marcam onde a lógica será implementada nos Passos 2-6.
+    # Handlers — Sprint 28 (Fase 5) implementação completa
     # ------------------------------------------------------------------
 
     def _handle_reference_candidate(self, event: ReferenceCandidate) -> None:
         """Processa ReferenceCandidate do IncrementalBiblicalParser.
 
-        Transições esperadas (a implementar):
-          - WAIT → PREPARE (book_detected ou chapter_detected)
+        Transições:
+          - WAIT/IGNORE → PREPARE (book_detected ou chapter_detected)
           - PREPARE → PREPARE (chapter_detected, se capítulo novo)
-          - PREPARE → PREPARE (book_changed, se livro diferente)
           - PRESENT → PREPARE (nova referência)
-          - IGNORE → PREPARE (nova referência)
-
-        Args:
-            event: ReferenceCandidate com book, book_id, chapter, confidence.
         """
-        # TODO Passo 3: implementar transições de ReferenceCandidate.
-        pass
+        transition = None
+        with self._lock:
+            ctx = self._ctx
+            old_state = ctx.current_state
+            old_book = ctx.active_book
+            old_chapter = ctx.active_chapter
+
+            if old_state in (State.WAIT, State.IGNORE, State.PRESENT):
+                # Transitar para PREPARE.
+                ctx.current_state = State.PREPARE
+                ctx.active_book = event.book or None
+                ctx.active_book_id = event.book_id
+                ctx.active_chapter = event.chapter or None
+                ctx.pending_reference = self._build_pending_ref(
+                    event.book, event.chapter, 0,
+                )
+                ctx._state_entered_at = time.monotonic()
+                ctx.segment_count_since_last_state_change = 0
+                reason = "book_detected" if event.completeness == "book" else \
+                         "chapter_detected" if event.completeness == "chapter" else \
+                         "candidate"
+                transition = (old_state, State.PREPARE, reason)
+            elif old_state == State.PREPARE:
+                # Já em PREPARE — atualizar capítulo se mudou.
+                if event.chapter and event.chapter != old_chapter:
+                    ctx.active_chapter = event.chapter
+                    ctx.pending_reference = self._build_pending_ref(
+                        event.book or old_book, event.chapter, 0,
+                    )
+                    transition = (State.PREPARE, State.PREPARE, "chapter_detected")
+                elif event.book and event.book != old_book:
+                    # Livro mudou — nova referência em PREPARE.
+                    ctx.active_book = event.book
+                    ctx.active_book_id = event.book_id
+                    ctx.active_chapter = event.chapter or None
+                    ctx.pending_reference = self._build_pending_ref(
+                        event.book, event.chapter, 0,
+                    )
+                    transition = (State.PREPARE, State.PREPARE, "book_changed")
+
+        if transition is not None:
+            self._publish_state_changed(event.meta, *transition)
 
     def _handle_reference_detected(self, event: ReferenceDetected) -> None:
         """Processa ReferenceDetected do parser ou resolver.
 
-        Transições esperadas (a implementar):
-          - WAIT → PRESENT (first)
-          - PREPARE → PRESENT (first)
-          - IGNORE → PRESENT (first)
-          - PRESENT → PRESENT (repeat, se mesma referência)
-          - PRESENT → PRESENT (first, se nova referência)
-
-        Args:
-            event: ReferenceDetected com book_id, chapter, verse_start.
+        Transições:
+          - WAIT/PREPARE/IGNORE → PRESENT (first)
+          - PRESENT → PRESENT (repeat, se mesma referência = noop)
+          - PRESENT → PRESENT (new_reference, se nova referência)
+          - PRESENT → PRESENT (corrected, se corrige antecipada — §13.5)
         """
-        # TODO Passo 4: implementar transições de ReferenceDetected.
-        pass
+        transition = None
+        detail = ""
+        with self._lock:
+            ctx = self._ctx
+            old_state = ctx.current_state
+            ref_key = (event.book_id, event.chapter, event.verse_start)
+            is_repeat = ctx.last_presented_reference == ref_key
+
+            if old_state != State.PRESENT:
+                # Primeira apresentação.
+                ctx.current_state = State.PRESENT
+                ctx.active_book = event.book
+                ctx.active_book_id = event.book_id
+                ctx.active_chapter = event.chapter
+                ctx.pending_reference = None
+                ctx.last_presented_reference = ref_key
+                ctx.last_was_anticipation = False
+                ctx._state_entered_at = time.monotonic()
+                ctx.segment_count_since_last_state_change = 0
+                transition = (old_state, State.PRESENT, "reference_detected")
+            elif is_repeat:
+                # Mesma referência — noop (dedup).
+                # §13.5: se foi antecipada e agora é confirmada (mesma ref),
+                # marcar detail="confirmed".
+                if ctx.last_was_anticipation:
+                    detail = "confirmed"
+                ctx.last_was_anticipation = False
+                transition = (State.PRESENT, State.PRESENT, "repeat")
+            else:
+                # Nova referência enquanto em PRESENT.
+                # §13.5: se a última foi antecipada e (book, chapter) é igual
+                # mas verse difere, é correção de antecipada.
+                last_ref = ctx.last_presented_reference
+                if (ctx.last_was_anticipation and last_ref is not None
+                        and last_ref[0] == event.book_id
+                        and last_ref[1] == event.chapter
+                        and last_ref[2] != event.verse_start):
+                    detail = "corrected"
+                    transition = (State.PRESENT, State.PRESENT, "new_reference")
+                else:
+                    transition = (State.PRESENT, State.PRESENT, "new_reference")
+                ctx.active_book = event.book
+                ctx.active_book_id = event.book_id
+                ctx.active_chapter = event.chapter
+                ctx.last_presented_reference = ref_key
+                ctx.last_was_anticipation = False
+                ctx._state_entered_at = time.monotonic()
+                ctx.segment_count_since_last_state_change = 0
+
+        if transition is not None:
+            self._publish_state_changed(event.meta, *transition, detail=detail)
+
+    def _handle_reference_antecipada(self, event: ReferenceAntecipada) -> None:
+        """Processa ReferenceAntecipada do IncrementalBiblicalParser.
+
+        Transições:
+          - PREPARE → PRESENT (antecipada); marca last_was_anticipation=True
+          - WAIT/IGNORE → PRESENT (antecipada direta)
+        """
+        transition = None
+        with self._lock:
+            ctx = self._ctx
+            old_state = ctx.current_state
+            ref_key = (event.book_id, event.chapter, event.verse_start)
+            is_repeat = ctx.last_presented_reference == ref_key
+
+            if not is_repeat:
+                ctx.current_state = State.PRESENT
+                ctx.active_book = event.book
+                ctx.active_book_id = event.book_id
+                ctx.active_chapter = event.chapter
+                ctx.pending_reference = None
+                ctx.last_presented_reference = ref_key
+                ctx.last_was_anticipation = True
+                ctx._state_entered_at = time.monotonic()
+                ctx.segment_count_since_last_state_change = 0
+                transition = (old_state, State.PRESENT, "anticipation")
+            else:
+                transition = (State.PRESENT, State.PRESENT, "repeat")
+
+        if transition is not None:
+            self._publish_state_changed(event.meta, *transition)
 
     def _handle_intent_unknown(self, event: IntentUnknown) -> None:
         """Processa IntentUnknown do BiblicalNLUService.
 
-        Transições esperadas (a implementar):
+        Transições:
           - PRESENT → WAIT (no_reference)
-          - Outros estados: permanecer (no-op)
-
-        Args:
-            event: IntentUnknown com raw_text e reason.
+          - PREPARE → WAIT (se sem pista)
         """
-        # TODO Passo 5: implementar transição de IntentUnknown.
-        pass
+        transition = None
+        with self._lock:
+            ctx = self._ctx
+            old_state = ctx.current_state
+
+            if old_state == State.PRESENT:
+                ctx.current_state = State.WAIT
+                ctx.active_book = None
+                ctx.active_book_id = 0
+                ctx.active_chapter = None
+                ctx.pending_reference = None
+                ctx._state_entered_at = time.monotonic()
+                ctx.segment_count_since_last_state_change = 0
+                transition = (old_state, State.WAIT, "no_reference")
+            elif old_state == State.PREPARE:
+                ctx.current_state = State.WAIT
+                ctx.active_book = None
+                ctx.active_book_id = 0
+                ctx.active_chapter = None
+                ctx.pending_reference = None
+                ctx._state_entered_at = time.monotonic()
+                ctx.segment_count_since_last_state_change = 0
+                transition = (old_state, State.WAIT, "no_reference")
+
+        if transition is not None:
+            self._publish_state_changed(event.meta, *transition)
 
     def _handle_speech_transcribed(self, event: SpeechTranscribed) -> None:
-        """Processa SpeechTranscribed do STT.
+        """Processa SpeechTranscribed do STT (finalização do fluxo).
 
-        Transições esperadas (a implementar):
+        Transições:
           - PRESENT → WAIT (no_reference, se sem pista bíblica)
           - WAIT → IGNORE (segment_ignored, se sem pista bíblica)
+          - PREPARE → WAIT/IGNORE (se sem ref detectada)
           - Outros: incrementar segment_count, sem transição
-
-        Args:
-            event: SpeechTranscribed com text, language, confidence.
         """
-        # TODO Passo 6: implementar classificação IGNORE vs WAIT.
-        pass
+        transition = None
+        with self._lock:
+            ctx = self._ctx
+            old_state = ctx.current_state
+            ctx.segment_count_since_last_state_change += 1
+            has_biblical = self._has_biblical_content(event.text)
+
+            if old_state == State.PRESENT and not has_biblical:
+                ctx.current_state = State.WAIT
+                ctx.active_book = None
+                ctx.active_book_id = 0
+                ctx.active_chapter = None
+                ctx.pending_reference = None
+                ctx._state_entered_at = time.monotonic()
+                ctx.segment_count_since_last_state_change = 0
+                transition = (old_state, State.WAIT, "no_reference")
+            elif old_state == State.WAIT and not has_biblical:
+                ctx.current_state = State.IGNORE
+                ctx._state_entered_at = time.monotonic()
+                ctx.segment_count_since_last_state_change = 0
+                transition = (old_state, State.IGNORE, "segment_ignored")
+            elif old_state == State.PREPARE and not has_biblical:
+                ctx.current_state = State.WAIT
+                ctx.active_book = None
+                ctx.active_book_id = 0
+                ctx.active_chapter = None
+                ctx.pending_reference = None
+                ctx._state_entered_at = time.monotonic()
+                ctx.segment_count_since_last_state_change = 0
+                transition = (old_state, State.WAIT, "no_reference")
+
+        if transition is not None:
+            self._publish_state_changed(event.meta, *transition)
+
+    def _handle_committed_words(self, event: SpeechCommittedWords) -> None:
+        """Processa SpeechCommittedWords (Sprint 28).
+
+        Atualiza has_biblical_content (heurística) para preparar
+        classificação WAIT vs IGNORE em SpeechTranscribed.
+        """
+        with self._lock:
+            self._ctx.has_biblical_content = self._has_biblical_content(
+                event.full_committed_text,
+            )
 
     def _handle_intent_candidate(self, event: IntentCandidate) -> None:
         """Processa IntentCandidate do SemanticEngine.
 
-        O orquestrador não age diretamente sobre IntentCandidate.
-        O ReferenceResolver converte IntentCandidate em ReferenceDetected,
-        que o orquestrador então processa.
-
-        Args:
-            event: IntentCandidate com candidates_json, intent, inference_ms.
+        Noop — o ReferenceResolver converte IntentCandidate em
+        ReferenceDetected, que o orquestrador então processa.
         """
-        # TODO Passo 6: confirmar noop (resolver converte em ReferenceDetected).
         pass
+
+    # ------------------------------------------------------------------
+    # Helpers internos
+    # ------------------------------------------------------------------
+
+    def _build_pending_ref(
+        self, book: str | None, chapter: int | None, verse: int,
+    ) -> str | None:
+        """Constrói string de referência pendente (ex.: 'João 3:?')."""
+        if not book:
+            return None
+        if chapter and chapter > 0:
+            if verse and verse > 0:
+                return f"{book} {chapter}:{verse}"
+            return f"{book} {chapter}:?"
+        return f"{book} ?:?"
+
+    def _has_biblical_content(self, text: str) -> bool:
+        """Heurística: verifica se o texto contém pista bíblica.
+
+        Verifica nomes de livros conhecidos ou padrões de referência
+        (ex.: "capítulo 3", "versículo 16", dígitos isolados).
+        """
+        if not text:
+            return False
+        text_lower = text.lower()
+        # Verificar nomes de livros.
+        if self._book_names:
+            for name in self._book_names:
+                if name.lower() in text_lower:
+                    return True
+        # Heurística de padrões de referência.
+        biblical_markers = [
+            "capitulo", "capítulo", "versiculo", "versículo",
+            "vers ", "cap ", "evangelho", "salmos", "salmo",
+        ]
+        for marker in biblical_markers:
+            if marker in text_lower:
+                return True
+        return False
+
+    def _publish_state_changed(
+        self,
+        source_meta: EventMetadata,
+        from_state: State,
+        to_state: State,
+        reason: str,
+        detail: str = "",
+    ) -> None:
+        """Publica StateChanged no EventBus (FORA do lock)."""
+        with self._lock:
+            ctx = self._ctx
+            active_book = ctx.active_book or ""
+            active_chapter = ctx.active_chapter or 0
+            pending_ref = ctx.pending_reference or ""
+            repeat = reason == "repeat"
+
+        meta = EventMetadata.for_next(
+            previous=source_meta,
+            origin="StateOrchestrator",
+        )
+        event = StateChanged(
+            meta=meta,
+            from_state=from_state.value,
+            to_state=to_state.value,
+            reason=reason,
+            repeat=repeat,
+            detail=detail,
+            active_book=active_book,
+            active_chapter=active_chapter,
+            pending_reference=pending_ref,
+        )
+        self._bus.publish(event)
+        logger.info(
+            "StateOrchestrator: %s → %s (reason=%s, book=%s, chapter=%d)",
+            from_state.value, to_state.value, reason,
+            active_book, active_chapter,
+        )

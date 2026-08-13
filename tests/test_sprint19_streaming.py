@@ -27,6 +27,7 @@ from microfone.stt_executor import STTExecutor
 from pipeline.events import (
     ReferenceCandidate,
     ReferenceDetected,
+    SpeechCommittedWords,
     SpeechPartial,
     SpeechPartialUpdated,
 )
@@ -460,14 +461,11 @@ class TestIncrementalBiblicalParser:
         )
         parser.start()
 
-        # Publicar SpeechPartial com apenas "joao".
-        partial = SpeechPartial(
-            meta=_initial_meta("test"),
-            text="joao",
-            language="pt",
-            confidence=0.85,
+        # Publicar SpeechCommittedWords com apenas "joao".
+        committed = _make_committed(
+            _initial_meta("test"), "joao", "joao", confidence=0.85,
         )
-        bus.publish(partial)
+        bus.publish(committed)
         time.sleep(0.05)
 
         candidates = col.of_type(ReferenceCandidate)
@@ -490,17 +488,14 @@ class TestIncrementalBiblicalParser:
         )
         parser.start()
 
-        # SpeechPartial com "joao".
+        # SpeechCommittedWords com "joao".
         meta1 = _initial_meta("test")
-        bus.publish(SpeechPartial(
-            meta=meta1, text="joao", confidence=0.85,
-        ))
+        bus.publish(_make_committed(meta1, "joao", "joao", confidence=0.85))
         time.sleep(0.05)
-        # SpeechPartialUpdated com appended "capitulo 3" — mesmo correlation_id.
+        # SpeechCommittedWords com "capitulo 3" — mesmo correlation_id.
         meta2 = _next_meta(meta1, "test")
-        bus.publish(SpeechPartialUpdated(
-            meta=meta2, text="joao capitulo 3",
-            appended_text="capitulo 3", confidence=0.88,
+        bus.publish(_make_committed(
+            meta2, "capitulo 3", "joao capitulo 3", confidence=0.88,
         ))
         time.sleep(0.05)
 
@@ -527,20 +522,17 @@ class TestIncrementalBiblicalParser:
         parser.start()
 
         meta1 = _initial_meta("test")
-        bus.publish(SpeechPartial(
-            meta=meta1, text="joao", confidence=0.85,
-        ))
+        bus.publish(_make_committed(meta1, "joao", "joao", confidence=0.85))
         time.sleep(0.05)
         meta2 = _next_meta(meta1, "test")
-        bus.publish(SpeechPartialUpdated(
-            meta=meta2, text="joao capitulo 3",
-            appended_text="capitulo 3", confidence=0.88,
+        bus.publish(_make_committed(
+            meta2, "capitulo 3", "joao capitulo 3", confidence=0.88,
         ))
         time.sleep(0.05)
         meta3 = _next_meta(meta2, "test")
-        bus.publish(SpeechPartialUpdated(
-            meta=meta3, text="joao capitulo 3 versiculo 16",
-            appended_text="versiculo 16", confidence=0.92,
+        bus.publish(_make_committed(
+            meta3, "versiculo 16", "joao capitulo 3 versiculo 16",
+            confidence=0.92,
         ))
         time.sleep(0.05)
 
@@ -565,20 +557,20 @@ class TestIncrementalBiblicalParser:
 
         # Sequência completa até ReferenceDetected.
         meta1 = _initial_meta("test")
-        bus.publish(SpeechPartial(
-            meta=meta1, text="joao capitulo 3 versiculo 16",
-            confidence=0.92,
+        bus.publish(_make_committed(
+            meta1, "joao capitulo 3 versiculo 16",
+            "joao capitulo 3 versiculo 16", confidence=0.92,
         ))
         time.sleep(0.05)
         first_detected = col.of_type(ReferenceDetected)
         assert len(first_detected) == 1
 
-        # Parcial adicional — não deve gerar novo evento.
+        # Committed adicional — não deve gerar novo evento.
         meta2 = _next_meta(meta1, "test")
-        bus.publish(SpeechPartialUpdated(
-            meta=meta2,
-            text="joao capitulo 3 versiculo 16 porque deus amou",
-            appended_text="porque deus amou", confidence=0.92,
+        bus.publish(_make_committed(
+            meta2, "porque deus amou",
+            "joao capitulo 3 versiculo 16 porque deus amou",
+            confidence=0.92,
         ))
         time.sleep(0.05)
         assert len(col.of_type(ReferenceDetected)) == 1
@@ -596,9 +588,9 @@ class TestIncrementalBiblicalParser:
         parser.start()
 
         meta1 = _initial_meta("test")
-        bus.publish(SpeechPartial(
-            meta=meta1, text="joao capitulo 3 versiculo 16",
-            confidence=0.92,
+        bus.publish(_make_committed(
+            meta1, "joao capitulo 3 versiculo 16",
+            "joao capitulo 3 versiculo 16", confidence=0.92,
         ))
         time.sleep(0.05)
         assert len(col.of_type(ReferenceDetected)) == 1
@@ -607,9 +599,8 @@ class TestIncrementalBiblicalParser:
         col.clear()
 
         meta2 = _initial_meta("test")
-        bus.publish(SpeechPartial(
-            meta=meta2, text="romanos 8 28",
-            confidence=0.92,
+        bus.publish(_make_committed(
+            meta2, "romanos 8 28", "romanos 8 28", confidence=0.92,
         ))
         time.sleep(0.05)
         detected = col.of_type(ReferenceDetected)
@@ -634,6 +625,21 @@ def _next_meta(previous_meta, session_id: str):
     )
 
 
+def _make_committed(meta, committed_text: str, full_committed_text: str = "",
+                    confidence: float = 0.9) -> SpeechCommittedWords:
+    """Cria SpeechCommittedWords para testes do parser (Sprint 28)."""
+    return SpeechCommittedWords(
+        meta=meta,
+        committed_text=committed_text,
+        full_committed_text=full_committed_text or committed_text,
+        words=tuple(),
+        language="pt",
+        confidence=confidence,
+        latency_ms=100,
+        audio_duration_ms=6000,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Etapa 10.5 — Fluxo completo (integração)
 # ---------------------------------------------------------------------------
@@ -650,20 +656,32 @@ class TestStreamingPipelineIntegration:
         """
         bus = _make_bus()
         col = _EventCollector(bus, [
-            SpeechPartial, SpeechPartialUpdated,
+            SpeechPartial, SpeechPartialUpdated, SpeechCommittedWords,
             ReferenceCandidate, ReferenceDetected,
         ])
         books = _make_books()
 
         # Mock STTExecutor com sequência de transcrições.
+        # Sprint 28 — STTResult precisa ter words=() para fallback de split.
+        # Sprint 28 — LocalAgreement-2 precisa de 2 transcrições concordando
+        # para commitar. A última transcrição (T5) repete T4 para commitar
+        # "versiculo 16" — sem T5, as 2 últimas palavras nunca seriam committed.
+        from transcricao.stt import STTResult
         transcript_sequence = [
-            MagicMock(text="irmaos vamos", language="pt", confidence=0.80),
-            MagicMock(text="irmaos vamos abrir biblias no evangelho de joao",
-                      language="pt", confidence=0.85),
-            MagicMock(text="irmaos vamos abrir biblias no evangelho de joao capitulo 3",
-                      language="pt", confidence=0.87),
-            MagicMock(text="irmaos vamos abrir biblias no evangelho de joao capitulo 3 versiculo 16",
-                      language="pt", confidence=0.90),
+            STTResult(text="irmaos vamos", language="pt", confidence=0.80,
+                      processing_ms=100, audio_duration_ms=6000, words=()),
+            STTResult(text="irmaos vamos abrir biblias no evangelho de joao",
+                      language="pt", confidence=0.85,
+                      processing_ms=100, audio_duration_ms=6000, words=()),
+            STTResult(text="irmaos vamos abrir biblias no evangelho de joao capitulo 3",
+                      language="pt", confidence=0.87,
+                      processing_ms=100, audio_duration_ms=6000, words=()),
+            STTResult(text="irmaos vamos abrir biblias no evangelho de joao capitulo 3 versiculo 16",
+                      language="pt", confidence=0.90,
+                      processing_ms=100, audio_duration_ms=6000, words=()),
+            STTResult(text="irmaos vamos abrir biblias no evangelho de joao capitulo 3 versiculo 16",
+                      language="pt", confidence=0.92,
+                      processing_ms=100, audio_duration_ms=6000, words=()),
         ]
         mock_executor = MagicMock(spec=STTExecutor)
         mock_executor.transcribe_audio.side_effect = [
@@ -683,8 +701,8 @@ class TestStreamingPipelineIntegration:
         )
         parser.start()
 
-        # Simular 4 janelas consecutivas.
-        for _ in range(4):
+        # Simular 5 janelas consecutivas (T5 repete T4 para commitar últimas palavras).
+        for _ in range(5):
             streaming.on_window(_make_audio(6.0), time.time())
             time.sleep(0.02)
 
@@ -720,7 +738,8 @@ class TestSprint19Regression:
 
         O fluxo VAD não é alterado pelo Sprint 19 — apenas adicionamos
         um fluxo paralelo (streaming). Este teste verifica que o
-        BiblicalNLUService existente ainda assina SpeechTranscribed.
+        BiblicalNLUService existente ainda assina SpeechTranscribed
+        quando enabled=True (compatibilidade Sprint 17).
         """
         from pipeline.events import SpeechTranscribed
         from pipeline.nlu import BiblicalNLUService
@@ -730,9 +749,10 @@ class TestSprint19Regression:
         col = _EventCollector(bus, [SpeechTranscribed])
 
         # BiblicalNLUService existente (stateless).
+        # Sprint 28 (Fase 9) — usar enabled=True para teste de compatibilidade.
         books = _make_books()
         parser = Parser(books=books)
-        nlu = BiblicalNLUService(parser=parser, bus=bus, session_id="test")
+        nlu = BiblicalNLUService(parser=parser, bus=bus, session_id="test", enabled=True)
         nlu.start()
 
         # Publicar SpeechTranscribed (como o SpeechWorker faria).

@@ -1,381 +1,256 @@
-"""Testes de infraestrutura do StateOrchestrator (CAP-01, Passo 1).
+"""Testes do StateOrchestrator (Sprint 28 — Fase 5).
 
-Cobre apenas a infraestrutura:
-  - Instanciação correta
-  - Estado inicial = WAIT
-  - Contexto inicial correto
-  - start() registra handlers no EventBus
-  - stop() remove handlers do EventBus
-  - Properties retornam snapshots imutáveis
-  - Componente inicializa sem exceções
-
-Nenhum teste de transição ou máquina de estados.
+Valida:
+- Transições WAIT/PREPARE/PRESENT/IGNORE.
+- StateChanged publicado em todas as transições.
+- Dedup por last_presented_reference (repeat = noop).
+- Correção de antecipada.
+- Inscrição em ReferenceAntecipada + SpeechCommittedWords.
 """
 
 from __future__ import annotations
 
-import unittest
+import time
+from unittest.mock import MagicMock
+
+import pytest
 
 from pipeline.bus import PipelineEventBus
 from pipeline.events import (
-    IntentCandidate,
     IntentUnknown,
+    ReferenceAntecipada,
     ReferenceCandidate,
     ReferenceDetected,
+    SpeechCommittedWords,
     SpeechTranscribed,
+    StateChanged,
 )
 from pipeline.metadata import EventMetadata
-from pipeline.state_orchestrator import (
-    OrchestratorContext,
-    State,
-    StateOrchestrator,
-)
+from pipeline.state_orchestrator import State, StateOrchestrator
 
 
-def _make_meta(origin: str = "test") -> EventMetadata:
-    """Cria EventMetadata para testes."""
+def _make_meta(correlation_id: str = "corr-1") -> EventMetadata:
     return EventMetadata.for_initial(
         session_id="test-session",
-        origin=origin,
-        event_id="test-event-id",
-        correlation_id="test-correlation-id",
-        timestamp=1000.0,
+        origin="test",
+        correlation_id=correlation_id,
     )
 
 
-class TestStateOrchestratorInfra(unittest.TestCase):
-    """Testes de infraestrutura do StateOrchestrator."""
-
-    def setUp(self) -> None:
-        self.bus = PipelineEventBus()
-        self.orch = StateOrchestrator(
-            bus=self.bus,
-            session_id="test-session",
-        )
-
-    # ------------------------------------------------------------------
-    # Instanciação
-    # ------------------------------------------------------------------
-
-    def test_instantiates_without_exceptions(self):
-        """StateOrchestrator instancia sem exceções."""
-        orch = StateOrchestrator(bus=self.bus, session_id="s1")
-        self.assertIsNotNone(orch)
-
-    def test_instantiates_with_book_names(self):
-        """StateOrchestrator aceita book_names opcional."""
-        orch = StateOrchestrator(
-            bus=self.bus,
-            session_id="s1",
-            book_names={"João", "Gênesis"},
-        )
-        self.assertIsNotNone(orch)
-
-    # ------------------------------------------------------------------
-    # Estado inicial
-    # ------------------------------------------------------------------
-
-    def test_initial_state_is_wait(self):
-        """Estado inicial deve ser WAIT."""
-        self.assertEqual(self.orch.current_state, State.WAIT)
-
-    def test_initial_state_is_wait_string_compatible(self):
-        """State.WAIT é compatível com string 'WAIT'."""
-        self.assertEqual(self.orch.current_state, "WAIT")
-
-    # ------------------------------------------------------------------
-    # Contexto inicial
-    # ------------------------------------------------------------------
-
-    def test_initial_context_current_state(self):
-        """Contexto inicial tem current_state = WAIT."""
-        ctx = self.orch.context
-        self.assertEqual(ctx.current_state, State.WAIT)
-
-    def test_initial_context_active_book_is_none(self):
-        """Contexto inicial tem active_book = None."""
-        ctx = self.orch.context
-        self.assertIsNone(ctx.active_book)
-
-    def test_initial_context_active_book_id_is_zero(self):
-        """Contexto inicial tem active_book_id = 0."""
-        ctx = self.orch.context
-        self.assertEqual(ctx.active_book_id, 0)
-
-    def test_initial_context_active_chapter_is_none(self):
-        """Contexto inicial tem active_chapter = None."""
-        ctx = self.orch.context
-        self.assertIsNone(ctx.active_chapter)
-
-    def test_initial_context_pending_reference_is_none(self):
-        """Contexto inicial tem pending_reference = None."""
-        ctx = self.orch.context
-        self.assertIsNone(ctx.pending_reference)
-
-    def test_initial_context_last_presented_is_none(self):
-        """Contexto inicial tem last_presented_reference = None."""
-        ctx = self.orch.context
-        self.assertIsNone(ctx.last_presented_reference)
-
-    def test_initial_context_segment_count_is_zero(self):
-        """Contexto inicial tem segment_count = 0."""
-        ctx = self.orch.context
-        self.assertEqual(ctx.segment_count_since_last_state_change, 0)
-
-    def test_initial_context_has_biblical_content_is_false(self):
-        """Contexto inicial tem has_biblical_content = False."""
-        ctx = self.orch.context
-        self.assertFalse(ctx.has_biblical_content)
-
-    # ------------------------------------------------------------------
-    # Snapshot imutável
-    # ------------------------------------------------------------------
-
-    def test_context_returns_copy(self):
-        """context property retorna cópia defensiva."""
-        ctx1 = self.orch.context
-        ctx2 = self.orch.context
-        self.assertIsNot(ctx1, ctx2)
-        self.assertEqual(ctx1.current_state, ctx2.current_state)
-
-    def test_context_mutation_does_not_affect_orchestrator(self):
-        """Mutação do snapshot retornado não afeta o orquestrador."""
-        ctx = self.orch.context
-        ctx.current_state = State.PRESENT
-        ctx.active_book = "João"
-        # Orquestrador não foi afetado.
-        self.assertEqual(self.orch.current_state, State.WAIT)
-        self.assertIsNone(self.orch.context.active_book)
-
-    # ------------------------------------------------------------------
-    # start() / stop()
-    # ------------------------------------------------------------------
-
-    def test_start_subscribes_to_reference_candidate(self):
-        """start() inscreve handler para ReferenceCandidate."""
-        self.orch.start()
-        self.assertTrue(self.bus.has_subscribers(ReferenceCandidate))
-
-    def test_start_subscribes_to_reference_detected(self):
-        """start() inscreve handler para ReferenceDetected."""
-        self.orch.start()
-        self.assertTrue(self.bus.has_subscribers(ReferenceDetected))
-
-    def test_start_subscribes_to_intent_unknown(self):
-        """start() inscreve handler para IntentUnknown."""
-        self.orch.start()
-        self.assertTrue(self.bus.has_subscribers(IntentUnknown))
-
-    def test_start_subscribes_to_speech_transcribed(self):
-        """start() inscreve handler para SpeechTranscribed."""
-        self.orch.start()
-        self.assertTrue(self.bus.has_subscribers(SpeechTranscribed))
-
-    def test_start_subscribes_to_intent_candidate(self):
-        """start() inscreve handler para IntentCandidate."""
-        self.orch.start()
-        self.assertTrue(self.bus.has_subscribers(IntentCandidate))
-
-    def test_start_registers_five_handlers(self):
-        """start() registra exatamente 5 handlers."""
-        self.orch.start()
-        total = sum(
-            1 for et in self.bus.subscribed_types()
-            for _ in self.bus.handlers(et)
-        )
-        self.assertEqual(total, 5)
-
-    def test_start_is_idempotent(self):
-        """start() chamado duas vezes não duplica inscrições."""
-        self.orch.start()
-        self.orch.start()
-        total = sum(
-            1 for et in self.bus.subscribed_types()
-            for _ in self.bus.handlers(et)
-        )
-        self.assertEqual(total, 5)
-
-    def test_stop_unsubscribes_all(self):
-        """stop() remove todas as inscrições."""
-        self.orch.start()
-        self.orch.stop()
-        self.assertFalse(self.bus.has_subscribers(ReferenceCandidate))
-        self.assertFalse(self.bus.has_subscribers(ReferenceDetected))
-        self.assertFalse(self.bus.has_subscribers(IntentUnknown))
-        self.assertFalse(self.bus.has_subscribers(SpeechTranscribed))
-        self.assertFalse(self.bus.has_subscribers(IntentCandidate))
-
-    def test_stop_is_idempotent(self):
-        """stop() chamado duas vezes não levanta exceção."""
-        self.orch.start()
-        self.orch.stop()
-        self.orch.stop()  # não deve levantar
-
-    def test_stop_without_start(self):
-        """stop() sem start() não levanta exceção."""
-        self.orch.stop()  # não deve levantar
-
-    # ------------------------------------------------------------------
-    # Handlers não publicam eventos (Passo 1 = esqueleto)
-    # ------------------------------------------------------------------
-
-    def test_reference_candidate_does_not_publish(self):
-        """Handler de ReferenceCandidate não publica StateChanged."""
-        self.orch.start()
-        meta = _make_meta("IncrementalBiblicalParser")
-        self.bus.publish(ReferenceCandidate(
-            meta=meta,
-            book="João",
-            book_id=43,
-            chapter=0,
-            confidence=0.40,
-            completeness="book",
-            normalized_text="joão",
-        ))
-        # Nenhum StateChanged deve estar no EventStore.
-        from pipeline.events import StateChanged
-        events = [e for e in self.bus.history() if isinstance(e, StateChanged)]
-        self.assertEqual(len(events), 0)
-
-    def test_reference_detected_does_not_publish(self):
-        """Handler de ReferenceDetected não publica StateChanged."""
-        self.orch.start()
-        meta = _make_meta("IncrementalBiblicalParser")
-        self.bus.publish(ReferenceDetected(
-            meta=meta,
-            book="João",
-            book_id=43,
-            chapter=3,
-            verse_start=16,
-            confidence=0.98,
-            normalized_text="joao 3:16",
-        ))
-        from pipeline.events import StateChanged
-        events = [e for e in self.bus.history() if isinstance(e, StateChanged)]
-        self.assertEqual(len(events), 0)
-
-    def test_intent_unknown_does_not_publish(self):
-        """Handler de IntentUnknown não publica StateChanged."""
-        self.orch.start()
-        meta = _make_meta("BiblicalNLUService")
-        self.bus.publish(IntentUnknown(
-            meta=meta,
-            raw_text="olá boa noite",
-            reason="no_pattern",
-        ))
-        from pipeline.events import StateChanged
-        events = [e for e in self.bus.history() if isinstance(e, StateChanged)]
-        self.assertEqual(len(events), 0)
-
-    def test_speech_transcribed_does_not_publish(self):
-        """Handler de SpeechTranscribed não publica StateChanged."""
-        self.orch.start()
-        meta = _make_meta("STT")
-        self.bus.publish(SpeechTranscribed(
-            meta=meta,
-            text="Glória a Deus, bom dia",
-            language="pt",
-            confidence=0.95,
-        ))
-        from pipeline.events import StateChanged
-        events = [e for e in self.bus.history() if isinstance(e, StateChanged)]
-        self.assertEqual(len(events), 0)
-
-    def test_intent_candidate_does_not_publish(self):
-        """Handler de IntentCandidate não publica StateChanged."""
-        self.orch.start()
-        meta = _make_meta("SemanticEngine")
-        self.bus.publish(IntentCandidate(
-            meta=meta,
-            intent="show_reference",
-            candidates_json="[]",
-            inference_ms=100,
-            provider="stub",
-            model="stub",
-        ))
-        from pipeline.events import StateChanged
-        events = [e for e in self.bus.history() if isinstance(e, StateChanged)]
-        self.assertEqual(len(events), 0)
-
-    # ------------------------------------------------------------------
-    # State enum
-    # ------------------------------------------------------------------
-
-    def test_state_values_are_strings(self):
-        """State enum values são strings compatíveis com benchmark."""
-        self.assertEqual(State.WAIT.value, "WAIT")
-        self.assertEqual(State.PREPARE.value, "PREPARE")
-        self.assertEqual(State.PRESENT.value, "PRESENT")
-        self.assertEqual(State.IGNORE.value, "IGNORE")
-
-    def test_state_is_str_subclass(self):
-        """State herda de str para compatibilidade com serialização."""
-        self.assertIsInstance(State.WAIT, str)
-        self.assertIsInstance(State.PREPARE, str)
-        self.assertIsInstance(State.PRESENT, str)
-        self.assertIsInstance(State.IGNORE, str)
+def _make_candidate(
+    book: str = "João", book_id: int = 43, chapter: int = 0,
+    completeness: str = "book", confidence: float = 0.40,
+) -> ReferenceCandidate:
+    return ReferenceCandidate(
+        meta=_make_meta(),
+        book=book, book_id=book_id, chapter=chapter,
+        verse_start=0, verse_end=0,
+        confidence=confidence, completeness=completeness,
+        normalized_text="",
+    )
 
 
-class TestStateChangedEvent(unittest.TestCase):
-    """Testes do evento StateChanged (infraestrutura do tipo)."""
-
-    def test_state_changed_is_operational(self):
-        """StateChanged é um OperationalEvent."""
-        from pipeline.events import (
-            StateChanged,
-            is_operational_event,
-            is_pipeline_event,
-        )
-        meta = _make_meta("StateOrchestrator")
-        ev = StateChanged(
-            meta=meta,
-            from_state="WAIT",
-            to_state="PREPARE",
-            reason="book_detected",
-        )
-        self.assertTrue(is_pipeline_event(ev))
-        self.assertTrue(is_operational_event(ev))
-
-    def test_state_changed_is_frozen(self):
-        """StateChanged é imutável (frozen dataclass)."""
-        from pipeline.events import StateChanged
-        meta = _make_meta("StateOrchestrator")
-        ev = StateChanged(meta=meta, from_state="WAIT", to_state="PREPARE", reason="book_detected")
-        with self.assertRaises(AttributeError):
-            ev.from_state = "PRESENT"  # type: ignore[misc]
-
-    def test_state_changed_to_dict(self):
-        """StateChanged.to_dict inclui campos específicos."""
-        from pipeline.events import StateChanged
-        meta = _make_meta("StateOrchestrator")
-        ev = StateChanged(
-            meta=meta,
-            from_state="WAIT",
-            to_state="PREPARE",
-            reason="book_detected",
-            active_book="João",
-            active_chapter=0,
-            pending_reference="João",
-        )
-        d = ev.to_dict()
-        self.assertEqual(d["event_type"], "StateChanged")
-        self.assertEqual(d["from_state"], "WAIT")
-        self.assertEqual(d["to_state"], "PREPARE")
-        self.assertEqual(d["reason"], "book_detected")
-        self.assertEqual(d["active_book"], "João")
-
-    def test_state_changed_in_registry(self):
-        """StateChanged está no registry de tipos de evento."""
-        from pipeline.events import all_event_type_names
-        names = all_event_type_names()
-        self.assertIn("StateChanged", names)
-
-    def test_intent_classified_in_registry(self):
-        """IntentClassified está no registry de tipos de evento."""
-        from pipeline.events import all_event_type_names
-        names = all_event_type_names()
-        self.assertIn("IntentClassified", names)
+def _make_detected(
+    book: str = "João", book_id: int = 43, chapter: int = 3,
+    verse: int = 16, confidence: float = 0.95,
+) -> ReferenceDetected:
+    return ReferenceDetected(
+        meta=_make_meta(),
+        book=book, book_id=book_id, chapter=chapter,
+        verse_start=verse, verse_end=0,
+        confidence=confidence,
+        raw_text="joão 3 16", normalized_text="João 3:16",
+    )
 
 
-if __name__ == "__main__":
-    unittest.main()
+def _make_antecipada(
+    book: str = "Salmos", book_id: int = 19, chapter: int = 23,
+    verse: int = 0, confidence: float = 0.75,
+) -> ReferenceAntecipada:
+    return ReferenceAntecipada(
+        meta=_make_meta(),
+        book=book, book_id=book_id, chapter=chapter,
+        verse_start=verse, verse_end=0,
+        confidence=confidence, completeness="chapter",
+        normalized_text="Salmos 23",
+    )
+
+
+def _make_transcribed(text: str = "texto sem referencia") -> SpeechTranscribed:
+    return SpeechTranscribed(
+        meta=_make_meta(),
+        text=text, language="pt",
+        confidence=0.9, latency_ms=100,
+        duration_ms=6000,
+    )
+
+
+def _make_committed(text: str = "texto") -> SpeechCommittedWords:
+    return SpeechCommittedWords(
+        meta=_make_meta(),
+        committed_text=text, full_committed_text=text,
+        words=tuple(), language="pt",
+        confidence=0.9, latency_ms=100, audio_duration_ms=6000,
+    )
+
+
+@pytest.fixture
+def orchestrator():
+    """Cria StateOrchestrator com EventBus e coletor de StateChanged."""
+    bus = PipelineEventBus()
+    orch = StateOrchestrator(bus=bus, session_id="test-session")
+    orch.start()
+    changes: list[StateChanged] = []
+    bus.subscribe(StateChanged, lambda e: changes.append(e))
+    return orch, bus, changes
+
+
+class TestStateOrchestratorTransitions:
+    """Testes das transições de estado."""
+
+    def test_initial_state_is_wait(self, orchestrator):
+        """Estado inicial é WAIT."""
+        orch, _, _ = orchestrator
+        assert orch.current_state == State.WAIT
+
+    def test_wait_to_prepare_on_candidate(self, orchestrator):
+        """WAIT → PREPARE ao receber ReferenceCandidate."""
+        orch, bus, changes = orchestrator
+        bus.publish(_make_candidate(book="João", completeness="book"))
+        assert orch.current_state == State.PREPARE
+        assert len(changes) == 1
+        assert changes[0].from_state == "WAIT"
+        assert changes[0].to_state == "PREPARE"
+        assert changes[0].reason == "book_detected"
+
+    def test_prepare_to_present_on_detected(self, orchestrator):
+        """PREPARE → PRESENT ao receber ReferenceDetected."""
+        orch, bus, changes = orchestrator
+        bus.publish(_make_candidate(book="João", completeness="book"))
+        bus.publish(_make_detected(book="João", chapter=3, verse=16))
+        assert orch.current_state == State.PRESENT
+        # 2 transições: WAIT→PREPARE, PREPARE→PRESENT.
+        assert len(changes) == 2
+        assert changes[1].to_state == "PRESENT"
+
+    def test_present_to_wait_on_intent_unknown(self, orchestrator):
+        """PRESENT → WAIT ao receber IntentUnknown."""
+        orch, bus, changes = orchestrator
+        bus.publish(_make_detected())
+        bus.publish(IntentUnknown(meta=_make_meta(), raw_text="texto", reason="none"))
+        assert orch.current_state == State.WAIT
+        assert changes[-1].to_state == "WAIT"
+
+    def test_wait_to_ignore_on_transcribed_no_biblical(self, orchestrator):
+        """WAIT → IGNORE ao receber SpeechTranscribed sem pista bíblica."""
+        orch, bus, changes = orchestrator
+        bus.publish(_make_transcribed("olá como estão vocês"))
+        assert orch.current_state == State.IGNORE
+        assert changes[-1].to_state == "IGNORE"
+        assert changes[-1].reason == "segment_ignored"
+
+    def test_ignore_to_prepare_on_candidate(self, orchestrator):
+        """IGNORE → PREPARE ao receber nova ReferenceCandidate."""
+        orch, bus, changes = orchestrator
+        bus.publish(_make_transcribed("olá pessoal"))
+        assert orch.current_state == State.IGNORE
+        bus.publish(_make_candidate(book="João"))
+        assert orch.current_state == State.PREPARE
+        assert changes[-1].from_state == "IGNORE"
+
+    def test_present_to_wait_on_transcribed_no_biblical(self, orchestrator):
+        """PRESENT → WAIT ao receber SpeechTranscribed sem pista bíblica."""
+        orch, bus, changes = orchestrator
+        bus.publish(_make_detected())
+        assert orch.current_state == State.PRESENT
+        bus.publish(_make_transcribed("obrigado amém"))
+        assert orch.current_state == State.WAIT
+
+
+class TestStateOrchestratorDedup:
+    """Testes de dedup por last_presented_reference."""
+
+    def test_same_reference_is_repeat(self, orchestrator):
+        """Mesma referência detectada 2x → segunda é repeat (noop)."""
+        orch, bus, changes = orchestrator
+        bus.publish(_make_detected(book="João", chapter=3, verse=16))
+        bus.publish(_make_detected(book="João", chapter=3, verse=16))
+        # Segunda deve ser repeat.
+        assert changes[-1].reason == "repeat"
+        assert changes[-1].repeat is True
+
+    def test_different_reference_is_new(self, orchestrator):
+        """Referência diferente → new_reference (não repeat)."""
+        orch, bus, changes = orchestrator
+        bus.publish(_make_detected(book="João", chapter=3, verse=16))
+        bus.publish(_make_detected(book="Romanos", book_id=45, chapter=8, verse=28))
+        assert changes[-1].reason == "new_reference"
+        assert changes[-1].repeat is False
+
+
+class TestStateOrchestratorAntecipada:
+    """Testes de ReferenceAntecipada."""
+
+    def test_antecipada_transitions_to_present(self, orchestrator):
+        """ReferenceAntecipada → PRESENT."""
+        orch, bus, changes = orchestrator
+        bus.publish(_make_antecipada(book="Salmos", chapter=23, verse=0))
+        assert orch.current_state == State.PRESENT
+        assert changes[-1].reason == "anticipation"
+
+    def test_antecipada_then_detected_correction(self, orchestrator):
+        """Antecipada (Salmos 23) → Detected (Salmos 23:4) = correção.
+
+        §13.5: StateOrchestrator detecta (book, chapter) igual mas verse difere.
+        Publica StateChanged com detail="corrected".
+        """
+        orch, bus, changes = orchestrator
+        # Antecipada: Salmos 23 (verse=0).
+        bus.publish(_make_antecipada(book="Salmos", book_id=19, chapter=23, verse=0))
+        assert orch.current_state == State.PRESENT
+        # Detected: Salmos 23:4 (verse=4) — referência diferente (verse mudou).
+        bus.publish(_make_detected(book="Salmos", book_id=19, chapter=23, verse=4))
+        # Deve ser new_reference (não repeat, pois verse difere).
+        assert changes[-1].reason == "new_reference"
+        # §13.5: detail deve ser "corrected".
+        assert changes[-1].detail == "corrected"
+
+    def test_antecipada_then_same_detected_confirmed(self, orchestrator):
+        """Antecipada (Salmos 23) → Detected (Salmos 23, mesma ref) = confirmed.
+
+        §13.5: se antecipada e detected têm mesma referência, marcar
+        detail="confirmed" (não reapresentar).
+        """
+        orch, bus, changes = orchestrator
+        # Antecipada: Salmos 23 (verse=0).
+        bus.publish(_make_antecipada(book="Salmos", book_id=19, chapter=23, verse=0))
+        # Detected: Salmos 23 (mesma ref — verse=0).
+        bus.publish(_make_detected(book="Salmos", book_id=19, chapter=23, verse=0))
+        # Deve ser repeat (mesma referência).
+        assert changes[-1].reason == "repeat"
+        # §13.5: detail deve ser "confirmed" (foi antecipada e confirmada).
+        assert changes[-1].detail == "confirmed"
+
+
+class TestStateOrchestratorCommittedWords:
+    """Testes de SpeechCommittedWords."""
+
+    def test_committed_updates_has_biblical_content(self, orchestrator):
+        """SpeechCommittedWords atualiza has_biblical_content."""
+        orch, bus, changes = orchestrator
+        bus.publish(_make_committed("vamos abrir em joão capitulo 3"))
+        with orch._lock:
+            assert orch._ctx.has_biblical_content is True
+
+    def test_committed_no_biblical_content(self, orchestrator):
+        """SpeechCommittedWords sem pista bíblica."""
+        orch, bus, changes = orchestrator
+        bus.publish(_make_committed("olá pessoal tudo bem"))
+        with orch._lock:
+            assert orch._ctx.has_biblical_content is False
+
+    def test_committed_does_not_publish_state_changed(self, orchestrator):
+        """SpeechCommittedWords não publica StateChanged diretamente."""
+        orch, bus, changes = orchestrator
+        bus.publish(_make_committed("joão capitulo 3"))
+        assert len(changes) == 0

@@ -336,155 +336,225 @@ Busca exaustiva no repositório por todos os consumidores de `SpeechTranscribed`
 
 ---
 
-## 4. Proposed Text State Model
+## 4. Proposed Text State Model (revisado — LocalAgreement-2)
 
-### 4.1 Estados conceituais
+### 4.0 Fundamentação: por que LocalAgreement-2 em vez de "string de caracteres"
+
+A versão anterior deste plano propunha um `TextStabilityTracker` baseado em janela
+de tempo (`stability_window_ms`). Após pesquisa de estado da arte (ufal/whisper_streaming,
+paper IWSLT 2022, Kerygma, Rhema, WayPresenter), o modelo foi **revisado** para usar
+**LocalAgreement-2 com buffer trimming e word timestamps** — a técnica dominante no
+mercado, com latência comprovada de ~3.3s em GPU.
+
+A intuição original do usuário ("transcrever continuamente sem esperar silêncio") está
+**correta**. Mas a implementação de "limite fixo de caracteres" é inferior porque:
+
+1. Corta palavras no meio (não é content-aware)
+2. Não sabe quando texto está "pronto" (caracteres ≠ estabilidade)
+3. Não aproveita word timestamps do faster-whisper
+4. Não escala para Reading Follow (versículos têm tamanhos variados)
+
+**LocalAgreement-2** resolve isso: uma palavra só é "committed" quando 2 transcrições
+consecutivas concordam nela. Buffer trimming corta o áudio no timestamp da última
+palavra committed, mantendo o buffer curto e o Whisper rápido.
+
+### 4.1 Estados conceituais (revisado)
 
 ```
-PARTIAL → STABLE → FINAL → CONFIRMED
-  ↑          ↑        ↑         ↑
-  texto      texto    VAD       downstream
-  sendo      parou    fechou    aceitou
-  formado    de       segmento  referência
-             mudar
+PARTIAL → COMMITTED → FINAL → CONFIRMED
+  ↑          ↑           ↑         ↑
+  texto      2 transcr.  VAD       downstream
+  sendo      concordam   fechou    aceitou
+  formado    na palavra  segmento  referência
 ```
 
 | Estado | Definição | Quem seta | Eventos associados |
 |---|---|---|---|
-| **PARTIAL** | Texto ainda sendo formado pelo Whisper; pode mudar a qualquer momento | `StreamingSTTService` (default) | `SpeechPartial`, `SpeechPartialUpdated` (com `is_stable=False`) |
-| **STABLE** | Texto permaneceu inalterado por ≥ `stability_window_ms` (ex.: 600ms) sem novas atualizações | `StreamingSTTService` ou `TextStabilityTracker` | `SpeechPartialUpdated` com `is_stable=True` (novo) |
-| **FINAL** | VAD fechou o segmento; `SpeechWorker` transcreveu o segmento completo; texto não mudará mais | `SpeechWorker` | `SpeechTranscribed` (semântica reformulada: confirmação de finalização) |
-| **CONFIRMED** | Downstream (StateOrchestrator / VersePresentationService) aceitou a referência como válida e apresentada | `StateOrchestrator` | `StateChanged` (to_state=PRESENT) |
+| **PARTIAL** | Texto ainda sendo formado pelo Whisper; pode mudar a qualquer momento; não confirmado por LocalAgreement | `StreamingSTTService` (default) | `SpeechPartial`, `SpeechPartialUpdated` |
+| **COMMITTED** | Palavra aparece em 2 transcrições consecutivas (LocalAgreement-2); texto estável, não deve mudar mais | `StreamingSTTService` (LocalAgreement) | `SpeechCommittedWords` (novo) |
+| **FINAL** | VAD fechou o segmento; `SpeechWorker` transcreveu o segmento completo; texto não mudará mais | `SpeechWorker` | `SpeechTranscribed` (confirmação de finalização) |
+| **CONFIRMED** | Downstream aceitou a referência como válida e apresentada | `StateOrchestrator` | `StateChanged` (to_state=PRESENT) |
 
-### 4.2 Transições
+### 4.2 LocalAgreement-2 — algoritmo
+
+```
+Transcrição T1: "irmãos vamos abrir no evangelho de joão capítulo"
+Transcrição T2: "irmãos vamos abrir no evangelho de joão capítulo três"
+
+Prefixo comum (palavra a palavra): "irmãos vamos abrir no evangelho de joão capítulo"
+→ 8 palavras committed (aparecem em T1 e T2)
+→ "três" é PARTIAL (só em T2, não confirmada ainda)
+
+Próxima transcrição T3: "...joão capítulo três versículo dezesseis"
+→ "três" agora committed (em T2 e T3)
+→ "versículo dezesseis" é PARTIAL
+```
+
+### 4.3 Buffer trimming com word timestamps
+
+Após commitar palavras, o buffer de áudio é cortado no timestamp da última palavra
+committed. Isso mantém o buffer curto → Whisper processa mais rápido → menor latência.
+
+```
+Buffer de áudio: [========================6s========================]
+                  ^committed_end                           ^novo áudio
+                  |                                         |
+                  trim aqui                     mantém para próxima transcrição
+
+Após trim:
+Buffer: [====2s====][novo áudio chega no próximo ciclo]
+        ^contexto   ^não-committed, re-transcrita
+```
+
+### 4.4 Transições (revisado)
 
 | De → Para | Condição | Quem detecta |
 |---|---|---|
-| PARTIAL → STABLE | Nenhuma `SpeechPartialUpdated` por `stability_window_ms` | `TextStabilityTracker` |
-| STABLE → PARTIAL | Nova `SpeechPartialUpdated` chega (texto mudou) | `TextStabilityTracker` |
-| PARTIAL/STABLE → FINAL | VAD fecha segmento + `SpeechWorker` transcreve | `SpeechWorker` |
-| FINAL → CONFIRMED | `StateOrchestrator` transita para PRESENT | `StateOrchestrator` |
-| STABLE → CONFIRMED (antecipação) | `ReferenceAntecipada` validada + apresentada | `VersePresentationService` + `StateOrchestrator` |
+| PARTIAL → COMMITTED | Palavra aparece em 2 transcrições consecutivas | `StreamingSTTService._local_agreement` |
+| COMMITTED → PARTIAL | Não ocorre (committed é irreversível) | — |
+| PARTIAL/COMMITTED → FINAL | VAD fecha segmento + SpeechWorker transcreve | `SpeechWorker` |
+| FINAL → CONFIRMED | StateOrchestrator transita para PRESENT | `StateOrchestrator` |
+| COMMITTED → CONFIRMED (antecipação) | ReferenceAntecipada validada + apresentada | `VersePresentationService` + `StateOrchestrator` |
 
-### 4.3 Representação de revisões
+### 4.5 Rejeição de partials stale
 
-- `SpeechPartialUpdated.text` contém o texto **completo** atualizado (não apenas diff).
-- `appended_text` contém apenas o trecho novo.
-- Revisões regressivas (Whisper reescreveu o início): `_compute_diff` retorna `new` inteiro quando não há prefixo comum. O parser incremental deve detectar isso e **resetar estado** (não acumular sobre texto obsoleto).
-
-### 4.4 Rejeição de partials stale
-
-- Cada `SpeechPartial`/`Updated` carrega `correlation_id` e `meta.timestamp`.
-- Downstream mantém `_last_processed_timestamp` por `correlation_id`. Se um evento chega com timestamp **anterior** ao último processado para o mesmo `correlation_id`, é **rejeitado** como stale.
+- Cada evento carrega `correlation_id` e `meta.timestamp`.
+- `StreamingSTTService` mantém `_prev_words` (transcrição anterior) para LocalAgreement.
+- Se `correlation_id` muda (novo fluxo), `_prev_words` é resetado.
 - `SemanticEngine`: inferência em curso cujo `correlation_id` mudou deve ter resultado **descartado** ao completar (ver §9).
 
-### 4.5 Evitar trabalho duplicado downstream
+### 4.6 Evitar trabalho duplicado downstream
 
-- **Parser incremental**: `_detected_published=True` bloqueia reprocessamento até reset.
-- **SemanticEngine**: `_last_inferred_text` + cache por `context_hash` evita reinferência do mesmo texto.
-- **StateOrchestrator**: `last_presented_reference` (book_id, chapter, verse) evita reapresentação da mesma referência.
-- **VersePresentationService**: dedup por (book_id, chapter, verse) dentro da mesma janela de tempo.
+- **Parser incremental**: processa apenas `SpeechCommittedWords` (texto confiável); `_detected_published` bloqueia até reset.
+- **SemanticEngine**: só dispara em `SpeechCommittedWords` (não em partials); cache por `context_hash`.
+- **StateOrchestrator**: `last_presented_reference` evita reapresentação.
+- **VersePresentationService**: dedup por (book_id, chapter, verse) + janela temporal.
+- **ReadingFollowService**: fuzzy match apenas em `SpeechCommittedWords` (não em partials).
 
-### 4.6 Confirmação vs processamento parcial
+### 4.7 Confirmação vs processamento committed
 
-- Processamento parcial (parser, semantic, sermon) é **especulativo**: produz candidatos/antecipadas que podem ser confirmados ou corrigidos.
-- `SpeechTranscribed` (FINAL) é o ponto de **confirmação**: o texto não mudará mais.
-- `StateOrchestrator` usa FINAL para: (a) confirmar antecipadas já apresentadas (marcar `is_confirmed=True`); (b) corrigir antecipadas erradas (apresentar referência correta); (c) limpar PREPARE se nada foi detectado (→ WAIT/IGNORE).
+- Processamento committed (parser, semantic, sermon, reading follow) é **confiável**: texto não mudará mais.
+- `SpeechTranscribed` (FINAL) é o ponto de **finalização do fluxo**: confirma que o segmento acabou, permite correção de antecipadas, e limpa estado para o próximo fluxo.
+- Diferença vs. modelo anterior: committed words permitem que downstream aja **durante** a fala, sem esperar silêncio, com confiança alta.
 
 ---
 
-## 5. Streaming-First Architecture
+## 5. Streaming-First Architecture (revisado — LocalAgreement-2)
 
 ### 5.1 Princípios
 
-1. **`SpeechPartial`/`SpeechPartialUpdated` é o fluxo operacional primário.** Parser, semântica, contexto, estado e Reading Follow operam continuamente sobre partials.
-2. **`SpeechTranscribed` é o evento de finalização/confirmação.** Não dispara parsing (o incremental já tratou). Confirma texto final, permite correção de antecipadas, e limpa estado.
-3. **VAD permanece relevante.** Fecha segmentos, produz `SpeechTranscribed`, e fornece o sinal de "fim de fala" para finalização.
-4. **EventBus não é substituído.** A arquitetura existente (síncrona, tipada, isolada) suporta o modelo streaming-first sem mudanças estruturais — apenas novos subscribers e novos eventos de estabilidade.
-5. **Custo controlado.** Nem todo partial vai para LLM. Debounce, growth trigger, rate limiting, cache e estabilidade limitam chamadas caras.
-6. **LLM não controla Holyrics.** `IntentCandidate` → `ReferenceResolver` → `ReferenceDetected` → `StateOrchestrator` → `VersePresentationService` → Holyrics. O LLM nunca publica `ReferenceDetected` diretamente.
+1. **`SpeechCommittedWords` é o fluxo operacional primário.** Parser, semântica, contexto, estado e Reading Follow operam sobre palavras committed (confirmadas por LocalAgreement-2).
+2. **`SpeechPartial`/`SpeechPartialUpdated` é o fluxo de UI.** Mostra transcrição ao vivo no frontend, mas NÃO dispara parsing, semântica, ou Reading Follow (texto não confiável).
+3. **`SpeechTranscribed` é o evento de finalização.** Confirma fim do fluxo, permite correção, limpa estado. Não dispara parsing.
+4. **VAD permanece relevante.** Fecha segmentos, produz `SpeechTranscribed`, e fornece sinal de silêncio para reset de buffer.
+5. **EventBus não é substituído.** Apenas novos eventos e subscribers.
+6. **Custo controlado.** SemanticEngine só dispara em committed words (não em partials). Buffer trimming mantém Whisper rápido.
+7. **LLM não controla Holyrics.** `IntentCandidate` → `ReferenceResolver` → `ReferenceDetected` → `StateOrchestrator` → `VersePresentationService` → Holyrics.
 
-### 5.2 Novo componente: TextStabilityTracker
+### 5.2 Mudança central: StreamingSTTService com LocalAgreement-2
 
-Componente **novo** que observa `SpeechPartial`/`SpeechPartialUpdated` e publica `SpeechPartialUpdated` com `is_stable=True` quando o texto permanece inalterado por `stability_window_ms`.
+O `StreamingSTTService` é **refatorado** para implementar LocalAgreement-2 com buffer
+trimming. O `TextStabilityTracker` (proposto na versão anterior) é **descontinuado** —
+a estabilidade agora é intrínseca ao algoritmo de LocalAgreement, não um componente separado.
 
-| Aspecto | Valor |
-|---|---|
-| **Input** | `SpeechPartial`, `SpeechPartialUpdated` |
-| **Output** | `SpeechStableText` (novo evento) ou republica `SpeechPartialUpdated` com `is_stable=True` |
-| **Estado interno** | `_last_text`, `_last_change_timestamp` por `correlation_id` |
-| **Config** | `stability_window_ms` (default 600ms) |
-| **Threading** | Timer thread + handler no EventBus |
+| Aspecto | Anterior (estabilidade por tempo) | Revisado (LocalAgreement-2) |
+|---|---|---|
+| Mecanismo de estabilidade | TextStabilityTracker (600ms sem mudança) | LocalAgreement-2 (2 transcrições concordam) |
+| Componente novo | TextStabilityTracker | **Nenhum** — lógica dentro do StreamingSTTService |
+| Eventos novos | SpeechCommittedWords | **SpeechCommittedWords** |
+| Buffer de áudio | SlidingWindow 6s fixo | Buffer acumulado com trim no último committed |
+| Word timestamps | Não usado | **Sim** — `word_timestamps=True` no faster-whisper |
+| Latência alvo | 600ms + 400ms = ~1s | ~1-2s (chunk 1s + LocalAgreement) |
+| Custo de Whisper | 6s por ciclo | 1-3s por ciclo (após trim) |
 
-**Decisão de design**: preferir um **novo evento `SpeechStableText`** em vez de modificar `SpeechPartialUpdated.is_stable`, para evitar quebrar o Event Contract existente. `SpeechStableText` carrega o texto estável + `correlation_id` + `completeness` (nível do parser).
+### 5.3 Parâmetros do LocalAgreement-2
 
-### 5.3 Fluxo streaming-first proposto
+| Parâmetro | Default | Descrição |
+|---|---|---|
+| `chunk_seconds` | 1.0 | Segundos de áudio novo por ciclo (não janela fixa) |
+| `max_context_seconds` | 12.0 | Tamanho máximo do buffer antes de forçar trim |
+| `trim_margin_seconds` | 0.2 | Áudio mantido antes da última palavra committed (margem) |
+| `silence_rms` | 0.004 | RMS abaixo deste = silêncio → reset de buffer |
+| `local_agreement_n` | 2 | Número de transcrições consecutivas que devem concordar |
+| `beam_size` | 1 | Greedy decoding (mais rápido) |
+| `word_timestamps` | True | Essencial para buffer trimming |
+
+### 5.4 Fluxo streaming-first revisado
 
 ```
 AudioCapture (16kHz mono)
     ├─→ SpeechPipelineService (VAD) → SpeechQueue → SpeechWorker
-    │                                              → SpeechTranscribed (FINAL/CONFIRMAÇÃO)
+    │                                              → SpeechTranscribed (FINAL)
     │
-    └─→ RingBuffer → SlidingWindow (400ms) → StreamingSTTService
-                                              ↓
-                                    SpeechPartial / SpeechPartialUpdated
-                                              ↓
-                                    ┌─────────┼─────────────┬───────────────┐
-                                    ↓         ↓             ↓               ↓
-                          IncrementalBiblical  TextStability  SermonMemory  SemanticEngine
-                            Parser            Tracker        Engine         (debounce/growth)
-                              ↓                ↓               ↓               ↓
-                          ReferenceCandidate  SpeechStableText  SermonContextUpdated  IntentCandidate
-                          ReferenceAntecipada    ↓               ↓               ↓
-                          ReferenceDetected   (sinal de         (contexto)   ReferenceResolver
-                                  ↓          estabilidade)          ↓               ↓
-                                  ↓                ↓               ↓         ReferenceDetected
-                                  ↓                ↓               ↓               ↓
-                                  └────────────────┴───────────────┴───────────────┘
-                                                      ↓
-                                            StateOrchestrator (CAP-01)
-                                                      ↓
-                                                StateChanged
-                                                      ↓
-                                            VersePresentationService
-                                                      ↓
-                                            VerseResolving → VerseResolved → VersePresented
-                                                      ↓
-                                                  Holyrics
+    └─→ RingBuffer → StreamingSTTService (LocalAgreement-2)
+                        │
+                        │  1. Adiciona 1s de áudio ao buffer
+                        │  2. Transcreve buffer com word_timestamps
+                        │  3. LocalAgreement-2: compara com transcrição anterior
+                        │  4. Palavras em ambas = COMMITTED
+                        │  5. Trim buffer no timestamp da última committed
+                        │  6. Publica SpeechCommittedWords (palavras novas)
+                        │  7. Publica SpeechPartial (texto completo, para UI)
+                        │
+                        ↓
+                    EventBus
+                        │
+            ┌───────────┼───────────────┬───────────────┬──────────────┐
+            ↓           ↓               ↓               ↓              ↓
+    IncrementalBiblical  SermonMemory  SemanticEngine  ReadingFollow  Frontend
+        Parser           Engine         (só em          Service       (partial
+            │               │          committed)        │            para UI)
+            ↓               ↓               ↓               ↓
+    RefCandidate/      SermonCtx       IntentCandidate   Fuzzy match
+    RefAntecipada/     Updated             │              vs versículo
+    RefDetected            │               ↓               │
+            │               │       ReferenceResolver     │
+            │               │               │               ↓
+            │               │       ReferenceDetected  Avança/Retrocede
+            │               │               │            versículo
+            │               │               ↓               │
+            └───────────────┴───────→ StateOrchestrator    │
+                                      ↓                     │
+                                 StateChanged               │
+                                      ↓                     │
+                              VersePresentationService     │
+                                      ↓                     ↓
+                                  Holyrics ◄────────────────┘
+                              (show_verse_references)
 
   [FINAL] SpeechTranscribed → StateOrchestrator (confirma/corrige/limpa)
-                            → ReadingFollowService (fallback de confirmação)
-                            → VersionCommandDetector (mantém)
+                            → ReadingFollow (fallback)
+                            → VersionCommandDetector
                             → Frontend (texto final)
-
-  [Reading Follow] SpeechStableText → ReadingFollowService (avança versículo)
 ```
 
-### 5.4 Como o EventBus suporta isso sem substituição
+### 5.5 Como o EventBus suporta isso sem substituição
 
-- **Síncrono**: handlers executam na thread do publisher. StreamingSTT publica na thread SlidingWindow; parser/sermon executam síncrono (< 10ms cada). SemanticEngine agenda debounce em timer separado.
-- **Tipado**: novos eventos (`SpeechStableText`) são novas classes dataclass; inscrição existente não é afetada.
+- **Síncrono**: handlers executam na thread do publisher. StreamingSTT publica na thread própria; parser/sermon executam síncrono (< 10ms cada).
+- **Tipado**: `SpeechCommittedWords` é nova classe dataclass; inscrição existente não é afetada.
 - **Isolamento (Sprint 23.0)**: exceção em um handler não afeta outros.
-- **Correlation**: `EventMetadata.correlation_id` já vincula partials ao mesmo fluxo.
-- **Backpressure**: EventBus não tem fila própria (síncrono); backpressure é nos buffers upstream (RingBuffer, SpeechQueue) e no rate limiting do SemanticEngine.
+- **Correlation**: `EventMetadata.correlation_id` vincula todos os eventos do mesmo fluxo.
+- **Backpressure**: buffer de áudio é trimmed continuamente; SemanticEngine só dispara em committed.
 
-### 5.5 Questões arquiteturais endereçadas
+### 5.6 Questões arquiteturais endereçadas (revisado)
 
 | Questão | Solução |
 |---|---|
-| **Fala contínua** | SlidingWindow extrai independentemente do VAD; StreamingSTT transcreve continuamente |
-| **Revisões de partial** | `_compute_diff` por prefixo; parser reset em regressão; stale rejection por timestamp |
-| **Supressão de duplicados** | Parser `_detected_published`; StateOrchestrator `last_presented_reference`; VersePresentationService dedup por (book, chapter, verse) |
-| **Debounce/stability** | SemanticEngine debounce 400ms + growth trigger; TextStabilityTracker 600ms |
-| **Custo limitado** | Rate limiting `min_interval_ms=1000`; cache por `context_hash`; partials triviais descartados (`min_text_change=3`) |
-| **Ordering** | EventBus síncrono preserva ordem de publicação dentro da mesma thread |
+| **Fala contínua** | Buffer acumulado + LocalAgreement-2; não depende de silêncio |
+| **Revisões de partial** | LocalAgreement só commita palavras que persistem; revisões regressivas não afetam committed |
+| **Supressão de duplicados** | Parser `_detected_published`; StateOrchestrator dedup; VersePresentationService dedup |
+| **Estabilidade** | Intrínseca ao LocalAgreement-2 (2 transcrições concordam = estável) |
+| **Custo limitado** | Buffer trimming mantém Whisper rápido; SemanticEngine só em committed; cache LRU |
+| **Ordering** | EventBus síncrono preserva ordem |
 | **Correlation/session** | `EventMetadata.correlation_id` + `session_id` |
-| **Backpressure** | RingBuffer circular; SpeechQueue bounded; SemanticEngine rate-limited |
+| **Backpressure** | Buffer trimmed; SpeechQueue bounded; SemanticEngine rate-limited |
 | **Thread safety** | Locks por componente; EventBus snapshot de handlers |
-| **Cancelamento** | Debounce timer cancelável; inferência stale rejeitada ao completar (novo) |
-| **Timeout** | Semantic 5000ms; Holyrics 2000ms; Whisper sem timeout explícito |
+| **Cancelamento** | Inferência stale rejeitada; buffer reset em silêncio |
+| **Timeout** | Semantic 5000ms; Holyrics 2000ms |
 | **Isolamento de erro** | Sprint 23.0 — handler exception não propaga |
 | **Finalização VAD** | `SpeechTranscribed` confirma/corrige/limpa estado |
+| **Reading Follow contínuo** | Fuzzy match em committed words; não espera silêncio |
+| **Retrocesso por voz** | CommandDetector em committed words detecta "verso anterior" |
 
 ---
 
@@ -519,9 +589,21 @@ AudioCapture (16kHz mono)
 
 | Aspecto | Atual | Alvo |
 |---|---|---|
-| `is_stable` | Sempre `False` | Permanece `False` nestes eventos; estabilidade é sinalizada por novo evento `SpeechStableText` |
-| Mudança | — | **Nenhuma mudança no dataclass** (preserva Event Contract). Estabilidade é evento separado. |
+| `is_stable` | Sempre `False` | **Removido** — estabilidade não é mais um flag; é intrínseca ao LocalAgreement-2 |
+| Papel | Fluxo operacional primário (parser, semantic, etc.) | **Fluxo de UI apenas** — frontend mostra transcrição ao vivo; downstream usa `SpeechCommittedWords` |
+| Mudança | — | **Nenhum mudança no dataclass** (preserva Event Contract). Apenas consumidores mudam. |
 | Risco | — | Nenhum |
+
+### 6.4b SpeechCommittedWords (NOVO EVENTO)
+
+| Aspecto | Valor |
+|---|---|
+| **Papel** | Fluxo operacional primário — parser, semantic, reading follow, sermon context |
+| **Publicador** | `StreamingSTTService` (após LocalAgreement-2 confirmar palavras) |
+| **Campos** | `committed_text: str` (palavras novas), `full_committed_text: str` (acumulado), `words: list[tuple[str, float, float]]` (word, start, end), `correlation_id: str` |
+| **Frequência** | A cada ciclo onde novas palavras são committed (~1s) |
+| **Consumidores** | IncrementalBiblicalParser, SemanticEngine, ReadingFollowService, SermonMemoryEngine |
+| **Event Contract** | Novo evento — não quebra contratos existentes |
 
 ### 6.5 SpeechTranscribed
 
@@ -529,20 +611,20 @@ AudioCapture (16kHz mono)
 |---|---|---|
 | Semântica | "Texto reconhecido do segmento" | **"Confirmação de finalização"** — texto final após VAD fechar |
 | Consumidores | BiblicalNLUService, StateOrchestrator, ReadingFollow, VersionCommand, Frontend | StateOrchestrator (confirma/corrige/limpa), ReadingFollow (fallback), VersionCommand (mantém), Frontend (mantém). **BiblicalNLUService deixa de consumir.** |
-| Mudança | — | **Flag: Event Contract de `SpeechTranscribed` deve ser atualizado** para refletir nova semântica ("confirmação de finalização" em vez de "texto reconhecido"). |
-| Risco | BiblicalNLUService desativado pode perder referências que só aparecem no texto final | Mitigação: parser incremental já detecta durante partials; se texto final difere, StateOrchestrator corrige |
+| Mudança | — | **Event Contract atualizado** para refletir nova semântica. |
+| Risco | BiblicalNLUService desativado pode perder referências que só aparecem no texto final | Mitigação: parser incremental já detecta em committed words; StateOrchestrator corrige se necessário |
 
 ### 6.6 IncrementalBiblicalParser
 
 | Aspecto | Atual | Alvo |
 |---|---|---|
-| Input | SpeechPartial, SpeechPartialUpdated | **Idem** + `SpeechStableText` (para confirmar referência em texto estável) |
-| Reset | Novo correlation_id ou chamada externa | **Idem** + reset em `SpeechTranscribed` (finalização confirma e limpa para próximo fluxo) |
-| Revisão regressiva | Não trata explicitamente | **Detectar** quando `_compute_diff` retorna texto inteiro (sem prefixo comum) → resetar estado incremental |
-| Múltiplas referências | Não suporta (uma por fluxo) | **Futuro**: suportar múltiplas referências no mesmo fluxo (ex.: "João 3:16 e Romanos 8:28"). **Fora de escopo desta migração** — flag para sprint futuro. |
+| Input | SpeechPartial, SpeechPartialUpdated | **`SpeechCommittedWords`** (texto confiável, não partials) |
+| Reset | Novo correlation_id ou chamada externa | **Idem** + reset em `SpeechTranscribed` (finalização) |
+| Revisão regressiva | Não trata explicitamente | **Não precisa mais** — committed words são estáveis por definição (LocalAgreement-2) |
+| Múltiplas referências | Não suporta (uma por fluxo) | **Futuro**: suportar múltiplas (ex.: "João 3:16 e Romanos 8:28"). Fora de escopo. |
 | Confiança | Fixa por completude | **Idem** |
 | Antecipação | ReferenceAntecipada em confidence ≥ 0.60 | **Idem** — mantém |
-| Risco | Reset prematuro em revisão regressiva | Mitigação: só resetar se o novo texto não contém o livro atualmente detectado |
+| Risco | — | Baixo — committed words são mais confiáveis que partials |
 
 ### 6.7 BiblicalNLUService
 
@@ -565,15 +647,15 @@ AudioCapture (16kHz mono)
 
 | Aspecto | Atual | Alvo |
 |---|---|---|
-| Input | SpeechPartial, SpeechPartialUpdated, ReferenceDetected | **Idem** + `SpeechTranscribed` (para confirmar referências no contexto do sermão) |
-| Mudança | — | Adicionar inscrição em `SpeechTranscribed` para marcar referências como "confirmadas" no SermonContext |
+| Input | SpeechPartial, SpeechPartialUpdated, ReferenceDetected | **`SpeechCommittedWords`** (texto confiável) + `ReferenceDetected` + `SpeechTranscribed` (confirmação) |
+| Mudança | — | Trocar inscrição de partials para committed words; adicionar `SpeechTranscribed` para confirmar |
 | Risco | — | Baixo |
 
 ### 6.10 SemanticEngine
 
 | Aspecto | Atual | Alvo |
 |---|---|---|
-| Input | SpeechPartial, SpeechPartialUpdated | **Idem** + respeitar `SpeechStableText` (priorizar inferência em texto estável) |
+| Input | SpeechPartial, SpeechPartialUpdated | **`SpeechCommittedWords`** (só dispara em texto confiável) |
 | Cancelamento stale | Não tem | **Adicionar**: ao iniciar inferência, registrar `correlation_id` + `timestamp`. Ao completar, se `correlation_id` mudou ou texto atual difere, **descartar resultado** |
 | Concorrência Ollama | Sem controle | **Adicionar**: semaphore/lock de concorrência máxima 1 (Ollama serial); se ocupado, **coalescer** (descartar partial atual, agendar novo debounce) |
 | Cache | Sem expiração | **Adicionar** LRU com max_entries (ex.: 200) |
@@ -605,7 +687,7 @@ AudioCapture (16kHz mono)
 | Aspecto | Atual | Alvo |
 |---|---|---|
 | Status | Esqueleto (TODO) | **Implementado** — transições WAIT/PREPARE/PRESENT/IGNORE |
-| Input | ReferenceCandidate, ReferenceDetected, IntentUnknown, SpeechTranscribed, IntentCandidate | **+ SpeechPartial, SpeechPartialUpdated, SpeechStableText, ReferenceAntecipada** |
+| Input | ReferenceCandidate, ReferenceDetected, IntentUnknown, SpeechTranscribed, IntentCandidate | **+ SpeechPartial, SpeechPartialUpdated, SpeechCommittedWords, ReferenceAntecipada** |
 | Output | StateChanged (não publicado) | **StateChanged publicado** em toda transição |
 | Transições | — | Ver §13 |
 | Risco | Lógica incorreta causa apresentação duplicada ou perdida | Mitigado por testes + benchmark |
@@ -638,8 +720,8 @@ AudioCapture (16kHz mono)
 
 | Aspecto | Atual | Alvo |
 |---|---|---|
-| Input | ReferenceDetected (ativa), SpeechTranscribed (avança) | **+ SpeechStableText (avança primário)**, SpeechTranscribed (fallback/confirmação) |
-| Migração | — | Assinar `SpeechStableText`; fuzzy-match em texto estável; debounce próprio; `SpeechTranscribed` como confirmação |
+| Input | ReferenceDetected (ativa), SpeechTranscribed (avança) | **+ SpeechCommittedWords (avança primário)**, SpeechTranscribed (fallback/confirmação) |
+| Migração | — | Assinar `SpeechCommittedWords`; fuzzy-match em texto estável; debounce próprio; `SpeechTranscribed` como confirmação |
 | Risco | Avanço prematuro em texto estável incorreto | Mitigado por threshold fuzzy 0.70 + estabilidade 600ms |
 
 ### 6.18 Replay / Benchmark
@@ -661,9 +743,9 @@ AudioCapture (16kHz mono)
 
 | Evento | Publisher | Consumidores |
 |---|---|---|
-| `SpeechStableText` | `TextStabilityTracker` | `IncrementalBiblicalParser`, `SemanticEngine`, `ReadingFollowService`, `StateOrchestrator` |
+| `SpeechCommittedWords` | `StreamingSTTService` (LocalAgreement-2) | `IncrementalBiblicalParser`, `SemanticEngine`, `ReadingFollowService`, `SermonMemoryEngine` |
 
-**Flag**: `SpeechStableText` deve ser adicionado ao Event Contract (`event_contracts.md`) e ao Runtime Spec.
+**Flag**: `SpeechCommittedWords` deve ser adicionado ao Event Contract (`event_contracts.md`) e ao Runtime Spec.
 
 ---
 
@@ -671,17 +753,17 @@ AudioCapture (16kHz mono)
 
 ### 7.1 Eventos de fala (reformulados)
 
-| Evento | Quando | Publisher | `is_stable` | Semântica |
-|---|---|---|---|---|
-| `SpeechPartial` | Primeira transcrição do fluxo | StreamingSTTService | `False` | Texto parcial inicial |
-| `SpeechPartialUpdated` | Texto evoluiu (diff ≥ 3 chars) | StreamingSTTService | `False` | Texto parcial atualizado |
-| `SpeechStableText` (novo) | Texto inalterado por `stability_window_ms` | TextStabilityTracker | — | Sinal de estabilidade para downstream |
-| `SpeechTranscribed` | VAD fechou + SpeechWorker transcreveu | SpeechWorker | — | **Confirmação de finalização** (não dispara parsing) |
+| Evento | Quando | Publisher | Semântica |
+|---|---|---|---|
+| `SpeechPartial` | Primeira transcrição do fluxo | StreamingSTTService | Texto parcial inicial (UI apenas) |
+| `SpeechPartialUpdated` | Texto evoluiu (diff ≥ 3 chars) | StreamingSTTService | Texto parcial atualizado (UI apenas) |
+| `SpeechCommittedWords` (novo) | 2 transcrições consecutivas concordam em palavras | StreamingSTTService (LocalAgreement-2) | Palavras committed — fluxo operacional primário |
+| `SpeechTranscribed` | VAD fechou + SpeechWorker transcreveu | SpeechWorker | **Confirmação de finalização** (não dispara parsing) |
 
 ### 7.2 Correlation ID
 
 - `SpeechPartial` inicia um novo `correlation_id` (via `EventMetadata.for_initial`).
-- Todos `SpeechPartialUpdated` e `SpeechStableText` do mesmo fluxo compartilham o `correlation_id`.
+- Todos `SpeechPartialUpdated` e `SpeechCommittedWords` do mesmo fluxo compartilham o `correlation_id`.
 - `SpeechTranscribed` do segmento correspondente **deve** carregar o mesmo `correlation_id` (requer mudança no SpeechWorker ou no SpeechPipelineService para propagar o correlation_id do fluxo streaming ativo).
 
 **Flag**: Propagação de `correlation_id` entre fluxo streaming e segmento VAD requer análise. Hoje SpeechWorker gera novo `correlation_id` via `for_initial`. **Solução proposta**: SpeechPipelineService rastreia o `correlation_id` ativo do StreamingSTTService (via evento ou consulta) e o passa ao SpeechSegment; SpeechWorker o reusa em `SpeechTranscribed`.
@@ -708,9 +790,9 @@ Quando `SpeechTranscribed` chega:
   → SpeechPartialUpdated (corr_id = X, appended="capítulo três")
   → IncrementalBiblicalParser detecta book+chapter → ReferenceCandidate
   → StateOrchestrator: WAIT → PREPARE
-  → [600ms sem mudança]
-  → TextStabilityTracker → SpeechStableText (corr_id = X)
-  → SemanticEngine dispara (texto estável)
+  → [LocalAgreement-2 confirma "capítulo três"]
+  → StreamingSTTService → SpeechCommittedWords (corr_id = X)
+  → SemanticEngine dispara (texto committed)
   → [mais janelas]
   → SpeechPartialUpdated (appended="versículo dezesseis")
   → IncrementalBiblicalParser detecta verse → ReferenceDetected (conf 0.98)
@@ -793,7 +875,7 @@ with self._lock:
 | `min_text_change=3` (StreamingSTT) | Atual | **Sim** — partials triviais nem chegam ao SemanticEngine |
 | Coalescing quando Ollama ocupado | **Novo** | — |
 | Stale rejection | **Novo** | — |
-| Priorizar `SpeechStableText` | **Novo** | Texto estável tem prioridade sobre partial em movimento |
+| Priorizar `SpeechCommittedWords` | **Novo** | Texto estável tem prioridade sobre partial em movimento |
 
 ### 9.2 Interação com Ollama
 
@@ -810,7 +892,7 @@ with self._lock:
 
 ### 9.4 Inferência em partial/stable com confirmação posterior
 
-- SemanticEngine pode inferir em `SpeechPartial` (texto em movimento) ou `SpeechStableText` (texto estável).
+- SemanticEngine pode inferir em `SpeechPartial` (texto em movimento) ou `SpeechCommittedWords` (texto estável).
 - Resultado (`IntentCandidate`) é **hipótese** — `ReferenceResolver` valida via Searcher.
 - Se `SpeechTranscribed` chega depois e o texto final difere, `StateOrchestrator` pode:
   - Confirmar a referência (se igual à detectada via semantic).
@@ -829,7 +911,7 @@ O `IncrementalBiblicalParser` já opera em partials. Mudanças propostas:
 |---|---|
 | Reset em `SpeechTranscribed` | **Adicionar** — finalização confirma e limpa estado |
 | Revisão regressiva | **Detectar** (diff sem prefixo comum) → reset se livro não está no novo texto |
-| Confirmação em `SpeechStableText` | **Adicionar** — quando texto estável, publicar `ReferenceDetected` se confidence ≥ threshold (em vez de apenas `ReferenceCandidate`) |
+| Confirmação em `SpeechCommittedWords` | **Adicionar** — quando texto estável, publicar `ReferenceDetected` se confidence ≥ threshold (em vez de apenas `ReferenceCandidate`) |
 | Múltiplas referências | **Fora de escopo** — flag para sprint futuro |
 
 ### 10.2 Referências explícitas
@@ -915,20 +997,21 @@ O `IncrementalBiblicalParser` já opera em partials. Mudanças propostas:
 
 ### 12.2 Novos eventos
 
-- `SpeechStableText` — nova classe dataclass, `OperationalEvent`.
+- `SpeechCommittedWords` — nova classe dataclass, `OperationalEvent`.
 
 ### 12.3 Novos subscribers
 
-- `TextStabilityTracker` assina `SpeechPartial`/`Updated`.
-- `StateOrchestrator` passa a assinar `SpeechPartial`/`Updated`/`SpeechStableText`/`ReferenceAntecipada`.
-- `ReadingFollowService` passa a assinar `SpeechStableText`.
-- `IncrementalBiblicalParser` passa a assinar `SpeechStableText` e `SpeechTranscribed` (reset).
+- `StreamingSTTService` publica `SpeechCommittedWords` (LocalAgreement-2 interno).
+- `StateOrchestrator` passa a assinar `SpeechCommittedWords`/`ReferenceAntecipada`.
+- `ReadingFollowService` passa a assinar `SpeechCommittedWords`.
+- `IncrementalBiblicalParser` passa a assinar `SpeechCommittedWords` e `SpeechTranscribed` (reset).
 - `SermonMemoryEngine` passa a assinar `SpeechTranscribed` (confirmação).
+- `VersionCommandDetector` passa a assinar `SpeechCommittedWords`.
 
 ### 12.4 Isolamento
 
 - Sprint 23.0 mantido: exceção em handler não propaga.
-- **Risco**: novo subscriber `TextStabilityTracker` com timer pode ter race condition → mitigar com lock.
+- **Risco**: LocalAgreement-2 no StreamingSTTService é síncrono (sem timer) → sem race condition.
 
 ---
 
@@ -1015,44 +1098,110 @@ O `IncrementalBiblicalParser` já opera em partials. Mudanças propostas:
 
 ---
 
-## 15. Reading Follow Impact
+## 15. Reading Follow Impact (revisado — Continuous Reading Follow)
 
-### 15.1 Migração para partials
+### 15.1 Visão: Reading Follow contínuo como diferencial de mercado
+
+O Reading Follow contínuo é o **diferencial principal** do AI Lyrics vs. concorrentes.
+Nenhum concorrente open source oferece acompanhamento versículo-a-versículo em tempo
+real com retrocesso por voz e integração Holyrics nativa.
+
+| Produto | Reading Follow | Retrocesso por voz | Holyrics |
+|---|---|---|---|
+| Rhema | Reading mode (lock em book/chapter, "next chapter") | "next chapter" apenas | NDI (não Holyrics) |
+| Kerygma | AI Operator (segue versículo, prepara próximo) | — | Próprio |
+| WayPresenter | Não | — | Próprio |
+| **AI Lyrics (proposto)** | **Committed words + fuzzy match contínuo** | **"verso anterior", "volta", "pula"** | **Holyrics API nativo** |
+
+### 15.2 Migração para committed words
 
 | Aspecto | Atual | Alvo |
 |---|---|---|
 | Ativação | `ReferenceDetected` (verse_end != verse_start) | **Idem** |
-| Avanço | `SpeechTranscribed` (fuzzy match) | **`SpeechStableText` (primário)** + `SpeechTranscribed` (fallback/confirmação) |
-| Debounce | Nenhum | **Debounce próprio 400ms** após `SpeechStableText` antes de fuzzy-match |
-| Threshold | fuzzy 0.70 | **Idem** |
-| Feedback visual | Nenhum | **Futuro**: frontend mostra progresso do fuzzy-match em partials (fora de escopo) |
+| Avanço | `SpeechTranscribed` (fuzzy match, após silêncio) | **`SpeechCommittedWords` (primário, contínuo)** + `SpeechTranscribed` (fallback) |
+| Debounce | Nenhum | **Debounce 300ms** após committed words antes de fuzzy-match (evita match prematuro em palavra isolada) |
+| Threshold | fuzzy 0.70 | **Adaptativo**: 0.65 para versículos curtos (< 30 palavras), 0.70 para médios, 0.75 para longos |
+| Min words | Nenhum | **Mínimo 5 committed words** antes de fuzzy-match (evita match em "Deus" sozinho) |
+| Retrocesso | Não implementado | **CommandDetector** em committed words: "verso anterior", "volta", "pula" |
+| Feedback visual | Nenhum | **Futuro**: frontend mostra versículo atual + progresso do fuzzy-match |
 
-### 15.2 Fluxo
+### 15.3 Fluxo contínuo
 
 ```
 ReferenceDetected (verse_end != verse_start)
   → ReadingFollowService ativa
-  → pré-carrega versículos
+  → pré-carrega versículos [verse_start..verse_end] do Searcher
   → HolyricsClient.show_verse(verse_start)
-  → ReadingFollowStarted
+  → ReadingFollowStarted {current_verse=verse_start, total=verse_end-verse_start+1}
 
-SpeechStableText (corr_id = X)
-  → fuzzy match texto estável vs versículo atual
-  → se similaridade ≥ 0.70:
-    → current_verse += 1
-    → se current_verse > verse_end → ReadingFollowEnded(completed)
-    → senão → HolyricsClient.show_verse(current_verse) + ReadingFollowAdvanced
+SpeechCommittedWords (corr_id = X, committed_text = "porque Deus amou o mundo...")
+  → acumula committed_text em _reading_buffer
+  → debounce 300ms
+  → se len(_reading_buffer.split()) >= 5:
+    → fuzzy_match(_reading_buffer, versículo_atual)
+    → se similaridade ≥ threshold_adaptativo:
+      → current_verse += 1
+      → _reading_buffer = "" (reset para próximo versículo)
+      → se current_verse > verse_end:
+        → ReadingFollowEnded {completed=True}
+      → senão:
+        → HolyricsClient.show_verse(current_verse)
+        → ReadingFollowAdvanced {from=prev, to=current_verse, similarity=score}
+
+SpeechCommittedWords (corr_id = X, committed_text = "verso anterior")
+  → CommandDetector detecta comando de retrocesso
+  → current_verse -= 1 (mínimo = verse_start)
+  → _reading_buffer = ""
+  → HolyricsClient.show_verse(current_verse)
+  → ReadingFollowAdvanced {from=prev, to=current_verse, reason="voice_command_back"}
+
+SpeechCommittedWords (corr_id = X, committed_text = "próximo verso")
+  → CommandDetector detecta comando de avanço
+  → current_verse += 1 (máximo = verse_end)
+  → _reading_buffer = ""
+  → HolyricsClient.show_verse(current_verse)
+  → ReadingFollowAdvanced {from=prev, to=current_verse, reason="voice_command_forward"}
 
 SpeechTranscribed (corr_id = X)
-  → fuzzy match texto final (fallback se stable não avançou)
+  → fuzzy match texto final (fallback se committed não avançou)
   → mesma lógica de avanço
+  → ReadingFollowEnded se último versículo
 ```
 
-### 15.3 Não criar pipeline STT paralelo
+### 15.4 Comandos de navegação por voz
+
+| Comando (PT-BR) | Ação | Confiança mínima |
+|---|---|---|
+| "verso anterior" / "versículo anterior" | Retrocede 1 versículo | 0.90 (fuzzy match exato) |
+| "volta" / "voltar" | Retrocede 1 versículo | 0.90 |
+| "próximo verso" / "próximo versículo" | Avança 1 versículo | 0.90 |
+| "pula" / "pular" | Avança 1 versículo | 0.90 |
+| "capítulo N" | Pula para capítulo N, versículo 1 | 0.85 |
+| "versículo N" | Pula para versículo N do capítulo atual | 0.85 |
+
+**Implementação**: `VersionCommandDetector` (já existe) é estendido para consumir
+`SpeechCommittedWords` em vez de `SpeechTranscribed`. Usa fuzzy match contra lista
+de comandos canônicos. Threshold alto (0.90) para evitar falsos positivos durante
+leitura normal.
+
+### 15.5 Threshold adaptativo de fuzzy match
+
+```python
+def adaptive_threshold(verse_word_count: int) -> float:
+    if verse_word_count < 30:
+        return 0.65   # versículos curtos: mais tolerante
+    elif verse_word_count < 80:
+        return 0.70   # versículos médios: padrão
+    else:
+        return 0.75   # versículos longos: mais estrito (evita match prematuro)
+```
+
+### 15.6 Não criar pipeline STT paralelo
 
 - ReadingFollowService **não** cria seu próprio STT.
-- Consome o mesmo stream (`SpeechStableText`/`SpeechTranscribed`) que os outros componentes.
+- Consome o mesmo stream (`SpeechCommittedWords`) que os outros componentes.
 - É um consumer especializado do stream compartilhado.
+- CommandDetector também consome `SpeechCommittedWords` (não partials — evita falsos positivos).
 
 ---
 
@@ -1062,15 +1211,15 @@ SpeechTranscribed (corr_id = X)
 
 - `ReplayAdapter` é contrato abstrato (não implementado).
 - **Não implementar** replay nesta migração.
-- **Flag**: quando replay for implementado, deve reproduzir `SpeechStableText` e `StateChanged` além dos eventos existentes.
+- **Flag**: quando replay for implementado, deve reproduzir `SpeechCommittedWords` e `StateChanged` além dos eventos existentes.
 
 ### 16.2 Benchmark
 
 - Dataset `morning-prayer-27-07-2026` contém specs que referenciam `SpeechTranscribed` como evento principal.
 - **Flag**: após implementação, atualizar:
-  - `event_contracts.md` — adicionar `SpeechStableText`; atualizar semântica de `SpeechTranscribed`.
+  - `event_contracts.md` — adicionar `SpeechCommittedWords`; atualizar semântica de `SpeechTranscribed`.
   - `runtime_execution_spec.md` — atualizar fluxo para streaming-first.
-  - `rfc_capabilities.md` — CAP-01 input_events devem incluir `SpeechPartial`/`Updated`/`SpeechStableText`/`ReferenceAntecipada`.
+  - `rfc_capabilities.md` — CAP-01 input_events devem incluir `SpeechPartial`/`Updated`/`SpeechCommittedWords`/`ReferenceAntecipada`.
   - `adr_architecture_decisions.md` — adicionar ADR sobre streaming-first.
 
 ---
@@ -1081,7 +1230,7 @@ SpeechTranscribed (corr_id = X)
 
 | Hook | Quando | Campos |
 |---|---|---|
-| `text_stability_detected` | TextStabilityTracker detecta estabilidade | correlation_id, text, stability_window_ms, latency_ms |
+| `text_stability_detected` | StreamingSTTService confirma palavras via LocalAgreement-2 | correlation_id, committed_words_count, latency_ms |
 | `state_changed` | StateOrchestrator publica StateChanged | from_state, to_state, reason, active_book, active_chapter |
 | `stale_inference_rejected` | SemanticEngine descarta inferência stale | correlation_id, expected_text, actual_text |
 | `ollama_queue_depth` | OllamaBackend reporta fila | depth, wait_ms |
@@ -1093,7 +1242,7 @@ SpeechTranscribed (corr_id = X)
 |---|---|---|
 | partial-to-parser latency | StreamingSTT → parser | < 15ms |
 | partial-to-candidate latency | StreamingSTT → ReferenceCandidate | < 30ms |
-| partial-to-stable latency | StreamingSTT → SpeechStableText | < 600ms + 400ms |
+| partial-to-committed latency | StreamingSTT → SpeechCommittedWords | < 2000ms (chunk 1s + LocalAgreement) |
 | partial-to-presentation latency | StreamingSTT → VersePresented | < 3000ms (GPU) |
 | finalization latency | SpeechTranscribed → StateChanged | < 50ms |
 | duplicate suppression count | VersePresentationService | métrica |
@@ -1114,55 +1263,55 @@ SpeechTranscribed (corr_id = X)
 
 ---
 
-## 18. Incremental Migration Phases
+## 18. Incremental Migration Phases (revisado — LocalAgreement-2)
 
-### Fase 1 — Auditoria e Instrumentação
+### Fase 1 — LocalAgreement-2 no StreamingSTTService
 
 | Aspecto | Valor |
 |---|---|
-| **Objetivo** | Adicionar telemetria e TextStabilityTracker sem alterar comportamento |
-| **Arquivos** | `telemetry/hooks.py`, novo `pipeline/text_stability_tracker.py`, `api/startup/composition.py` |
-| **Contratos** | Adicionar `SpeechStableText` ao Event Contract |
+| **Objetivo** | Refatorar StreamingSTTService para LocalAgreement-2 com buffer trimming e word timestamps; publicar `SpeechCommittedWords` |
+| **Arquivos** | `microfone/streaming_stt_service.py`, `microfone/sliding_window.py`, `pipeline/events.py` (novo evento), `api/startup/composition.py` |
+| **Contratos** | Adicionar `SpeechCommittedWords` ao Event Contract |
 | **Dependências** | Nenhuma |
-| **Riscos** | TextStabilityTracker com race condition → mitigar com lock |
-| **Testes** | `test_text_stability_tracker.py` — estabilidade detectada após 600ms; reset em novo partial |
-| **Critério de conclusão** | `SpeechStableText` publicado em teste; telemetria visível |
+| **Riscos** | word_timestamps pode ser impreciso → mitigar com trim_margin; buffer crescer indefinidamente → max_context_seconds |
+| **Testes** | `test_local_agreement.py` — 2 transcrições concordam → committed; divergência → não committed; buffer trim correto |
+| **Critério de conclusão** | `SpeechCommittedWords` publicado quando palavras persistem; buffer trimmed; latência < 2s |
 
 ### Fase 2 — Streaming-First Parser
 
 | Aspecto | Valor |
 |---|---|
-| **Objetivo** | Parser incremental consome `SpeechStableText`; reset em `SpeechTranscribed`; detecta revisão regressiva |
+| **Objetivo** | Parser incremental consome `SpeechCommittedWords` (não partials); reset em `SpeechTranscribed` |
 | **Arquivos** | `pipeline/incremental_parser.py` |
 | **Contratos** | Nenhum novo |
 | **Dependências** | Fase 1 |
-| **Riscos** | Reset prematuro → mitigar verificando se livro atual está no novo texto |
-| **Testes** | `test_incremental_parser_streaming.py` — reset em finalização; revisão regressiva; stable text |
-| **Critério de conclusão** | Parser reseta corretamente em `SpeechTranscribed`; detecta revisão |
+| **Riscos** | Baixo — committed words são mais confiáveis que partials |
+| **Testes** | `test_incremental_parser_committed.py` — parse em committed; reset em finalização |
+| **Critério de conclusão** | Parser processa apenas committed words; reseta em SpeechTranscribed |
 
 ### Fase 3 — Streaming-First SemanticEngine
 
 | Aspecto | Valor |
 |---|---|
-| **Objetivo** | Stale rejection; coalescing; cache LRU; semaphore Ollama |
+| **Objetivo** | SemanticEngine consome `SpeechCommittedWords` (não partials); stale rejection; cache LRU; semaphore Ollama |
 | **Arquivos** | `semantic/engine.py`, `semantic/ollama_backend.py`, `semantic/cache.py` |
 | **Contratos** | Nenhum |
 | **Dependências** | Fase 1 |
-| **Riscos** | Coalescing perde inferências intermediárias → aceitável (queremos a mais recente) |
-| **Testes** | `test_semantic_stale_rejection.py`, `test_ollama_semaphore.py`, `test_cache_lru.py` |
-| **Critério de conclusão** | Inferência stale descartada; Ollama max 1 concorrente; cache LRU funcional |
+| **Riscos** | Menos inferências (só em committed) → aceitável (queremos precisão) |
+| **Testes** | `test_semantic_committed.py`, `test_ollama_semaphore.py`, `test_cache_lru.py` |
+| **Critério de conclusão** | SemanticEngine só dispara em committed; stale descartado; cache funcional |
 
 ### Fase 4 — ContextEngine Incremental
 
 | Aspecto | Valor |
 |---|---|
-| **Objetivo** | ContextEngine para de varrer `bus.history()`; mantém cache próprio |
+| **Objetivo** | ContextEngine para de varrer `bus.history()`; mantém cache próprio de committed words |
 | **Arquivos** | `semantic/context_engine.py` |
 | **Contratos** | Nenhum |
 | **Dependências** | Fase 1 |
 | **Riscos** | Inconsistência se eventos perdidos → mitigar com fallback best-effort |
 | **Testes** | `test_context_engine_incremental.py` |
-| **Critério de conclusão** | ContextEngine não chama `bus.history()`; contexto correto em teste |
+| **Critério de conclusão** | ContextEngine não chama `bus.history()`; contexto correto |
 
 ### Fase 5 — StateOrchestrator (CAP-01) Implementação
 
@@ -1170,9 +1319,9 @@ SpeechTranscribed (corr_id = X)
 |---|---|
 | **Objetivo** | Implementar transições WAIT/PREPARE/PRESENT/IGNORE; publicar StateChanged |
 | **Arquivos** | `pipeline/state_orchestrator.py` |
-| **Contratos** | `StateChanged` já definido; adicionar inscrições em novos eventos |
+| **Contratos** | `StateChanged` já definido; adicionar inscrições em `ReferenceDetected`, `SpeechCommittedWords`, `SpeechTranscribed` |
 | **Dependências** | Fases 1, 2 |
-| **Riscos** | Lógica incorreta → apresentação duplicada/perdida → mitigar com testes + benchmark |
+| **Riscos** | Lógica incorreta → apresentação duplicada/perdida → mitigar com testes |
 | **Testes** | `test_state_orchestrator.py` — todas as transições; dedup; correção de antecipada |
 | **Critério de conclusão** | StateChanged publicado em todas as transições; dedup funcional |
 
@@ -1188,19 +1337,31 @@ SpeechTranscribed (corr_id = X)
 | **Testes** | `test_verse_presentation_coordination.py` |
 | **Critério de conclusão** | Apresentação coordenada; dedup funcional |
 
-### Fase 7 — Reading Follow Migração
+### Fase 7 — Continuous Reading Follow
 
 | Aspecto | Valor |
 |---|---|
-| **Objetivo** | ReadingFollowService consome `SpeechStableText`; debounce próprio |
+| **Objetivo** | ReadingFollowService consome `SpeechCommittedWords`; fuzzy match contínuo; debounce 300ms; threshold adaptativo; min 5 words |
 | **Arquivos** | `presentation/reading_follow_service.py` |
 | **Contratos** | Nenhum |
 | **Dependências** | Fase 1 |
-| **Riscos** | Avanço prematuro → mitigar com threshold fuzzy 0.70 + estabilidade 600ms |
-| **Testes** | `test_reading_follow_streaming.py` |
-| **Critério de conclusão** | ReadingFollow avança em stable text; fallback em SpeechTranscribed |
+| **Riscos** | Avanço prematuro → mitigar com threshold adaptativo + min 5 words + debounce |
+| **Testes** | `test_reading_follow_continuous.py` — avanço em committed; reset de buffer por versículo; fallback em SpeechTranscribed |
+| **Critério de conclusão** | ReadingFollow avança em committed words sem esperar silêncio |
 
-### Fase 8 — Desativar BiblicalNLUService
+### Fase 8 — Voice Commands (Retrocesso/Avanço)
+
+| Aspecto | Valor |
+|---|---|
+| **Objetivo** | VersionCommandDetector consome `SpeechCommittedWords`; detecta "verso anterior", "volta", "pula", "próximo verso", "capítulo N" |
+| **Arquivos** | `presentation/version_command_detector.py`, `presentation/reading_follow_service.py` |
+| **Contratos** | Nenhum |
+| **Dependências** | Fase 7 |
+| **Riscos** | Falsos positivos durante leitura → mitigar com threshold 0.90 + lista canônica |
+| **Testes** | `test_voice_commands.py` — "verso anterior" retrocede; "pula" avança; leitura normal não dispara |
+| **Critério de conclusão** | Comandos de voz detectados em committed words; retrocesso/avanço funcional |
+
+### Fase 9 — Desativar BiblicalNLUService
 
 | Aspecto | Valor |
 |---|---|
@@ -1208,11 +1369,11 @@ SpeechTranscribed (corr_id = X)
 | **Arquivos** | `pipeline/nlu.py`, `api/startup/composition.py` |
 | **Contratos** | **Flag: atualizar Event Contract de `SpeechTranscribed`** |
 | **Dependências** | Fases 2, 5 (parser incremental + StateOrchestrator cobrem o gap) |
-| **Riscos** | Perda de parsing em texto final que difere → mitigada por StateOrchestrator |
+| **Riscos** | Perda de parsing em texto final → mitigada por StateOrchestrator |
 | **Testes** | `test_nlu_disabled.py` — confirmar que `SpeechTranscribed` não dispara parsing |
 | **Critério de conclusão** | BiblicalNLUService desativado; parser incremental é único caminho |
 
-### Fase 9 — Propagação de Correlation ID
+### Fase 10 — Propagação de Correlation ID
 
 | Aspecto | Valor |
 |---|---|
@@ -1224,28 +1385,28 @@ SpeechTranscribed (corr_id = X)
 | **Testes** | `test_correlation_propagation.py` |
 | **Critério de conclusão** | `SpeechTranscribed.correlation_id` == `SpeechPartial.correlation_id` do mesmo fluxo |
 
-### Fase 10 — Atualização de Documentos
+### Fase 11 — Atualização de Documentos
 
 | Aspecto | Valor |
 |---|---|
 | **Objetivo** | Atualizar event_contracts, runtime_execution_spec, rfc_capabilities, ADRs |
 | **Arquivos** | `datasets/benchmarks/morning-prayer-27-07-2026/*.md` |
 | **Contratos** | **Sim** — atualizar oficialmente |
-| **Dependências** | Fases 1-9 |
+| **Dependências** | Fases 1-10 |
 | **Riscos** | Documento desincronizado de código |
 | **Testes** | Revisão manual |
-| **Critério de conclusão** | Documentos refletem streaming-first |
+| **Critério de conclusão** | Documentos refletem streaming-first com LocalAgreement-2 |
 
-### Fase 11 — Testes em Hardware Real
+### Fase 12 — Testes em Hardware Real
 
 | Aspecto | Valor |
 |---|---|
 | **Objetivo** | Validar end-to-end com microfone USB + GPU + Holyrics + Ollama |
 | **Arquivos** | Nenhum (validação) |
-| **Dependências** | Fases 1-10 |
+| **Dependências** | Fases 1-11 |
 | **Riscos** | Latência real, timeout Ollama, GPU contention |
-| **Testes** | Manual: dizer "João 3:16", "Salmos 23", "Romanos 8 28 a 39" |
-| **Critério de conclusão** | Apresentação correta < 3s GPU; Reading Follow avança em leitura contínua |
+| **Testes** | Manual: dizer "João 3:16", "Salmos 23", "Romanos 8 28 a 39"; Reading Follow contínuo; "verso anterior" |
+| **Critério de conclusão** | Apresentação correta < 3s GPU; Reading Follow avança em leitura contínua; retrocesso por voz funcional |
 
 ---
 
@@ -1254,18 +1415,19 @@ SpeechTranscribed (corr_id = X)
 ### 19.1 Dependências entre fases
 
 ```
-Fase 1 (Instrumentação + TextStabilityTracker)
-  ├─→ Fase 2 (Parser)
-  ├─→ Fase 3 (SemanticEngine)
-  ├─→ Fase 4 (ContextEngine)
-  └─→ Fase 7 (Reading Follow)
+Fase 1 (LocalAgreement-2 + SpeechCommittedWords)
+  ├─→ Fase 2 (Parser em committed)
+  ├─→ Fase 3 (SemanticEngine em committed)
+  ├─→ Fase 4 (ContextEngine incremental)
+  └─→ Fase 7 (Continuous Reading Follow)
+       └─→ Fase 8 (Voice Commands)
 
 Fase 2 + Fase 5 (StateOrchestrator)
   └─→ Fase 6 (VersePresentation coordenação)
-  └─→ Fase 8 (Desativar NLU)
-  └─→ Fase 9 (Correlation propagation)
+  └─→ Fase 9 (Desativar NLU)
+  └─→ Fase 10 (Correlation propagation)
 
-Fases 1-9 → Fase 10 (Documentos) → Fase 11 (Hardware)
+Fases 1-10 → Fase 11 (Documentos) → Fase 12 (Hardware)
 ```
 
 ### 19.2 Dependências externas
@@ -1284,7 +1446,7 @@ Fases 1-9 → Fase 10 (Documentos) → Fase 11 (Hardware)
 | StateOrchestrator com lógica incorreta → apresentação duplicada/perdida | Média | Alto | Testes exaustivos + benchmark; fallback: VersePresentationService dedup independente |
 | Inferência stale não rejeitada corretamente | Média | Médio | Stale rejection por correlation_id + texto; testes |
 | Ollama timeout persiste mesmo com coalescing | Média | Médio | Semaphore max 1; coalescing; não aumentar timeout; monitorar GPU |
-| TextStabilityTracker race condition | Baixa | Baixo | Lock interno; testes de concorrência |
+| LocalAgreement-2 buffer growing indefinidamente | Baixa | Baixo | max_context_seconds força trim; silence_rms reset |
 | Correlation_id não propaga entre streaming e segmento | Média | Alto | Fase 9 dedicada; testes |
 | Parser reset prematuro em revisão regressiva | Baixa | Médio | Verificar se livro atual está no novo texto antes de reset |
 | ReadingFollow avanço prematuro | Baixa | Médio | Threshold fuzzy 0.70 + estabilidade 600ms + fallback SpeechTranscribed |
@@ -1333,13 +1495,13 @@ Fases 1-9 → Fase 10 (Documentos) → Fase 11 (Hardware)
 
 ## 22. Acceptance Criteria
 
-- [ ] `SpeechStableText` é publicado quando texto permanece estável por 600ms.
+- [ ] `SpeechCommittedWords` é publicado quando 2 transcrições consecutivas concordam em palavras (LocalAgreement-2).
 - [ ] `IncrementalBiblicalParser` reseta em `SpeechTranscribed` e detecta revisão regressiva.
 - [ ] `SemanticEngine` rejeita inferência stale; coalesce partials; cache LRU funcional.
 - [ ] `ContextEngine` não varre `bus.history()`; mantém cache incremental.
 - [ ] `StateOrchestrator` publica `StateChanged` em todas as transições WAIT/PREPARE/PRESENT/IGNORE.
 - [ ] `VersePresentationService` consulta `StateOrchestrator` e faz dedup.
-- [ ] `ReadingFollowService` avança em `SpeechStableText` com fallback em `SpeechTranscribed`.
+- [ ] `ReadingFollowService` avança em `SpeechCommittedWords` com fallback em `SpeechTranscribed`.
 - [ ] `BiblicalNLUService` desativado; parser incremental é único caminho de parsing.
 - [ ] `SpeechTranscribed.correlation_id` == `SpeechPartial.correlation_id` do mesmo fluxo.
 - [ ] Latência partial-to-presentation < 3000ms (GPU) em teste de hardware.
@@ -1354,7 +1516,7 @@ Fases 1-9 → Fase 10 (Documentos) → Fase 11 (Hardware)
 
 | # | Decisão | Status |
 |---|---|---|
-| 1 | Criar `SpeechStableText` como novo evento (vs. modificar `is_stable` em `SpeechPartialUpdated`) | **Proposto** — preferido por preservar Event Contract |
+| 1 | Criar `SpeechCommittedWords` como novo evento (vs. modificar `is_stable` em `SpeechPartialUpdated`) | **Proposto** — preferido por preservar Event Contract |
 | 2 | Desativar `BiblicalNLUService` (vs. manter como fallback) | **Proposto** — confirmado pelo usuário (fluxo segmentado vira confirmação) |
 | 3 | Implementar StateOrchestrator transições (vs. manter esqueleto) | **Aprovado** pelo usuário |
 | 4 | Migrar ReadingFollow para partials (vs. manter em SpeechTranscribed) | **Aprovado** pelo usuário |
@@ -1379,76 +1541,79 @@ Fases 1-9 → Fase 10 (Documentos) → Fase 11 (Hardware)
     ┌──────────────────┐          ┌─────────────────────┐
     │  VAD Pipeline    │          │   RingBuffer (20s)  │
     │ SpeechPipeline   │          │                     │
-    │   Service        │          │   SlidingWindow     │
-    │  (VAD thread)    │          │   (400ms, 6s win)   │
+    │   Service        │          │  Buffer acumulado   │
+    │  (VAD thread)    │          │  + trim em committed│
     └────────┬─────────┘          └──────────┬──────────┘
              │                               │
              ▼                               ▼
     ┌──────────────────┐          ┌─────────────────────┐
     │  SpeechQueue     │          │ StreamingSTTService │
-    │  (bounded 10)    │          │  (STTExecutor lock) │
-    └────────┬─────────┘          └──────────┬──────────┘
+    │  (bounded 10)    │          │  LocalAgreement-2   │
+    └────────┬─────────┘          │  word_timestamps    │
+             │                    │  (STTExecutor lock) │
+             ▼                    └──────────┬──────────┘
+    ┌──────────────────┐                      │
+    │  SpeechWorker    │                      │
+    │  (Whisper)       │                      │
+    └────────┬─────────┘                      │
              │                               │
              ▼                               ▼
-    ┌──────────────────┐    ╔═══════════════════════════════════════════╗
-    │  SpeechWorker    │    ║              EVENT BUS                     ║
-    │  (Whisper)       │    ║   SpeechPartial  ──────────────────────►  ║
-    └────────┬─────────┘    ║   SpeechPartialUpdated ───────────────►  ║
-             │              ║   SpeechStableText (novo) ────────────►  ║
-             ▼              ║   SpeechTranscribed (FINAL/CONFIRMAÇÃO)►  ║
-    ╔══════════════════╗    ╚═══════════┬════════════════════════════════╝
-    ║   EVENT BUS      ║                │
-    ║ SpeechTranscribed║                │
-    ║   ────────────►  ║     ┌──────────┼──────────┬──────────────┬─────────────┐
-    ╚════════╤═════════╝     ▼          ▼          ▼              ▼             ▼
+    ╔══════════════════╗    ╔═══════════════════════════════════════════════╗
+    ║   EVENT BUS      ║    ║              EVENT BUS                         ║
+    ║ SpeechTranscribed║    ║   SpeechPartial  ─────────────────────────►   ║
+    ║   ────────────►  ║    ║   SpeechPartialUpdated ──────────────────►   ║
+    ╚════════╤═════════╝    ║   SpeechCommittedWords (novo, primário) ──►   ║
+             │              ║   SpeechTranscribed (FINAL/CONFIRMAÇÃO) ──►   ║
+             │              ╚═══════════┬════════════════════════════════════╝
+             │                           │
+             │              ┌────────────┼────────────┬─────────────┬──────────────┐
+             │              ▼            ▼            ▼             ▼              ▼
              │         ┌──────────┐ ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
-             │         │Incremental│ │  Text   │ │  Sermon  │ │ Semantic │ │   State  │
-             │         │Biblical   │ │Stability│ │  Memory  │ │  Engine  │ │  Orchest.│
-             │         │  Parser   │ │ Tracker │ │  Engine  │ │(debounce)│ │  (CAP-01)│
+             │         │Incremental│ │ Sermon  │ │ Semantic │ │ Reading  │ │   State  │
+             │         │Biblical   │ │ Memory  │ │  Engine  │ │ Follow   │ │  Orchest.│
+             │         │  Parser   │ │ Engine  │ │(committed)│ │ Service  │ │  (CAP-01)│
              │         └─────┬────┘ └────┬────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘
              │               │           │           │            │            │
              │               ▼           ▼           ▼            ▼            │
-             │         RefCandidate  StableText   SermonCtx   IntentCand       │
-             │         RefAntecip.                Updated         │            │
-             │         RefDetected                                 │            │
-             │               │           │                        ▼            │
-             │               │           │                 ┌──────────┐        │
-             │               │           │                 │Reference │        │
-             │               │           │                 │ Resolver │        │
-             │               │           │                 └────┬─────┘        │
-             │               │           │                      │ RefDetected │
-             │               │           │                      ▼             │
-             │               │           │              ┌──────────────┐      │
-             │               └───────────┴──────────────│   State      │      │
-             │                            ┌─────────────│ Orchestrate  │      │
-             │                            │             │  (CAP-01)    │      │
-             │                            │             └──────┬───────┘      │
-             │                            │                    │ StateChanged│
-             │                            │                    ▼             │
-             │                            │             ┌──────────────┐     │
-             │                            └─────────────│   Verse      │     │
-             │                                          │ Presentation │     │
-             │                                          │   Service    │     │
-             │                                          └──────┬───────┘     │
-             │                                                 │             │
-             │                                                 ▼             │
-             │                                          ┌──────────────┐    │
-             └──────────────────────────────────────────│   HOLYRICS   │◄───┘
-                                                        │  show_verse_ │
-                                                        │  references  │
-                                                        └──────────────┘
+             │         RefCandidate  SermonCtx   IntentCand   Fuzzy match      │
+             │         RefAntecip.   Updated         │       avança/retrocede  │
+             │         RefDetected                    │            │            │
+             │               │                       ▼            │            │
+             │               │              ┌──────────┐          │            │
+             │               │              │Reference │          │            │
+             │               │              │ Resolver │          │            │
+             │               │              └────┬─────┘          │            │
+             │               │                   │ RefDetected    │            │
+             │               │                   ▼                │            │
+             │               │           ┌──────────────┐         │            │
+             │               └───────────│   State      │         │            │
+             │                           │ Orchestrate  │         │            │
+             │                           │  (CAP-01)    │         │            │
+             │                           └──────┬───────┘         │            │
+             │                                  │ StateChanged    │            │
+             │                                  ▼                 │            │
+             │                           ┌──────────────┐         │            │
+             │                           │   Verse      │         │            │
+             └───────────────────────────│ Presentation │         │            │
+                                         │   Service    │         │            │
+                                         └──────┬───────┘         │            │
+                                                │                 │            │
+                                                ▼                 ▼            ▼
+                                         ┌──────────────────────────────────────┐
+                                         │           HOLYRICS                   │
+                                         │  show_verse_references (presentation)│
+                                         │  show_verse (reading follow)         │
+                                         └──────────────────────────────────────┘
 
-  Reading Follow (consumer especializado do stream):
-    SpeechStableText ──► ReadingFollowService ──► Holyrics (show_verse)
-    SpeechTranscribed ──► (fallback/confirmação)
-
-  Version Command (mantém em SpeechTranscribed):
-    SpeechTranscribed ──► VersionCommandDetector ──► VersionChanged
+  Voice Commands (retrocesso/avanço):
+    SpeechCommittedWords ──► VersionCommandDetector ──► ReadingFollow (volta/avança)
 
   Frontend:
-    SpeechPartial/Updated ──► (transcrição ao vivo)
+    SpeechPartial/Updated ──► (transcrição ao vivo, não-committed)
+    SpeechCommittedWords  ──► (texto committed, estável)
     SpeechTranscribed     ──► (texto final confirmado)
     StateChanged          ──► (estado do sistema)
+    ReadingFollowAdvanced ──► (versículo atual mudou)
 ```
 
 ---
@@ -1457,7 +1622,7 @@ Fases 1-9 → Fase 10 (Documentos) → Fase 11 (Hardware)
 
 | Mudança | Documento afetado | Ação |
 |---|---|---|
-| Novo evento `SpeechStableText` | `event_contracts.md` | **Adicionar seção** |
+| Novo evento `SpeechCommittedWords` | `event_contracts.md` | **Adicionar seção** |
 | `SpeechTranscribed` muda semântica | `event_contracts.md` | **Atualizar seção** — flag |
 | StateOrchestrator implementa transições | `rfc_capabilities.md` CAP-01 | **Atualizar input_events** — flag |
 | StateOrchestrator assina partials | `rfc_capabilities.md` CAP-01 | **Atualizar input_events** — flag |
@@ -1501,3 +1666,249 @@ Fases 1-9 → Fase 10 (Documentos) → Fase 11 (Hardware)
 | ADRs | `datasets/benchmarks/morning-prayer-27-07-2026/adr_architecture_decisions.md` |
 
 ---
+
+## 25. Continuous Reading Follow — Plano de Implementação Robusta
+
+### 25.1 Objetivo
+
+Posicionar o AI Lyrics como o produto **mais avançado do mercado** em
+acompanhamento de leitura bíblica em tempo real, superando:
+
+- **Rhema**: tem reading mode mas só navegação por capítulo ("next chapter")
+- **Kerygma**: tem AI Operator mas é comercial/fechado, sem Holyrics
+- **WayPresenter**: não tem reading follow automático
+
+O AI Lyrics será o único open source com:
+1. Reading follow versículo-a-versículo em texto committed (não espera silêncio)
+2. Retrocesso e avanço por comandos de voz em PT-BR
+3. Threshold adaptativo por tamanho do versículo
+4. Integração Holyrics nativa (show_verse por versículo)
+
+### 25.2 Arquitetura do ReadingFollowService (revisada)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    ReadingFollowService                             │
+│                                                                     │
+│  Estado:                                                            │
+│    _active: bool                                                    │
+│    _book_id, _chapter: int                                          │
+│    _verse_start, _verse_end: int                                    │
+│    _current_verse: int                                              │
+│    _reading_buffer: str (committed text acumulado do versículo)     │
+│    _last_match_time: float (para debounce)                         │
+│    _verses_cache: dict[int, str] (versículo → texto pré-carregado)  │
+│                                                                     │
+│  Inputs (EventBus):                                                 │
+│    ReferenceDetected  → ativa reading follow                        │
+│    SpeechCommittedWords → fuzzy match + avanço                      │
+│    SpeechTranscribed  → fallback/confirmação                        │
+│                                                                     │
+│  Outputs (EventBus + Holyrics):                                     │
+│    ReadingFollowStarted → EventBus                                  │
+│    ReadingFollowAdvanced → EventBus                                 │
+│    ReadingFollowEnded → EventBus                                    │
+│    HolyricsClient.show_verse(verse) → Holyrics                      │
+│                                                                     │
+│  Sub-componente:                                                    │
+│    VersionCommandDetector (comandos de voz em committed words)      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 25.3 Algoritmo de avanço contínuo
+
+```python
+class ReadingFollowService:
+    def on_committed_words(self, event: SpeechCommittedWords):
+        if not self._active:
+            return
+
+        # 1. Verificar comando de voz primeiro
+        command = self._command_detector.detect(event.committed_text)
+        if command:
+            self._handle_voice_command(command)
+            return
+
+        # 2. Acumular texto committed no buffer de leitura
+        self._reading_buffer += " " + event.committed_text
+        self._reading_buffer = self._reading_buffer.strip()
+
+        # 3. Debounce: esperar 300ms desde último committed
+        if time.time() - self._last_committed_time < 0.3:
+            return
+        self._last_committed_time = time.time()
+
+        # 4. Mínimo de palavras antes de fuzzy match
+        word_count = len(self._reading_buffer.split())
+        if word_count < self._min_words:
+            return
+
+        # 5. Fuzzy match contra versículo atual
+        verse_text = self._verses_cache.get(self._current_verse, "")
+        similarity = fuzz.ratio(
+            normalize(self._reading_buffer),
+            normalize(verse_text)
+        ) / 100.0
+
+        # 6. Threshold adaptativo
+        threshold = self._adaptive_threshold(len(verse_text.split()))
+        if similarity >= threshold:
+            self._advance_verse()
+
+    def _advance_verse(self):
+        prev = self._current_verse
+        self._current_verse += 1
+        self._reading_buffer = ""  # reset para próximo versículo
+
+        if self._current_verse > self._verse_end:
+            # Leitura completa
+            self._publish(ReadingFollowEnded(
+                correlation_id=self._correlation_id,
+                completed=True,
+            ))
+            self._active = False
+        else:
+            # Avançar Holyrics
+            self._holyrics.show_verse(self._current_verse)
+            self._publish(ReadingFollowAdvanced(
+                correlation_id=self._correlation_id,
+                from_verse=prev,
+                to_verse=self._current_verse,
+                reason="fuzzy_match",
+            ))
+```
+
+### 25.4 Detecção de comandos de voz
+
+```python
+class VersionCommandDetector:
+    COMMANDS = {
+        "verso anterior": "back",
+        "versículo anterior": "back",
+        "volta": "back",
+        "voltar": "back",
+        "próximo verso": "forward",
+        "próximo versículo": "forward",
+        "pula": "forward",
+        "pular": "forward",
+    }
+
+    def detect(self, committed_text: str) -> str | None:
+        text_lower = normalize(committed_text)
+        for command, action in self.COMMANDS.items():
+            similarity = fuzz.partial_ratio(text_lower, command) / 100.0
+            if similarity >= 0.90:
+                return action
+        return None
+```
+
+### 25.5 Pré-carregamento de versículos
+
+Quando `ReferenceDetected` ativa o reading follow, o serviço pré-carrega
+**todos** os versículos do intervalo `[verse_start..verse_end]` do Searcher:
+
+```python
+def _on_reference_detected(self, event: ReferenceDetected):
+    if event.verse_end == event.verse_start:
+        return  # versículo único, sem reading follow
+
+    self._active = True
+    self._book_id = event.book_id
+    self._chapter = event.chapter
+    self._verse_start = event.verse_start
+    self._verse_end = event.verse_end
+    self._current_verse = event.verse_start
+    self._reading_buffer = ""
+
+    # Pré-carregar todos os versículos do intervalo
+    for v in range(event.verse_start, event.verse_end + 1):
+        verse_text = self._searcher.get_verse_text(
+            event.book_id, event.chapter, v
+        )
+        self._verses_cache[v] = verse_text
+
+    # Apresentar primeiro versículo
+    self._holyrics.show_verse(event.verse_start)
+    self._publish(ReadingFollowStarted(
+        correlation_id=event.correlation_id,
+        book_id=event.book_id,
+        chapter=event.chapter,
+        verse_start=event.verse_start,
+        verse_end=event.verse_end,
+    ))
+```
+
+### 25.6 Normalização de texto para fuzzy match
+
+```python
+def normalize(text: str) -> str:
+    """Normaliza texto para fuzzy match.
+    Remove acentos, pontuação, e converte para lowercase.
+    """
+    import unicodedata
+    # Remover acentos
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    # Lowercase
+    text = text.lower().strip()
+    # Remover pontuação
+    import re
+    text = re.sub(r"[^\w\s]", "", text)
+    # Colapsar espaços
+    text = re.sub(r"\s+", " ", text)
+    return text
+```
+
+### 25.7 Edge cases tratados
+
+| Edge case | Solução |
+|---|---|
+| Pregador repete versículo inteiro | Buffer reset após avanço; repetição inicia novo ciclo de match |
+| Pregador pula versículo (não lê o 5, vai direto ao 6) | Threshold adaptativo + fuzzy match parcial: se similaridade com versículo 5 é < 0.40 mas com versículo 6 é ≥ threshold, avança 2 versículos |
+| Pregador diz "verso anterior" no meio da leitura | CommandDetector detecta antes do fuzzy match; retrocede |
+| Pregador para de ler antes do fim do intervalo | Timeout de inatividade (ex.: 30s sem committed words) → ReadingFollowEnded(completed=False) |
+| Whisper transcreve errado no meio do versículo | Fuzzy match tolerante (threshold 0.65-0.75); não exige match perfeito |
+| Versículo muito curto (ex.: "Jesus chorou") | Min 5 words pode bloquear → se versículo tem < 5 palavras, usar versículo completo + próximo como alvo |
+| Pregador cita versículo de outro livro no meio | Fuzzy match com versículo atual falha; não avança; versículo citado é detectado pelo parser como nova ReferenceDetected → reading follow atual é encerrado |
+
+### 25.8 Métricas de Reading Follow
+
+| Métrica | Fonte | Alvo |
+|---|---|---|
+| verse-advance latency | committed → ReadingFollowAdvanced | < 500ms |
+| false advance rate | ReadingFollowAdvanced errado / total | < 5% |
+| voice command accuracy | comandos corretos / detectados | > 95% |
+| voice command false positive | comandos em leitura normal | < 1% |
+| reading completion rate | ReadingFollowEnded(completed=True) / Started | > 80% |
+| verses tracked per session | métrica de uso | métrica |
+
+### 25.9 Testes de aceitação do Reading Follow
+
+| Teste | Cenário | Critério |
+|---|---|---|
+| `test_reading_follow_basic` | Dizer "João 3 do 4 ao 8", ler versículos 4-5-6 | Avança 4→5→6; Holyrics.show_verse chamado 3x |
+| `test_reading_follow_continuous` | Leitura sem pausa > 1s entre versículos | Avança sem esperar silêncio |
+| `test_reading_follow_voice_back` | Ler versículo 5, dizer "verso anterior" | Retrocede para 4 |
+| `test_reading_follow_voice_forward` | Ler versículo 5, dizer "pula" | Avança para 6 |
+| `test_reading_follow_skip` | Ler versículo 4, pular para 6 | Avança 4→6 (pula 5) |
+| `test_reading_follow_short_verse` | Versículo com 2 palavras | Avança com threshold adaptativo |
+| `test_reading_follow_timeout` | Parar de ler por 30s | ReadingFollowEnded(completed=False) |
+| `test_reading_follow_new_ref` | Ler João 3:4, depois dizer "Romanos 8:28" | Reading follow de João encerrado, novo iniciado |
+| `test_voice_command_no_false_positive` | Ler "e voltou para casa" durante leitura | Não dispara retrocesso (fuzzy < 0.90) |
+
+### 25.10 Roadmap de diferenciação (pós-implementação base)
+
+Após a implementação base (Fases 7-8), estas features posicionam o AI Lyrics
+acima de todos os concorrentes:
+
+| Feature | Sprint | Diferencial |
+|---|---|---|
+| Reading follow contínuo (committed words) | Fase 7 | Nenhum concorrente open source faz isso |
+| Retrocesso por voz ("verso anterior") | Fase 8 | Rhema só tem "next chapter"; nenhum tem retrocesso |
+| Threshold adaptativo por tamanho do versículo | Fase 7 | Nenhum concorrente documenta isso |
+| Detecção de skip (pregador pula versículo) | Futuro | Nenhum concorrente faz |
+| Predição de próximo versículo (pre-load Holyrics) | Futuro | Kerygma faz类似; AI Lyrics pode superar com committed words |
+| Feedback visual de progresso no frontend | Futuro | WayPresenter tem queue; AI Lyrics pode ter progress bar |
+| Adaptive Memory (aprender estilo do pregador) | Futuro | Utterance faz isso; AI Lyrics pode adaptar thresholds |
+| Suporte a múltiplas traduções em paralelo | Futuro | Diferencial único |
+| Modo "sermão livre" (sem reading follow, só transcrição) | Futuro | Complementar ao reading follow |

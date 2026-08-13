@@ -68,6 +68,27 @@ async def update_configuration(
     try:
         dto = svc.update_configuration(overrides)
         model = ConfigurationModel.from_dto(dto)
+
+        # Sprint 28: recarregar HolyricsClient em runtime quando o
+        # payload incluir holyrics (token/base_url/timeout). Antes,
+        # o PUT /configuration persistia o token em disco mas o
+        # HolyricsClient ativo no CompositionRoot continuava com o
+        # token antigo até reiniciar o servidor. O Wizard já fazia
+        # esse reload via _reload_holyrics_client(); agora o endpoint
+        # de configuração também faz.
+        if "holyrics" in overrides:
+            try:
+                from api.wizard import _reload_holyrics_client
+                _reload_holyrics_client()
+            except Exception as e:
+                # Não falhar o PUT se o reload falhar — o token já
+                # foi persistido e valerá na próxima reinicialização.
+                import logging
+                logging.getLogger(__name__).warning(
+                    "PUT /configuration: HolyricsClient reload failed: %s "
+                    "(token persistido, valerá após restart).", e,
+                )
+
         return versioned(model)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

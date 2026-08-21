@@ -249,73 +249,55 @@ class TestLocalAgreement:
         assert svc.total_committed_published == 1
         assert svc.total_committed_words == 2
 
-    def test_max_context_seconds_resets_prev_words(self):
-        """Buffer que excede max_context_seconds força reset de prev_words."""
-        executor = MagicMock()
-        bus = PipelineEventBus()
-        svc = StreamingSTTService(
-            executor=executor,
-            bus=bus,
-            session_id="test-session",
-            sample_rate=16000,
-            max_context_seconds=5.0,  # limite baixo para teste
-        )
-        svc.start()
-
-        # T1: 3 palavras com timestamps até 3s (dentro do limite).
-        t1_words = (("deus", 0.0, 1.0), ("amou", 1.0, 2.0), ("o", 2.0, 3.0))
-        # T2: 4 palavras, última em 6s (excede max_context_seconds=5.0).
-        t2_words = (("deus", 0.0, 1.0), ("amou", 1.0, 2.0), ("o", 2.0, 3.0),
-                     ("mundo", 3.0, 6.0))
+    def test_sliding_window_words_fall_off_left(self, service):
+        """SlidingWindow: palavras caem da esquerda, mas LocalAgreement-2
+        ainda commita via alinhamento de sufixo/prefixo."""
+        svc, executor, bus = service
 
         audio = np.ones(16000 * 6, dtype=np.float32) * 0.1
 
+        # T1: 7 palavras na janela de 6s.
+        t1_words = (("em", 0.0, 0.3), ("nome", 0.3, 0.6), ("de", 0.6, 0.9),
+                     ("jesus", 0.9, 1.3), ("amém", 1.3, 1.6), ("meus", 1.6, 1.9),
+                     ("queridos", 1.9, 2.3))
         executor.transcribe_audio.return_value = _make_job_result(
-            _make_result("deus amou o", t1_words)
+            _make_result("em nome de jesus amém meus queridos", t1_words)
         )
         svc.on_window(audio, 0.0)
+        # T1: primeira transcrição, nada committed.
+        assert svc.total_committed_published == 0
 
+        # T2: "em nome de" caiu da esquerda (janela deslizou 400ms).
+        # O sufixo de T1 ("jesus amém meus queridos") casa com
+        # o prefixo de T2.
+        t2_words = (("jesus", 0.0, 0.4), ("amém", 0.4, 0.7), ("meus", 0.7, 1.0),
+                     ("queridos", 1.0, 1.4), ("bom", 1.4, 1.7), ("dia", 1.7, 2.0))
         executor.transcribe_audio.return_value = _make_job_result(
-            _make_result("deus amou o mundo", t2_words)
+            _make_result("jesus amém meus queridos bom dia", t2_words)
         )
         svc.on_window(audio, 0.4)
 
-        # T2 concorda com T1 em 3 palavras → 3 committed.
-        assert svc.total_committed_words == 3
+        # T2: 4 palavras casam (jesus, amém, meus, queridos) → 4 committed.
+        assert svc.total_committed_published == 1
+        assert svc.total_committed_words == 4
+        assert "jesus amém meus queridos" in svc.committed_text
 
-        # T3: mesma transcrição mas última palavra em 7s (excede limite).
-        # Como committed_word_count=3 e prev_words[2].end=3.0 < 5.0, ok.
-        # Vamos forçar: T3 com palavras em timestamps altos.
-        t3_words = (("deus", 0.0, 1.0), ("amou", 1.0, 2.0), ("o", 2.0, 3.0),
-                     ("mundo", 3.0, 6.0), ("tanto", 6.0, 7.0))
+        # T3: "jesus" caiu da esquerda. Novamente, alinhamento.
+        t3_words = (("amém", 0.0, 0.3), ("meus", 0.3, 0.6), ("queridos", 0.6, 0.9),
+                     ("bom", 0.9, 1.2), ("dia", 1.2, 1.5), ("graça", 1.5, 1.8),
+                     ("paz", 1.8, 2.1))
         executor.transcribe_audio.return_value = _make_job_result(
-            _make_result("deus amou o mundo tanto", t3_words)
+            _make_result("amém meus queridos bom dia graça paz", t3_words)
         )
         svc.on_window(audio, 0.8)
 
-        # Após T3, prev_words[3].end = 6.0 > max_context_seconds=5.0
-        # → reset de prev_words. Mas committed_word_count=3, e
-        # prev_words[2].end = 3.0 < 5.0, então NÃO resetou ainda.
-        # O reset só acontece se prev_words[committed_count-1].end > max.
-        # Como committed_count=3 e prev_words[2].end=3.0 < 5.0, ok.
-        # T3 commita "mundo" (4ª palavra, prev[3].end=6.0 > 5.0 → reset).
-        # Na verdade, o check é ANTES de commitar: verifica se
-        # prev_words[committed_word_count-1].end > max_context.
-        # committed_word_count=3, prev_words[2].end=3.0 < 5.0 → não reset.
-        # Então T3 commita "mundo" (4ª palavra).
-        assert svc.total_committed_words == 4
-
-        # Agora committed_word_count=4, prev_words[3].end=6.0 > 5.0.
-        # T4 deve resetar prev_words.
-        t4_words = (("deus", 0.0, 1.0), ("amou", 1.0, 2.0), ("o", 2.0, 3.0),
-                     ("mundo", 3.0, 6.0), ("tanto", 6.0, 7.0), ("amou", 7.0, 8.0))
-        executor.transcribe_audio.return_value = _make_job_result(
-            _make_result("deus amou o mundo tanto amou", t4_words)
-        )
-        svc.on_window(audio, 1.2)
-
-        # T4: prev_words[3].end=6.0 > 5.0 → reset prev_words → nada committed.
-        assert svc.total_committed_words == 4  # não cresceu
+        # T3: 5 palavras casam (amém, meus, queridos, bom, dia).
+        # Já committed: "jesus amém meus queridos" (4 palavras).
+        # Das 5 estáveis, 3 já estão committed (amém, meus, queridos).
+        # Novas committed: "bom", "dia" (2 palavras).
+        assert svc.total_committed_published == 2
+        assert svc.total_committed_words == 6
+        assert "bom dia" in svc.committed_text
 
     def test_trim_margin_seconds_stored(self):
         """trim_margin_seconds é armazenado como parâmetro."""

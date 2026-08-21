@@ -215,6 +215,7 @@ class STTBackend(Protocol):
         beam_size: int,
         vad_filter: bool,
         chunk_length: int,
+        word_timestamps: bool = False,
     ) -> tuple[str, str, float, tuple[Any, ...]]:
         """Transcreve áudio.
 

@@ -114,6 +114,7 @@ class BackendFallbackManager:
         beam_size: int,
         vad_filter: bool,
         chunk_length: int,
+        word_timestamps: bool = False,
     ) -> tuple[str, str, float, tuple[Any, ...]]:
         """Transcreve áudio com fallback automático GPU→CPU.
 
@@ -131,7 +132,8 @@ class BackendFallbackManager:
             self._total_transcriptions += 1
             try:
                 result = self._active_backend.transcribe(
-                    audio, language, beam_size, vad_filter, chunk_length
+                    audio, language, beam_size, vad_filter, chunk_length,
+                    word_timestamps=word_timestamps,
                 )
                 # Sucesso — resetar contador se estávamos em GPU.
                 if not self._fallback_active:

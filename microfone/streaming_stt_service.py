@@ -397,8 +397,13 @@ class StreamingSTTService:
         """LocalAgreement-2: commita palavras que aparecem em 2 transcrições consecutivas.
 
         Compara ``current_words`` com ``self._prev_words`` (transcrição
-        anterior). Palavras que formam um prefixo comum entre ambas são
-        "committed" — consideradas estáveis.
+        anterior). Palavras que aparecem em AMBAS são "committed".
+
+        Diferente do algoritmo original (buffer crescente), a SlidingWindow
+        descarta áudio antigo da esquerda. Portanto, em vez de comparar o
+        prefixo a partir do índice 0, encontra o melhor ALINHAMENTO entre
+        prev_words e current_words (o sufixo de prev que casa com o prefixo
+        de current). As palavras casadas são estáveis/committed.
 
         Retorna apenas as palavras **novamente** committed (as que não
         estavam committed antes). Atualiza ``self._committed_text`` e
@@ -407,46 +412,69 @@ class StreamingSTTService:
         if not self._prev_words or not current_words:
             return []
 
-        # Sprint 28 — proteção max_context_seconds: se a última palavra
-        # committed tem timestamp > max_context_seconds, o buffer cresceu
-        # demais. Resetar prev_words para forçar re-alinhamento.
-        if self._committed_word_count > 0:
-            last_committed_end = 0.0
-            if self._prev_words and len(self._prev_words) >= self._committed_word_count:
-                last_committed_end = self._prev_words[self._committed_word_count - 1][2]
-            if last_committed_end > self._max_context_seconds:
-                logger.warning(
-                    "StreamingSTT: committed buffer exceeded max_context_seconds "
-                    "(%.1fs > %.1fs) — resetting prev_words for re-alignment.",
-                    last_committed_end, self._max_context_seconds,
-                )
-                self._prev_words = []
-                return []
+        prev_text = [w[0] for w in self._prev_words]
+        curr_text = [w[0] for w in current_words]
 
-        # Contar prefixo comum entre prev e current.
-        common_count = 0
-        for i in range(min(len(self._prev_words), len(current_words))):
-            if self._prev_words[i][0] == current_words[i][0]:
-                common_count += 1
-            else:
-                break
+        # Encontrar o melhor alinhamento: o sufixo de prev_words que
+        # casa com o prefixo de current_words. A SlidingWindow desliza
+        # ~400ms por ciclo, então tipicamente 0-3 palavras caem da esquerda.
+        # Limitar a busca a 20 offsets para performance.
+        best_common = 0
+        max_search = min(len(prev_text), 20)
+        for start in range(max_search):
+            match = 0
+            for i in range(min(len(prev_text) - start, len(curr_text))):
+                if prev_text[start + i] == curr_text[i]:
+                    match += 1
+                else:
+                    break
+            if match > best_common:
+                best_common = match
 
-        # Se o prefixo comum cresceu além do já committed, há novas palavras.
-        if common_count <= self._committed_word_count:
+        if best_common == 0:
             return []
 
-        # Extrair novas palavras committed.
-        new_committed = current_words[self._committed_word_count:common_count]
+        # current_words[:best_common] apareceram em ambas as transcrições
+        # → são estáveis/committed.
+        stable_words = current_words[:best_common]
+        stable_text = [w[0] for w in stable_words]
 
-        # Atualizar estado committed.
-        new_committed_text = " ".join(w[0] for w in new_committed)
-        if self._committed_text:
-            self._committed_text = self._committed_text + " " + new_committed_text
-        else:
-            self._committed_text = new_committed_text
-        self._committed_word_count = common_count
+        # Encontrar quais das stable_words já estão committed.
+        # Palavras committed podem ter caído da janela, então procurar
+        # o maior sufixo de committed_list que casa com prefixo de stable_text.
+        committed_list = self._committed_text.split() if self._committed_text else []
 
-        return new_committed
+        if not committed_list:
+            # Primeira commit.
+            new_committed = stable_words
+            self._committed_text = " ".join(stable_text)
+            self._committed_word_count = len(new_committed)
+            return new_committed
+
+        already_committed = 0
+        max_c_search = min(len(committed_list), 50)
+        for c_start in range(max_c_search):
+            match = 0
+            for i in range(min(len(committed_list) - c_start, len(stable_text))):
+                if committed_list[c_start + i] == stable_text[i]:
+                    match += 1
+                else:
+                    break
+            if match > already_committed:
+                already_committed = match
+
+        # Novas palavras committed = stable_words além das já committed.
+        if best_common > already_committed:
+            new_committed = stable_words[already_committed:]
+            new_text = " ".join(w[0] for w in new_committed)
+            if self._committed_text:
+                self._committed_text = self._committed_text + " " + new_text
+            else:
+                self._committed_text = new_text
+            self._committed_word_count += len(new_committed)
+            return new_committed
+
+        return []
 
     def _publish_committed_words(
         self,

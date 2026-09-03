@@ -476,20 +476,20 @@ def create_composition_root() -> CompositionRoot:
             from microfone.speech_queue import SpeechQueue
             from microfone.speech_pipeline import SpeechPipelineService
             from microfone.speech_worker import SpeechWorker
+            from microfone.stt_executor import STTExecutor
 
-            speech_queue = SpeechQueue(maxsize=10)
-            speech_pipeline = SpeechPipelineService(
-                capture_service=audio_capture,
-                audio_config=audio_config,
-                bus=bus,
-                speech_queue=speech_queue,
-                session_id=session.session_id,
-            )
-            speech_worker = SpeechWorker(
-                stt=stt_instance,
-                bus=bus,
-                speech_queue=speech_queue,
-                session_id=session.session_id,
+            # STTExecutor — serializa acesso ao Whisper entre
+            # SpeechWorker (segmentos finais) e StreamingSTT (parciais).
+            stt_executor = STTExecutor(stt=stt_instance)
+
+            # Sprint 28 — Streaming First: VAD + SpeechWorker desativados.
+            # O StreamingSTT (SlidingWindow + LocalAgreement-2) é o único
+            # caminho de transcrição. O VAD não tem consumidor sem o Worker.
+            speech_queue = None
+            speech_pipeline = None
+            logger.info(
+                "Sprint 28: VAD + SpeechWorker desativados — Streaming First "
+                "(SlidingWindow + LocalAgreement-2 é o único caminho)."
             )
 
             # Conectar STT ao HealthService para verificação real.
@@ -731,13 +731,14 @@ def create_composition_root() -> CompositionRoot:
         if stt_instance is not None and audio_config is not None:
             from microfone.ring_buffer import RingBuffer
             from microfone.sliding_window import SlidingWindow
-            from microfone.stt_executor import STTExecutor
             from microfone.streaming_stt_service import StreamingSTTService
             from pipeline.incremental_parser import IncrementalBiblicalParser
 
-            # STTExecutor — serializa acesso ao Whisper entre
-            # SpeechWorker (segmentos finais) e StreamingSTT (parciais).
-            stt_executor = STTExecutor(stt=stt_instance)
+            # STTExecutor já criado no Sprint 16 (compartilhado com SpeechWorker).
+            # Se não existir (ex.: Sprint 16 pulado), criar agora.
+            if stt_executor is None:
+                from microfone.stt_executor import STTExecutor
+                stt_executor = STTExecutor(stt=stt_instance)
 
             # RingBuffer — últimos 20s de áudio, thread-safe.
             ring_buffer = RingBuffer(

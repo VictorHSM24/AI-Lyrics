@@ -217,6 +217,11 @@ class StreamingSTTService:
         # áudio e pular transcrição se for muito baixo (silêncio).
         # Fala humana tem RMS tipicamente > 0.01; silêncio ≈ 0.
         rms = float(np.sqrt(np.mean(audio ** 2)))
+        if self._total_windows % 50 == 1:
+            logger.info(
+                "StreamingSTT on_window: windows=%d duration=%dms rms=%.6f active=%s",
+                self._total_windows, duration_ms, rms, self._active,
+            )
         if rms < self._min_rms:
             self._total_skipped_silence += 1
             logger.debug(
@@ -225,6 +230,14 @@ class StreamingSTTService:
             )
             # Sprint 28 — resetar prev_words em silêncio (buffer trimming implícito).
             self._prev_words = []
+            # Sprint 28 — Streaming First: sem VAD, resetar fluxo ativo
+            # em silêncio para que a próxima fala inicie novo correlation_id.
+            if self._current_correlation_id is not None:
+                logger.info(
+                    "StreamingSTT: reset_flow (silence detected, corr=%s).",
+                    self._current_correlation_id,
+                )
+                self.reset_flow()
             # Sprint 21.9 — telemetria.
             telemetry_hooks.stt_window(
                 correlation_id=self._current_correlation_id,

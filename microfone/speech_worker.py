@@ -52,8 +52,10 @@ class SpeechWorker:
         bus: PipelineEventBus,
         speech_queue: SpeechQueue,
         session_id: str,
+        executor: Any = None,
     ) -> None:
         self._stt = stt
+        self._executor = executor
         self._bus = bus
         self._queue = speech_queue
         self._session_id = session_id
@@ -160,9 +162,13 @@ class SpeechWorker:
             streaming_corr_id or "new",
         )
 
-        # Transcrever com Whisper.
+        # Transcrever com Whisper (serializado via STTExecutor se disponível).
         try:
-            result = self._stt.transcribe(segment)
+            if self._executor is not None:
+                job = self._executor.transcribe_segment(segment)
+                result = job.result
+            else:
+                result = self._stt.transcribe(segment)
         except Exception as e:
             self._total_errors += 1
             logger.error("Whisper transcription failed: %s", e)

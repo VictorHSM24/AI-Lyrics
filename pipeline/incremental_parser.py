@@ -67,7 +67,7 @@ __all__ = ["IncrementalBiblicalParser"]
 
 # Marcadores (mesmos do parser determinístico).
 _CHAPTER_MARKERS = frozenset({"capitulo", "cap"})
-_VERSE_MARKERS = frozenset({"versiculo", "vers", "v"})
+_VERSE_MARKERS = frozenset({"versiculo", "vers", "v", "verso"})
 
 # Sprint 23.2 — Reading Follow Mode.
 # Marcadores de intervalo de versículos: "do 1 ao 3", "de 1 a 3", "1 ate 3".
@@ -92,7 +92,7 @@ _DEFAULT_ANTICIPATION_THRESHOLD = 0.60
 
 # Marcadores de capítulo/versículo por extenso.
 _CHAPTER_EXTENSO = frozenset({"cap", "capitulo", "capitulo:"})
-_VERSE_EXTENSO = frozenset({"vers", "versiculo", "versiculo:", "v"})
+_VERSE_EXTENSO = frozenset({"vers", "versiculo", "versiculo:", "v", "verso"})
 
 
 class IncrementalBiblicalParser:
@@ -270,9 +270,48 @@ class IncrementalBiblicalParser:
         if not text or not text.strip():
             return
 
-        # Se já publicamos ReferenceDetected, ignorar até reset.
+        # Se já publicamos ReferenceDetected, verificar se o texto contém
+        # uma correção parcial (apenas verso ou capítulo) ou um livro
+        # bíblico diferente do atual.
+        #
+        # Correção parcial: pregador disse "João 3:16" e depois "verso 4"
+        # — manter livro e capítulo, mudar apenas o verso.
+        #
+        # Novo livro: pregador disse "João 3:16" e depois "Salmos 23:1"
+        # sem pausa suficiente para resetar o correlation_id.
         if self._detected_published:
-            return
+            if self._current_book is not None:
+                norm_check = self._norm.normalize(text)
+                if norm_check:
+                    # 1. Tentar correção de capítulo ("capítulo 5")
+                    #    ANTES de verso, pois "capítulo 2, verso 18"
+                    #    contém ambos.
+                    corrected = self._try_chapter_correction(
+                        norm_check, source_event,
+                    )
+                    if corrected:
+                        return
+                    # 2. Tentar correção de verso ("verso 4", "versículo 4").
+                    corrected = self._try_verse_correction(
+                        norm_check, source_event,
+                    )
+                    if corrected:
+                        return
+                    # 3. Tentar novo livro.
+                    new_book = self._books.resolve(norm_check)
+                    if (new_book is not None
+                            and new_book.book.id != self._current_book.book.id):
+                        logger.info(
+                            "IncrementalParser: new book detected after "
+                            "ReferenceDetected (old=%s, new=%s) — resetting "
+                            "to detect new reference (corr=%s).",
+                            self._current_book.book.canonical,
+                            new_book.book.canonical,
+                            self._correlation_id,
+                        )
+                        self.reset()
+            if self._detected_published:
+                return
 
         t0 = time.monotonic()
         self._total_partials_processed += 1
@@ -380,9 +419,13 @@ class IncrementalBiblicalParser:
                         return True
 
         # Passada 2: números sem marcador (apenas se nenhum marcador).
+        # Ignora dígitos que são parte de marcador de verso ("verso 7").
         if self._current_chapter is None:
-            for tok in tokens:
+            for i, tok in enumerate(tokens):
                 if tok.isdigit():
+                    # Pular se o token anterior é marcador de verso.
+                    if i > 0 and tokens[i - 1] in _VERSE_MARKERS:
+                        continue
                     num = int(tok)
                     if 1 <= num <= 200:
                         self._current_chapter = num
@@ -392,7 +435,130 @@ class IncrementalBiblicalParser:
                             num,
                         )
                         return True
+                    # Heurística: número colado "316" → cap=3, verso=16.
+                    # Tenta dividir em chapter|verse quando o número
+                    # é > 200 (inválido como capítulo isolado).
+                    if num > 200:
+                        split = self._try_split_chapter_verse(tok)
+                        if split is not None:
+                            ch, vs = split
+                            self._current_chapter = ch
+                            self._current_verse = vs
+                            self._expecting = "done"
+                            logger.debug(
+                                "IncrementalParser: chapter=%d verse=%d "
+                                "(split from %s)",
+                                ch, vs, tok,
+                            )
+                            return True
 
+        return False
+
+    @staticmethod
+    def _try_split_chapter_verse(
+        token: str,
+    ) -> tuple[int, int] | None:
+        """Tenta dividir um número colado em capítulo e verso.
+
+        Exemplos: "316" → (3, 16), "118" → (1, 18), "231" → (2, 31).
+        Prefere split com verso de 2 dígitos (mais comum em PT-BR).
+        """
+        n = len(token)
+        if n < 3 or n > 4:
+            return None
+        # Tentar split 1|n-1 (cap=1 dígito, verso=resto).
+        ch1 = int(token[:1])
+        vs1 = int(token[1:])
+        if 1 <= ch1 <= 200 and 1 <= vs1 <= 200:
+            return (ch1, vs1)
+        # Tentar split 2|n-2 (cap=2 dígitos, verso=resto).
+        if n >= 4:
+            ch2 = int(token[:2])
+            vs2 = int(token[2:])
+            if 1 <= ch2 <= 200 and 1 <= vs2 <= 200:
+                return (ch2, vs2)
+        return None
+
+    def _try_verse_correction(
+        self,
+        norm_text: str,
+        source_event: SpeechCommittedWords | SpeechTranscribed,
+    ) -> bool:
+        """Detecta correção de verso após ReferenceDetected.
+
+        Se o pregador disse "verso 4" ou "versículo 4" após já ter
+        apresentado uma referência, manter livro e capítulo e mudar
+        apenas o verso. Publica nova ReferenceDetected com o verso
+        corrigido.
+        """
+        if self._current_book is None or self._current_chapter is None:
+            return False
+
+        tokens = norm_text.split()
+
+        # Passada 1: marcador explícito ("verso 4", "versículo 4").
+        for i, tok in enumerate(tokens):
+            if tok in _VERSE_MARKERS:
+                if i + 1 < len(tokens) and tokens[i + 1].isdigit():
+                    new_verse = int(tokens[i + 1])
+                    if 1 <= new_verse <= 200:
+                        old_verse = self._current_verse
+                        if old_verse == new_verse:
+                            return False
+                        logger.info(
+                            "IncrementalParser: verse correction "
+                            "%s %d:%d → %d (corr=%s).",
+                            self._current_book.book.canonical,
+                            self._current_chapter, old_verse or 0,
+                            new_verse, self._correlation_id,
+                        )
+                        self._current_verse = new_verse
+                        self._current_verse_end = None
+                        self._detected_published = False
+                        self._anticipation_published = False
+                        self._last_completeness = ""
+                        self._evaluate_and_publish(source_event, 0)
+                        return True
+        return False
+
+    def _try_chapter_correction(
+        self,
+        norm_text: str,
+        source_event: SpeechCommittedWords | SpeechTranscribed,
+    ) -> bool:
+        """Detecta correção de capítulo após ReferenceDetected.
+
+        Se o pregador disse "capítulo 5" após já ter apresentado uma
+        referência, manter o livro e mudar o capítulo (resetando o
+        verso). Publica nova ReferenceCandidate com o capítulo corrigido.
+        """
+        if self._current_book is None:
+            return False
+
+        tokens = norm_text.split()
+        for i, tok in enumerate(tokens):
+            if tok in _CHAPTER_MARKERS:
+                if i + 1 < len(tokens) and tokens[i + 1].isdigit():
+                    new_chapter = int(tokens[i + 1])
+                    if 1 <= new_chapter <= 200:
+                        old_chapter = self._current_chapter
+                        if old_chapter == new_chapter:
+                            return False
+                        logger.info(
+                            "IncrementalParser: chapter correction "
+                            "%s %d → %d (corr=%s).",
+                            self._current_book.book.canonical,
+                            old_chapter or 0, new_chapter,
+                            self._correlation_id,
+                        )
+                        self._current_chapter = new_chapter
+                        self._current_verse = None
+                        self._current_verse_end = None
+                        self._detected_published = False
+                        self._anticipation_published = False
+                        self._last_completeness = ""
+                        self._evaluate_and_publish(source_event, 0)
+                        return True
         return False
 
     def _try_find_verse(self, norm_text: str) -> bool:
@@ -408,8 +574,20 @@ class IncrementalBiblicalParser:
         tokens = norm_text.split()
 
         # Passada 1: marcadores explícitos (prioridade).
+        # Passada 1: marcadores explícitos (prioridade).
+        # Ignora marcadores que aparecem antes do capítulo no texto
+        # (provavelmente de uma utterance anterior misturada).
+        chapter_idx = -1
+        for i, tok in enumerate(tokens):
+            if tok.isdigit() and int(tok) == self._current_chapter:
+                chapter_idx = i
+                break
+
         for i, tok in enumerate(tokens):
             if tok in _VERSE_MARKERS:
+                # Pular se o marcador aparece antes do capítulo.
+                if chapter_idx >= 0 and i < chapter_idx:
+                    continue
                 if i + 1 < len(tokens) and tokens[i + 1].isdigit():
                     verse = int(tokens[i + 1])
                     if 1 <= verse <= 200:
@@ -422,23 +600,33 @@ class IncrementalBiblicalParser:
                         return True
 
         # Passada 2: números sem marcador (apenas se nenhum marcador).
-        # Pular o primeiro dígito (que é o capítulo já identificado).
+        # Se o texto tem 2+ números, o primeiro é o capítulo (já
+        # identificado) e o segundo é o verso. Se o texto tem apenas
+        # 1 número E esse número é diferente do capítulo atual,
+        # esse número é o verso (o capítulo já veio em um commit
+        # anterior). Se o número único é igual ao capítulo, ignorar
+        # (é o próprio capítulo sendo repetido pelo Whisper).
         if self._current_verse is None:
-            digit_count = 0
-            for tok in tokens:
-                if tok.isdigit():
-                    digit_count += 1
-                    if digit_count <= 1:
-                        continue
-                    num = int(tok)
-                    if 1 <= num <= 200:
-                        self._current_verse = num
-                        self._expecting = "done"
-                        logger.debug(
-                            "IncrementalParser: verse=%d (unmarked)",
-                            num,
-                        )
-                        return True
+            digits = [int(t) for t in tokens if t.isdigit()
+                      and 1 <= int(t) <= 200]
+            if len(digits) >= 2:
+                # Pular o primeiro (capítulo), usar o segundo.
+                self._current_verse = digits[1]
+                self._expecting = "done"
+                logger.debug(
+                    "IncrementalParser: verse=%d (unmarked, skip chapter)",
+                    digits[1],
+                )
+                return True
+            elif len(digits) == 1 and digits[0] != self._current_chapter:
+                # Só um número diferente do capítulo — é o verso.
+                self._current_verse = digits[0]
+                self._expecting = "done"
+                logger.debug(
+                    "IncrementalParser: verse=%d (unmarked, single)",
+                    digits[0],
+                )
+                return True
 
         return False
 

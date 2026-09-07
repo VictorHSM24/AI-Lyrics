@@ -38,3 +38,6 @@ export { MostUsedPanel } from "./MostUsedPanel";
 export { CommandPalette, type CommandPaletteHandle } from "./CommandPalette";
 export { useCommandPalette, type UseCommandPaletteResult, type CommandPaletteState, type ConfirmOutcome } from "./useCommandPalette";
 export { SearchHistoryController, type SearchHistoryState } from "./SearchHistoryController";
+
+// Sprint 28 (Fase 9) — Busca Semântica com Ollama.
+export { SemanticSearchPanel } from "./SemanticSearchPanel";

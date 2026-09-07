@@ -36,6 +36,8 @@ import type {
   OperatorVerseListDTO,
   PipelineSnapshot,
   PipelineStatusDTO,
+  SemanticSearchRequestDTO,
+  SemanticSearchResponseDTO,
   SessionDTO,
   SystemInfoDTO,
   VersionListDTO,
@@ -196,6 +198,8 @@ export interface OperatorService {
   getVersion(options?: CallOptions): Promise<{ version: string }>;
   setVersion(version: string, options?: CallOptions): Promise<VersionResultDTO>;
   setAutoVersion(enabled: boolean, options?: CallOptions): Promise<AutoVersionResultDTO>;
+  // Sprint 28 (Fase 9) — Busca Semântica com Ollama.
+  semanticSearch(req: SemanticSearchRequestDTO, options?: CallOptions): Promise<SemanticSearchResponseDTO>;
 }
 
 // ============================================================
@@ -345,6 +349,11 @@ export function createServices(client: Client): PresentationServices {
         { enabled },
         o,
       ),
+      semanticSearch: (req: SemanticSearchRequestDTO, o?) => call<SemanticSearchResponseDTO>(
+        "operator.semanticSearch",
+        req as unknown as Record<string, unknown>,
+        o,
+      ),
     },
   };
 }
@@ -401,6 +410,7 @@ export function createStubServices(): PresentationServices {
       getVersion: reject,
       setVersion: reject,
       setAutoVersion: reject,
+      semanticSearch: reject,
     },
   };
 }

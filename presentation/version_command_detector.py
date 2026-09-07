@@ -104,6 +104,8 @@ _NAVIGATION_COMMANDS_FORWARD: list[str] = [
     "próximo versículo",
     "proximo verso",
     "proximo versículo",
+    "próximo",
+    "proximo",
     "pula",
     "pular",
 ]
@@ -273,20 +275,24 @@ class VersionCommandDetector:
         if not self._auto_enabled:
             return
 
-        if not event.full_committed_text:
+        # Usar committed_text (palavras novas desta iteração) em vez
+        # de full_committed_text, para que "próximo" sozinho seja
+        # detectado mesmo após uma referência longa.
+        text_to_check = event.committed_text or event.full_committed_text
+        if not text_to_check:
             return
 
-        result = self._detect_navigation_command(event.full_committed_text)
+        result = self._detect_navigation_command(text_to_check)
         if result is None:
             return
 
         command, target_value, confidence = result
         self._publish_navigation_command(
-            event, command, target_value, event.full_committed_text, confidence,
+            event, command, target_value, text_to_check, confidence,
         )
         logger.info(
             "VersionCommandDetector: navigation command detected "
-            "(command=%s, target=%d, confidence=%.2f, text=%q...)",
+            "(command=%s, target=%d, confidence=%.2f, text=%r...)",
             command, target_value, confidence, event.full_committed_text[:50],
         )
 

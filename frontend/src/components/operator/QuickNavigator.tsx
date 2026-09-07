@@ -15,15 +15,18 @@
  * Não contém lógica de negócio — apenas dispara comandos.
  */
 
-import { ChevronLeft, ChevronRight, BookOpen, FileText, Hash } from "lucide-react";
+import { ChevronLeft, ChevronRight, BookOpen, FileText, Hash, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useWorkspaceSnapshot, useOperatorNavigation } from "@/hooks";
+import type { OperatorVerseDTO } from "@/types";
 import { cn } from "@/utils";
 import {
   NextVerseCommand,
   PreviousVerseCommand,
   NextChapterCommand,
   PreviousChapterCommand,
+  PresentVerseCommand,
+  type CommandResult,
   type WorkspaceContext,
 } from "./WorkspaceCommands";
 
@@ -47,6 +50,10 @@ export function QuickNavigator({ ctx, className }: QuickNavigatorProps) {
   const [chapter, setChapter] = useState<number | null>(null);
   const [verse, setVerse] = useState<number | null>(null);
 
+  // Preview do versículo selecionado (carregado via cache LRU do ctx).
+  const [preview, setPreview] = useState<OperatorVerseDTO | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
   // Carregar books na montagem (para resolver bookId → nome).
   useEffect(() => {
     if (nav.books.length === 0) {
@@ -54,24 +61,69 @@ export function QuickNavigator({ ctx, className }: QuickNavigatorProps) {
     }
   }, [nav]);
 
-  // Quando selected muda, atualizar display.
+  // Quando selected muda, atualizar display e carregar preview.
   useEffect(() => {
     if (!selected) {
       setBookName("");
       setChapter(null);
       setVerse(null);
+      setPreview(null);
       return;
     }
     const book = nav.books.find((b) => b.id === selected.bookId);
     setBookName(book?.canonical ?? `Livro ${selected.bookId}`);
     setChapter(selected.chapter);
     setVerse(selected.verse);
-  }, [selected, nav.books]);
 
-  const onNextVerse = useCallback(() => void NextVerseCommand(ctx), [ctx]);
-  const onPrevVerse = useCallback(() => void PreviousVerseCommand(ctx), [ctx]);
-  const onNextChapter = useCallback(() => void NextChapterCommand(ctx), [ctx]);
-  const onPrevChapter = useCallback(() => void PreviousChapterCommand(ctx), [ctx]);
+    // Carregar texto do versículo via cache LRU.
+    let cancelled = false;
+    setPreviewLoading(true);
+    void ctx
+      .getVerse(selected.bookId, selected.chapter, selected.verse)
+      .then((v) => {
+        if (!cancelled) setPreview(v);
+      })
+      .catch(() => {
+        if (!cancelled) setPreview(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPreviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, nav.books, ctx]);
+
+  // Navegar e apresentar automaticamente: após o comando de navegação
+  // atualizar `selected` no store, dispara PresentVerseCommand para o novo
+  // versículo. ctx.selected é um getter que lê do store sincronamente,
+  // então após selectAndLoad o valor já é o novo ref.
+  const navigateAndPresent = useCallback(
+    async (navCmd: () => Promise<CommandResult>) => {
+      const result = await navCmd();
+      if (result.ok && result.ref) {
+        await PresentVerseCommand(ctx);
+      }
+    },
+    [ctx],
+  );
+
+  const onNextVerse = useCallback(
+    () => void navigateAndPresent(() => NextVerseCommand(ctx)),
+    [ctx, navigateAndPresent],
+  );
+  const onPrevVerse = useCallback(
+    () => void navigateAndPresent(() => PreviousVerseCommand(ctx)),
+    [ctx, navigateAndPresent],
+  );
+  const onNextChapter = useCallback(
+    () => void navigateAndPresent(() => NextChapterCommand(ctx)),
+    [ctx, navigateAndPresent],
+  );
+  const onPrevChapter = useCallback(
+    () => void navigateAndPresent(() => PreviousChapterCommand(ctx)),
+    [ctx, navigateAndPresent],
+  );
 
   const hasSelection = selected !== null;
 
@@ -127,6 +179,35 @@ export function QuickNavigator({ ctx, className }: QuickNavigatorProps) {
         <p className="text-xs text-text-muted italic text-center py-1">
           Use os atalhos de teclado ou comece a navegar para selecionar.
         </p>
+      )}
+
+      {/* Preview do versículo selecionado */}
+      {hasSelection && (
+        <div
+          className="flex flex-col gap-1.5 rounded-md border border-primary/30 bg-primary/5 p-3"
+          data-testid="selected-verse-preview"
+        >
+          {previewLoading ? (
+            <div className="flex items-center gap-2 py-2 text-text-muted">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <span className="text-xs">Carregando...</span>
+            </div>
+          ) : preview ? (
+            <>
+              <span className="text-base font-bold text-text">
+                {preview.reference}
+              </span>
+              <p className="text-sm text-text italic border-l-2 border-primary/30 pl-3 leading-relaxed">
+                "{preview.text}"
+              </p>
+              <span className="text-[10px] text-text-subtle">{preview.version}</span>
+            </>
+          ) : (
+            <p className="text-xs text-text-muted italic py-1">
+              Versículo não disponível.
+            </p>
+          )}
+        </div>
       )}
     </div>
   );

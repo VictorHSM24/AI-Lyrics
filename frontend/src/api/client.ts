@@ -85,6 +85,15 @@ export function createPresentationApi(): PresentationApi {
       getHistory: notImplemented,
       getCurrent: notImplemented,
       parseReference: notImplemented,
+      followStart: notImplemented,
+      followStop: notImplemented,
+      followAdvance: notImplemented,
+      followState: notImplemented,
+      getVersions: notImplemented,
+      getVersion: notImplemented,
+      setVersion: notImplemented,
+      setAutoVersion: notImplemented,
+      semanticSearch: notImplemented,
     },
   };
 }

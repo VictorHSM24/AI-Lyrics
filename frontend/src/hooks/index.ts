@@ -27,6 +27,8 @@ import { devLog, LruCache, cacheKey } from "@/utils";
 export { useServices, useStores } from "@/contexts/InfraContext";
 // Sprint 25 — useLocalStorage para persistência de favoritos e recentes.
 export { useLocalStorage, type UseLocalStorageResult } from "./useLocalStorage";
+// Sprint 28 (Fase 9) — Busca semântica com Ollama.
+export { useSemanticSearch, type UseSemanticSearchResult } from "./useSemanticSearch";
 import type { Snapshot, TranscriptEntry, ReferenceEntry, VersePresentationEntry, SemanticInferenceEntry, SemanticResolutionEntry, SermonContextEntry, SermonChangeEvent } from "@/stores";
 import type {
   AudioDeviceDTO,

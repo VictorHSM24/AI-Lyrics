@@ -146,14 +146,14 @@ const DEFAULT_SETTINGS: AppSettings = {
     quickPresentation: true,
   },
   ai: {
-    whisperModel: "whisper-base",
+    whisperModel: "large-v3-turbo",
     // Sprint 17.5.2 — Default deve ser um valor válido aceito pelo backend.
     // O backend (config/loader.py) só aceita "faster-whisper". O valor
     // "whisper" era inválido e causava falha no restart do backend após
     // "Aplicar no Backend".
     backend: "faster-whisper",
-    device: "cpu",
-    computeType: "int8",
+    device: "auto",
+    computeType: "auto",
     language: "pt-BR",
     threads: 4,
     llmModel: "",
@@ -188,7 +188,7 @@ const SETTINGS_KEY = "ai-lyrics:settings";
  * Espelha a validação do backend (config/loader.py). Qualquer valor
  * fora destes conjuntos é substituído pelo default ANTES de chegar à UI.
  */
-const VALID_STT_BACKENDS = new Set(["faster-whisper"]);
+const VALID_STT_BACKENDS = new Set(["faster-whisper", "auto"]);
 
 /**
  * Normaliza um objeto AppSettings parcial, corrigindo valores inválidos
@@ -522,6 +522,62 @@ export function OperationProvider({ children, skipStartup = false }: OperationPr
           url: backendUrl,
           token: backendToken,
         },
+      };
+      settingsStore.set(updated);
+      return settingsStore.current;
+    });
+  }, [configuration]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sincroniza settings.data.ai a partir da configuração do backend.
+  // O backend (config.yaml) é a fonte de verdade para STT. O frontend
+  // espelha os valores do backend na inicialização para evitar divergências.
+  useEffect(() => {
+    if (!configuration) return;
+    const backendStt = configuration.stt as Record<string, unknown> | undefined;
+    if (!backendStt) return;
+
+    const beModel = String(backendStt.model ?? "");
+    const beBackend = String(backendStt.backend ?? "");
+    const beDevice = String(backendStt.device ?? "");
+    const beCompute = String(backendStt.compute_type ?? "");
+    const beLanguage = String(backendStt.language ?? "");
+    const beThreads = Number(backendStt.cpu_threads ?? 0);
+
+    // Mapear device do backend para a UI: "cuda" → "cuda", "auto" → "auto".
+    // (UI já usa os mesmos valores que o backend para device.)
+
+    setSettings((prev) => {
+      if (!prev) return prev;
+      const current = prev.data.ai;
+      const updatedAi: AISettings = { ...current };
+
+      if (beModel && beModel !== current.whisperModel) {
+        updatedAi.whisperModel = beModel;
+      }
+      if (beBackend && beBackend !== current.backend) {
+        updatedAi.backend = beBackend;
+      }
+      if (beDevice && beDevice !== current.device) {
+        // UI usa "cuda" para GPU, "cpu" para CPU, "auto" para auto.
+        updatedAi.device = beDevice;
+      }
+      if (beCompute && beCompute !== current.computeType) {
+        updatedAi.computeType = beCompute;
+      }
+      if (beLanguage && beLanguage !== current.language) {
+        // Backend usa "pt", UI usa "pt-BR" — mapear.
+        updatedAi.language = beLanguage === "pt" ? "pt-BR" : beLanguage;
+      }
+      if (beThreads > 0 && beThreads !== current.threads) {
+        updatedAi.threads = beThreads;
+      }
+
+      // Se nada mudou, não atualizar.
+      if (updatedAi === current) return prev;
+
+      const updated: AppSettings = {
+        ...prev.data,
+        ai: updatedAi,
       };
       settingsStore.set(updated);
       return settingsStore.current;

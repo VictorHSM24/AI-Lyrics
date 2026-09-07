@@ -321,6 +321,8 @@ class CompositionRoot:
     semantic_provider: Any = None  # LocalLLMProvider / StubProvider or None
     # Sprint 22.0 — BibleRetriever (RAG Local) or None.
     bible_retriever: Any = None
+    # Sprint 28 (Fase 9) — SemanticSearchService (chat Ollama) or None.
+    semantic_search_service: Any = None
     # CAP-01 — StateOrchestrator or None.
     state_orchestrator: Any = None
     # Sprint 23.2 — Reading Follow Mode
@@ -717,6 +719,65 @@ def create_composition_root() -> CompositionRoot:
             "Sprint 18: VersePresentationService initialization failed: %s", e
         )
 
+    # Sprint 28 (Fase 9) — SemanticSearchService (chat Ollama do operador).
+    # Instanciar se BibleRetriever estiver disponível e Ollama configurado.
+    semantic_search_service = None
+    if bible_retriever_instance is not None:
+        try:
+            from knowledge.semantic_search_service import SemanticSearchService
+            from semantic.backend_factory import (
+                create_backend,
+                normalize_base_url_for_backend,
+            )
+
+            # Reusar config do semantic.ollama (ou llm) para o OllamaBackend.
+            semantic_config = getattr(config, "semantic", None)
+            ollama_cfg = None
+            if semantic_config is not None:
+                ollama_cfg = getattr(semantic_config, "ollama", None)
+
+            if ollama_cfg is not None:
+                base_url_native = normalize_base_url_for_backend(
+                    "ollama", ollama_cfg.base_url,
+                )
+                ollama_backend = create_backend(
+                    provider="ollama",
+                    base_url=base_url_native,
+                    model=ollama_cfg.model,
+                    api_key=ollama_cfg.api_key,
+                )
+                semantic_search_service = SemanticSearchService(
+                    bible_retriever=bible_retriever_instance,
+                    ollama_backend=ollama_backend,
+                    model=ollama_cfg.model,
+                    timeout_s=ollama_cfg.timeout_seconds,
+                    temperature=0.0,
+                    max_tokens=500,
+                )
+                logger.info(
+                    "Sprint 28 (Fase 9): SemanticSearchService initialized "
+                    "(model=%s, base_url=%s, ollama_available=%s).",
+                    ollama_cfg.model, base_url_native,
+                    semantic_search_service.ollama_available,
+                )
+            else:
+                logger.info(
+                    "Sprint 28 (Fase 9): SemanticSearchService disabled — "
+                    "semantic.ollama config not found."
+                )
+        except Exception as e_sss:
+            logger.warning(
+                "Sprint 28 (Fase 9): SemanticSearchService init failed: %s — "
+                "operator semantic search will be unavailable.",
+                e_sss,
+            )
+            semantic_search_service = None
+    else:
+        logger.info(
+            "Sprint 28 (Fase 9): SemanticSearchService disabled — "
+            "BibleRetriever not available."
+        )
+
     # Sprint 19 — Streaming Speech Pipeline.
     # RingBuffer + SlidingWindow + STTExecutor + StreamingSTTService +
     # IncrementalBiblicalParser.
@@ -758,6 +819,7 @@ def create_composition_root() -> CompositionRoot:
                 sample_rate=int(audio_sr),
                 max_context_seconds=12.0,
                 trim_margin_seconds=0.2,
+                min_rms=0.001,
             )
             streaming_stt.start()
 
@@ -1159,6 +1221,7 @@ def create_composition_root() -> CompositionRoot:
         reference_resolver=reference_resolver,
         semantic_provider=semantic_provider,
         bible_retriever=bible_retriever_instance,
+        semantic_search_service=semantic_search_service,
         state_orchestrator=state_orchestrator,
         # Sprint 23.2 — Reading Follow Mode
         reading_follow_service=locals().get("reading_follow_service", None),

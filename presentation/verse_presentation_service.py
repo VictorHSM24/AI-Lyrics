@@ -69,6 +69,7 @@ from integracao_holyrics.exceptions import (
 from busca.exceptions import SearchError
 from pipeline.bus import PipelineEventBus
 from pipeline.events import (
+    NavigationCommandDetected,
     ReferenceAntecipada,
     ReferenceDetected,
     VersePresentationFailed,
@@ -177,6 +178,11 @@ class VersePresentationService:
         # Sprint 28 (Fase 6) — dedup interno por (book_id, chapter, verse).
         # Atualizado quando o VPS apresenta com sucesso no Holyrics.
         self._last_presented_key: tuple[int, int, int] | None = None
+        # Sprint 28 (Fase 8) — navegação por voz ("próximo"/"anterior").
+        # Guarda info do último verso para avançar/recuar.
+        self._last_book_name: str | None = None
+        self._last_chapter: int | None = None
+        self._last_verse: int | None = None
 
         # Sprint 21.4 — Streaming First.
         # Track de antecipações pendentes por correlation_id, para dedup
@@ -224,10 +230,12 @@ class VersePresentationService:
         # Assinar ReferenceAntecipada para apresentação antecipada durante
         # a fala, antes do silêncio fechar o segmento.
         self._bus.subscribe(ReferenceAntecipada, self._on_reference_anticipada)
+        # Sprint 28 (Fase 8) — Navegação por voz ("próximo", "anterior").
+        self._bus.subscribe(NavigationCommandDetected, self._on_navigation_command)
         self._subscribed = True
         logger.info(
             "VersePresentationService started — subscribed to "
-            "ReferenceDetected and ReferenceAntecipada."
+            "ReferenceDetected, ReferenceAntecipada, NavigationCommandDetected."
         )
 
     def stop(self) -> None:
@@ -239,8 +247,100 @@ class VersePresentationService:
             self._bus.unsubscribe(ReferenceAntecipada, self._on_reference_anticipada)
         except Exception:
             pass
+        try:
+            self._bus.unsubscribe(NavigationCommandDetected, self._on_navigation_command)
+        except Exception:
+            pass
         self._subscribed = False
         logger.info("VersePresentationService stopped.")
+
+    # ------------------------------------------------------------------
+    # Sprint 28 (Fase 8) — Navegação por voz ("próximo"/"anterior").
+    # ------------------------------------------------------------------
+
+    def _on_navigation_command(self, event: NavigationCommandDetected) -> None:
+        """Avança/recua o último versículo apresentado via comando de voz.
+
+        Funciona independentemente do ReadingFollowService — usa o
+        último verso apresentado pelo VPS.
+        """
+        if event.command not in ("forward", "back"):
+            return
+        if self._last_book_name is None or self._last_chapter is None:
+            logger.info(
+                "VersePresentationService: navigation %s ignorado "
+                "(nenhum verso apresentado ainda).",
+                event.command,
+            )
+            return
+        if self._last_verse is None or self._last_verse < 1:
+            return
+
+        if event.command == "forward":
+            new_verse = self._last_verse + 1
+        else:
+            new_verse = self._last_verse - 1
+        if new_verse < 1:
+            logger.info(
+                "VersePresentationService: navigation back ignorado "
+                "(já no verso 1).",
+            )
+            return
+
+        t0 = time.monotonic()
+        logger.info(
+            "VersePresentationService: navigation %s → %s %d:%d",
+            event.command, self._last_book_name,
+            self._last_chapter, new_verse,
+        )
+
+        # Resolver o novo verso.
+        try:
+            search_result = self._searcher.search_by_reference(
+                book_name=self._last_book_name,
+                chapter=self._last_chapter,
+                verse=new_verse,
+                version=self._version,
+            )
+        except Exception as e:
+            logger.warning(
+                "VersePresentationService: navigation search failed: %s", e,
+            )
+            return
+        if search_result is None:
+            logger.info(
+                "VersePresentationService: navigation %s → %s %d:%d "
+                "não encontrado.",
+                event.command, self._last_book_name,
+                self._last_chapter, new_verse,
+            )
+            return
+
+        # Construir um evento ReferenceDetected sintético para
+        # reaproveitar _present_verse.
+        from pipeline.metadata import EventMetadata
+        meta = EventMetadata.for_next(
+            previous=event.meta,
+            origin="VersePresentationService.navigation",
+        )
+        synth = ReferenceDetected(
+            meta=meta,
+            intent="OPEN_REFERENCE",
+            book=self._last_book_name,
+            book_id=search_result.book_id,
+            chapter=self._last_chapter,
+            verse_start=new_verse,
+            verse_end=new_verse,
+            confidence=event.confidence,
+            normalized_text=f"{self._last_book_name} {self._last_chapter}:{new_verse}",
+        )
+        self._present_verse(synth, search_result, t0)
+        self._last_presented_key = (
+            search_result.book_id,
+            search_result.chapter,
+            search_result.verse or 0,
+        )
+        self._last_verse = new_verse
 
     # ------------------------------------------------------------------
     # Callback do EventBus — ponto de entrada do fluxo.
@@ -272,13 +372,18 @@ class VersePresentationService:
             return True, "no_orchestrator"
 
         # Verificar estado atual.
+        # Aceita PRESENT (estado normal), PREPARE (transição) e WAIT
+        # (estado inicial — o StateOrchestrator pode não ter processado
+        # ReferenceDetected ainda se o VPS foi inscrito primeiro no
+        # EventBus). ReferenceDetected é definitivo e sempre transita
+        # para PRESENT, então confiar no evento é seguro.
         from pipeline.state_orchestrator import State
         current = self._state_orchestrator.current_state
-        if current != State.PRESENT:
+        if current not in (State.PRESENT, State.PREPARE, State.WAIT):
             self._total_state_rejected += 1
             logger.info(
                 "VersePresentationService: rejeitado por estado "
-                "(current=%s, esperado=PRESENT, ref=(%d,%d,%d))",
+                "(current=%s, esperado=PRESENT/PREPARE/WAIT, ref=(%d,%d,%d))",
                 current.value, book_id, chapter, verse,
             )
             return False, f"state_not_present:{current.value}"
@@ -372,6 +477,9 @@ class VersePresentationService:
             search_result.chapter,
             search_result.verse or 0,
         )
+        self._last_book_name = event.book
+        self._last_chapter = search_result.chapter
+        self._last_verse = search_result.verse or 0
 
         # Etapa 3 — Registrar antecipação pendente para dedup.
         with self._anticipation_lock:
@@ -448,6 +556,9 @@ class VersePresentationService:
                 self._present_verse(event, search_result, t0)
                 # Sprint 28 (Fase 6) — atualizar dedup interno.
                 self._last_presented_key = detected_key
+                self._last_book_name = event.book
+                self._last_chapter = event.chapter
+                self._last_verse = event.verse_start
                 return
 
         # Fluxo normal (sem antecipação prévia).
@@ -482,6 +593,9 @@ class VersePresentationService:
         self._present_verse(event, search_result, t0)
         # Sprint 28 (Fase 6) — atualizar dedup interno.
         self._last_presented_key = detected_key
+        self._last_book_name = event.book
+        self._last_chapter = event.chapter
+        self._last_verse = event.verse_start
 
     def _confirm_anticipation(
         self,

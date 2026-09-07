@@ -774,3 +774,133 @@ async def set_auto_version(
     detector.set_auto_enabled(req.enabled)
     msg = "Mudança automática de versão habilitada." if req.enabled else "Mudança automática de versão desabilitada."
     return versioned({"ok": True, "message": msg, "auto_enabled": req.enabled})
+
+
+# ---------------------------------------------------------------------------
+# Sprint 28 (Fase 9) — Busca Semântica com Ollama
+# ---------------------------------------------------------------------------
+
+
+def _get_semantic_search_service(root: CompositionRoot):
+    svc = getattr(root, "semantic_search_service", None)
+    if svc is None:
+        raise HTTPException(503, "SemanticSearchService não inicializado.")
+    return svc
+
+
+class SemanticSearchRequest(BaseModel):
+    """Payload para POST /operator/semantic-search."""
+    query: str
+    top_k: int = 20
+    version: str | None = None
+    use_ollama: bool = True
+
+
+class VersionTextModel(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    version: str
+    text: str
+    score: float
+
+
+class SemanticSearchResultModel(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    book: str
+    book_id: int
+    chapter: int
+    verse: int
+    reference: str
+    semantic_score: float
+    fts_rank: int
+    versions: list[VersionTextModel]
+    best_text: str
+    best_version: str
+
+
+class SemanticSearchResponse(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    ok: bool
+    query: str
+    results: list[SemanticSearchResultModel]
+    count: int
+    fallback: bool
+    latency_ms: int
+
+
+@router.post("/semantic-search")
+@router.post("/semantic-search/")
+async def semantic_search(
+    req: SemanticSearchRequest,
+    root: CompositionRoot = Depends(get_composition_root),
+) -> dict:
+    """Busca semântica de versículos com Ollama.
+
+    O operador digita texto livre (palavras-chave, paráfrases, temas).
+    O BibleRetriever busca no FTS5 em todas as versões locais, e o
+    Ollama re-ranqueia os candidatos por relevância semântica.
+
+    Se o Ollama estiver indisponível, retorna os candidatos do FTS5
+    sem re-ranqueio (fallback=true).
+
+    Se o pipeline de transcrição estiver ativo (GPU ocupada com Whisper),
+    pula o re-ranqueamento Ollama para evitar competição de GPU e
+    retornar resultados instantâneos via FTS5/BM25.
+    """
+    svc = _get_semantic_search_service(root)
+
+    if not req.query or not req.query.strip():
+        return versioned(SemanticSearchResponse(
+            ok=False, query=req.query, results=[], count=0,
+            fallback=False, latency_ms=0,
+        ).model_dump())
+
+    # Pular o Ollama se:
+    # 1. O operador desligou o toggle use_ollama, OU
+    # 2. O pipeline de transcrição está ativo (GPU ocupada com Whisper).
+    pipeline_active = False
+    pipeline_svc = getattr(root, "pipeline_service", None)
+    if pipeline_svc is not None:
+        try:
+            pipeline_active = pipeline_svc.is_running()
+        except Exception:
+            pipeline_active = False
+
+    skip_ollama = (not req.use_ollama) or pipeline_active
+
+    try:
+        results, fallback, latency_ms = svc.search(
+            query=req.query,
+            top_k=req.top_k,
+            skip_ollama=skip_ollama,
+        )
+    except Exception as e:
+        logger.warning("operator/semantic-search: erro: %s", e)
+        raise HTTPException(500, f"Erro na busca semântica: {e}")
+
+    result_models = [
+        SemanticSearchResultModel(
+            book=r.book,
+            book_id=r.book_id,
+            chapter=r.chapter,
+            verse=r.verse,
+            reference=r.reference,
+            semantic_score=r.semantic_score,
+            fts_rank=r.fts_rank,
+            versions=[
+                VersionTextModel(version=v.version, text=v.text, score=v.score)
+                for v in r.versions
+            ],
+            best_text=r.best_text,
+            best_version=r.best_version,
+        )
+        for r in results
+    ]
+
+    return versioned(SemanticSearchResponse(
+        ok=True,
+        query=req.query,
+        results=[m.model_dump() for m in result_models],
+        count=len(result_models),
+        fallback=fallback,
+        latency_ms=int(latency_ms),
+    ).model_dump())

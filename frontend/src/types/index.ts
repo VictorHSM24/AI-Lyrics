@@ -420,6 +420,44 @@ export interface OperatorParseResultDTO {
   reason: string | null;
 }
 
+// Sprint 28 (Fase 9) — Busca Semântica com Ollama.
+
+export interface VersionTextDTO {
+  version: string;
+  text: string;
+  score: number;
+}
+
+export interface SemanticSearchResultDTO {
+  book: string;
+  book_id: number;
+  chapter: number;
+  verse: number;
+  reference: string;
+  semantic_score: number;
+  fts_rank: number;
+  versions: VersionTextDTO[];
+  best_text: string;
+  best_version: string;
+}
+
+export interface SemanticSearchResponseDTO {
+  ok: boolean;
+  query: string;
+  results: SemanticSearchResultDTO[];
+  count: number;
+  fallback: boolean;
+  latency_ms: number;
+}
+
+export interface SemanticSearchRequestDTO {
+  query: string;
+  top_k?: number;
+  version?: string;
+  /** Se false, pula re-ranqueamento Ollama e usa só FTS5/BM25. */
+  use_ollama?: boolean;
+}
+
 export interface OperatorHistoryEntryDTO {
   reference: string;
   book: string;

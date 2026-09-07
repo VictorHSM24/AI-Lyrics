@@ -217,6 +217,23 @@ class StreamingSTTService:
         # áudio e pular transcrição se for muito baixo (silêncio).
         # Fala humana tem RMS tipicamente > 0.01; silêncio ≈ 0.
         rms = float(np.sqrt(np.mean(audio ** 2)))
+
+        # Normalização de ganho: se o RMS está acima do limiar de silêncio
+        # mas abaixo de 0.01 (microfone com baixo ganho), amplificar para
+        # um nível alvo (0.05) para que o Whisper consiga transcrever.
+        # Isto resolve microfones USB com volume baixo sem precisar
+        # alterar configurações do Windows.
+        # Só amplificar se houver pico significativo (fala tem pico >> RMS;
+        # ruído de fundo tem pico ≈ RMS).
+        target_rms = 0.05
+        peak = float(np.max(np.abs(audio)))
+        if rms >= 0.002 and rms < 0.01 and peak > rms * 3:
+            gain = target_rms / rms
+            # Limitar ganho para evitar amplificação excessiva de ruído.
+            gain = min(gain, 30.0)
+            audio = (audio * gain).astype(np.float32)
+            rms = target_rms
+
         if self._total_windows % 50 == 1:
             logger.info(
                 "StreamingSTT on_window: windows=%d duration=%dms rms=%.6f active=%s",
@@ -310,6 +327,32 @@ class StreamingSTTService:
 
         # Sprint 28 — extrair palavras com timestamps do resultado.
         current_words = self._extract_words_list(result.words, result.text)
+
+        # Detectar nova utterance: se o novo texto não é extensão do
+        # texto anterior (nem vice-versa), o pregador começou uma nova
+        # frase. Resetar o fluxo para gerar novo correlation_id e
+        # permitir que o parser detecte nova referência.
+        # Usa comparação por sobreposição de palavras para ser robusto
+        # a pequenas variações do Whisper (ex.: "E falando..." vs
+        # "Falando..." não deve resetar).
+        if self._current_text and new_text:
+            old_words = set(self._current_text.lower().split())
+            new_words = set(new_text.lower().split())
+            # Sobreposição de palavras: se >= 50% das palavras do texto
+            # menor aparecem no maior, é a mesma utterance (extensão).
+            smaller = min(len(old_words), len(new_words))
+            if smaller > 0:
+                overlap = len(old_words & new_words) / smaller
+            else:
+                overlap = 0
+            if overlap < 0.5 and self._current_correlation_id is not None:
+                logger.info(
+                    "StreamingSTT: reset_flow (new utterance, "
+                    "overlap=%.0f%%, old=%r new=%r, corr=%s).",
+                    overlap * 100, self._current_text[:40],
+                    new_text[:40], self._current_correlation_id,
+                )
+                self.reset_flow()
 
         # Sprint 28 — LocalAgreement-2: commitar palavras que aparecem
         # em ambas as transcrições (atual e anterior).

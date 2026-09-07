@@ -30,6 +30,7 @@ import { PresentationCards } from "./PresentationCards";
 import { HistoryPanel } from "./HistoryPanel";
 import { FavoritesPanel } from "./FavoritesPanel";
 import { MostUsedPanel } from "./MostUsedPanel";
+import { SemanticSearchPanel } from "./SemanticSearchPanel";
 import { CommandPalette, type CommandPaletteHandle } from "./CommandPalette";
 import { useWorkspaceContext } from "./useWorkspaceContext";
 import { useAutoSyncSelected } from "./useAutoSyncSelected";
@@ -107,6 +108,9 @@ export function OperatorWorkspace({ className }: OperatorWorkspaceProps) {
       {/* Linha 1: CommandPalette (Sprint 26, substitui QuickSearch) */}
       <CommandPalette ref={commandPaletteRef} ctx={ctx} />
 
+      {/* Sprint 28 (Fase 9): Busca Semântica com Ollama */}
+      <SemanticSearchPanel />
+
       {/* Grid: navegação + cards + painéis */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Coluna esquerda: QuickNavigator + toggle + favoritos + mais usados */}
@@ -124,9 +128,7 @@ export function OperatorWorkspace({ className }: OperatorWorkspaceProps) {
         {/* Coluna direita: cards + histórico */}
         <div className="flex flex-col gap-4">
           <PresentationCards
-            ctx={ctx}
             lastPresentResult={lastPresentResult}
-            presenting={op.presenting}
           />
           <div ref={historyFilterRef}>
             <HistoryPanel ctx={ctx} />

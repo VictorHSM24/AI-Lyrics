@@ -96,6 +96,8 @@ const METHOD_TO_ENDPOINT: Record<string, string> = {
   "operator.getVersion": "/operator/version",
   "operator.setVersion": "/operator/version",
   "operator.setAutoVersion": "/operator/version/auto",
+  // Sprint 28 (Fase 9) — Busca Semântica com Ollama.
+  "operator.semanticSearch": "/operator/semantic-search",
 };
 
 /** Métodos que usam PUT (body JSON) em vez de GET (query params). */
@@ -116,6 +118,7 @@ const POST_METHODS: ReadonlySet<string> = new Set([
   "operator.followStart",
   "operator.followStop",
   "operator.followAdvance",
+  "operator.semanticSearch",
   "system.restart",
 ]);
 

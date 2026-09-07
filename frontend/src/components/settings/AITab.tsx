@@ -26,6 +26,7 @@ const WHISPER_MODELS = [
 ];
 
 const BACKENDS = [
+  { value: "auto", label: "Automático (recomendado)" },
   { value: "faster-whisper", label: "Faster Whisper (CTranslate2)" },
 ];
 
@@ -36,6 +37,7 @@ const DEVICES = [
 ];
 
 const COMPUTE_TYPES = [
+  { value: "auto", label: "Automático (recomendado)" },
   { value: "int8", label: "int8 (mais rápido, menor)" },
   { value: "int8_float16", label: "int8_float16 (balanceado)" },
   { value: "float16", label: "float16 (mais preciso)" },

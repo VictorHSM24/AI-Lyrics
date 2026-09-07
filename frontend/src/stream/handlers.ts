@@ -699,6 +699,10 @@ export function handleVersePresentationEvent(
     case "VersePresented": {
       updated = {
         ...baseEntry,
+        book: str(dto.payload, "book") || baseEntry.book,
+        bookId: num(dto.payload, "book_id") || baseEntry.bookId,
+        chapter: num(dto.payload, "chapter") || baseEntry.chapter,
+        verse: num(dto.payload, "verse") || baseEntry.verse,
         reference: str(dto.payload, "reference") || baseEntry.reference,
         version: str(dto.payload, "version") || baseEntry.version,
         quickPresentation: bool(dto.payload, "quick_presentation"),

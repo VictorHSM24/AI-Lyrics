@@ -114,6 +114,28 @@ def _normalize_text(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Stopwords portuguesas — removidas da query FTS5 para reduzir ruído
+# ---------------------------------------------------------------------------
+
+_PORTUGUESE_STOPWORDS: frozenset[str] = frozenset({
+    "a", "o", "as", "os", "e", "ou", "de", "do", "da", "dos", "das",
+    "em", "no", "na", "nos", "nas", "por", "para", "pelo", "pela",
+    "que", "com", "sem", "ao", "aos", "um", "uma", "uns", "umas",
+    "se", "sua", "seu", "suas", "seus", "ao", "aos", "pelo", "pela",
+    "pelos", "pelas", "nele", "nela", "neles", "nelas", "lhe", "lhes",
+    "me", "te", "nos", "vos", "lhe", "lhes", "isso", "isto", "aquilo",
+    "era", "ser", "tem", "tem", "ja", "mais", "menos", "muito",
+    "muita", "muitos", "muitas", "tambem", "como", "mas", "porem",
+    "so", "seja", "foram", "fora", "entre", "ate", "apos",
+})
+
+
+def _filter_stopwords(terms: list[str]) -> list[str]:
+    """Remove stopwords portuguesas da lista de termos da query."""
+    return [t for t in terms if t not in _PORTUGUESE_STOPWORDS]
+
+
+# ---------------------------------------------------------------------------
 # Conversão BM25 → score [0,1]
 # ---------------------------------------------------------------------------
 
@@ -519,7 +541,13 @@ class BibleRetriever:
             return []
 
         # 3. Agregar por (book_ref_id, chapter, verse).
-        candidates = self._aggregate(raw_results, total_versions=self._stats.total_versions)
+        # Passar termos filtrados para bônus de term coverage.
+        query_terms = _filter_stopwords(query.split()) or query.split()
+        candidates = self._aggregate(
+            raw_results,
+            total_versions=self._stats.total_versions,
+            query_terms=query_terms,
+        )
 
         # 4. Ordenar por aggregated_score (desc) e limitar a top_k.
         candidates.sort(key=lambda c: c.aggregated_score, reverse=True)
@@ -572,8 +600,9 @@ class BibleRetriever:
         """Busca no FTS5 por texto normalizado.
 
         Estratégia híbrida para performance:
-        1. AND de todos os termos (rápido, ~15ms, preciso para citações).
-        2. Se AND retornar poucos resultados (< limit/4), fallback para
+        1. Filtrar stopwords portuguesas dos termos.
+        2. AND de todos os termos restantes (rápido, preciso para citações).
+        3. Se AND retornar poucos resultados (< limit/4), fallback para
            OR dos termos mais longos (mais distintivos) para matching amplo.
 
         Returns:
@@ -581,9 +610,15 @@ class BibleRetriever:
             estratégia_usada: "and", "or_fallback", ou "and_empty".
         """
         assert self._mem_conn is not None
-        terms = query.split()
-        if not terms:
+        all_terms = query.split()
+        if not all_terms:
             return [], "and_empty"
+
+        # Filtrar stopwords para reduzir ruído no BM25.
+        terms = _filter_stopwords(all_terms)
+        if not terms:
+            # Query só tinha stopwords — usar todos os termos.
+            terms = all_terms
 
         # Estratégia 1: AND de todos os termos (padrão FTS5).
         fts_and = " ".join(f'"{t}"' for t in terms if t)
@@ -634,7 +669,7 @@ class BibleRetriever:
             or_rows = cur.fetchall()
 
         # Combinar resultados (deduplicar por row_id implícito).
-        # Manter ordem por rank; rows já estão ordenados.
+        # AND results vêm primeiro (mais relevantes), depois OR.
         seen_ids: set[tuple[int, int, int, str]] = set()
         combined: list = []
         for row in list(rows) + list(or_rows):
@@ -664,6 +699,7 @@ class BibleRetriever:
         self,
         raw_results: list[dict[str, Any]],
         total_versions: int,
+        query_terms: list[str] | None = None,
     ) -> list[BibleCandidate]:
         """Agrega resultados brutos por (book_ref_id, chapter, verse).
 
@@ -672,12 +708,17 @@ class BibleRetriever:
         e aggregated_score.
 
         Estratégia de aggregated_score:
-            aggregated = 0.5 * best_score
-                       + 0.3 * mean_score
-                       + 0.2 * coverage
-            Onde coverage = num_versions / total_versions.
-            Um bônus de posição é aplicado: candidatos com melhor
-            rank médio recebem +0.05 * (1 - normalized_rank).
+            aggregated = 0.45 * best_score
+                       + 0.25 * mean_score
+                       + 0.15 * coverage
+                       + 0.15 * term_coverage_bonus
+                       + position_bonus
+            Onde:
+            - coverage = num_versions / total_versions
+            - term_coverage_bonus = fração dos termos da query presentes
+              no melhor texto do versículo (premia versículos que
+              contêm MAIS palavras da busca, não apenas uma)
+            - position_bonus = 0.05 * (1 - normalized_rank)
         """
         # Agrupar por (book_ref_id, chapter, verse).
         groups: dict[tuple[int, int, int], list[dict[str, Any]]] = {}
@@ -687,6 +728,7 @@ class BibleRetriever:
 
         candidates: list[BibleCandidate] = []
         max_rank = max((r["rank"] for r in raw_results), default=1) or 1
+        query_terms_set = set(query_terms) if query_terms else set()
 
         for (book_ref_id, chapter, verse), matches in groups.items():
             version_matches: list[BibleVersionMatch] = []
@@ -710,10 +752,24 @@ class BibleRetriever:
             normalized_rank = avg_rank / max_rank if max_rank > 0 else 0.0
             position_bonus = 0.05 * (1.0 - normalized_rank)
 
+            # Bônus de term coverage: fração dos termos da query
+            # presentes no texto do melhor match. Premia versículos
+            # que contêm mais palavras da busca do operador.
+            if query_terms_set:
+                best_text_norm = _normalize_text(
+                    max(version_matches, key=lambda vm: vm.score).text
+                )
+                best_text_tokens = set(best_text_norm.split())
+                matched = sum(1 for t in query_terms_set if t in best_text_tokens)
+                term_coverage = matched / len(query_terms_set)
+            else:
+                term_coverage = 0.0
+
             aggregated = (
-                0.5 * best_score
-                + 0.3 * mean_score
-                + 0.2 * coverage
+                0.45 * best_score
+                + 0.25 * mean_score
+                + 0.15 * coverage
+                + 0.15 * term_coverage
                 + position_bonus
             )
             aggregated = max(0.0, min(1.0, aggregated))

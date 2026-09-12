@@ -107,8 +107,8 @@ export function convertRomanToArabic(text: string): string {
 // ============================================================
 
 export interface BookAliasIndex {
-  /** alias normalizada → { bookId, bookName, aliasLength } */
-  aliases: Map<string, { bookId: number; bookName: string; aliasLength: number }>;
+  /** alias normalizada → { bookId, bookName, aliasLength, isExact } */
+  aliases: Map<string, { bookId: number; bookName: string; aliasLength: number; isExact: boolean }>;
   /** Lista de livros para fallback fuzzy. */
   books: Array<{ id: number; canonical: string; aliases: string[]; normalizedAliases: string[] }>;
 }
@@ -120,8 +120,22 @@ export interface BookAliasIndex {
  * vence (ex.: "jo" → João, não "Jó" que tem alias "jo" mas também "jó").
  */
 export function buildBookIndex(books: OperatorBookDTO[]): BookAliasIndex {
-  const aliases = new Map<string, { bookId: number; bookName: string; aliasLength: number }>();
+  const aliases = new Map<string, { bookId: number; bookName: string; aliasLength: number; isExact: boolean }>();
   const normalizedBooks: BookAliasIndex["books"] = [];
+
+  // Prioridade: alias mais curta vence. Em caso de empate, alias cuja forma
+  // original já é normalizada (sem acentos) vence sobre uma que precisou
+  // normalização. Ex.: "jo" (João) vence "jó" (Jó) porque "jo" já é normalizado.
+  function shouldOverride(
+    existing: { aliasLength: number; isExact: boolean } | undefined,
+    normLen: number,
+    isExact: boolean,
+  ): boolean {
+    if (!existing) return true;
+    if (existing.aliasLength > normLen) return true;
+    if (existing.aliasLength === normLen && !existing.isExact && isExact) return true;
+    return false;
+  }
 
   for (const book of books) {
     const normAliases: string[] = [];
@@ -129,12 +143,14 @@ export function buildBookIndex(books: OperatorBookDTO[]): BookAliasIndex {
     const canonicalNorm = normalizeText(book.canonical);
     if (canonicalNorm) {
       normAliases.push(canonicalNorm);
+      const isExact = canonicalNorm === book.canonical.toLowerCase();
       const existing = aliases.get(canonicalNorm);
-      if (!existing || existing.aliasLength > canonicalNorm.length) {
+      if (shouldOverride(existing, canonicalNorm.length, isExact)) {
         aliases.set(canonicalNorm, {
           bookId: book.id,
           bookName: book.canonical,
           aliasLength: canonicalNorm.length,
+          isExact,
         });
       }
     }
@@ -143,13 +159,14 @@ export function buildBookIndex(books: OperatorBookDTO[]): BookAliasIndex {
       const norm = normalizeText(alias);
       if (!norm) continue;
       normAliases.push(norm);
+      const isExact = norm === alias.toLowerCase();
       const existing = aliases.get(norm);
-      // Alias mais curta vence (mais específica).
-      if (!existing || existing.aliasLength > norm.length) {
+      if (shouldOverride(existing, norm.length, isExact)) {
         aliases.set(norm, {
           bookId: book.id,
           bookName: book.canonical,
           aliasLength: norm.length,
+          isExact,
         });
       }
     }

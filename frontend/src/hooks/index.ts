@@ -867,6 +867,30 @@ export function useOperatorNavigation(): UseOperatorNavigationResult {
   const [booksLoading, setBooksLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Carregar books automaticamente na montagem se cache estiver vazio.
+  // Isso garante que todos os consumidores (CommandPalette, QuickNavigator,
+  // etc.) tenham books disponíveis sem precisar chamar loadBooks() manualmente.
+  useEffect(() => {
+    if (_booksCache) {
+      setBooks(_booksCache);
+      return;
+    }
+    void (async () => {
+      setBooksLoading(true);
+      setError(null);
+      try {
+        const res = await services.operator.getBooks();
+        _booksCache = res.books;
+        setBooks(res.books);
+      } catch (e) {
+        setError(`Erro ao carregar livros: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setBooksLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const loadBooks = async (): Promise<OperatorBookDTO[]> => {
     if (_booksCache) {
       setBooks(_booksCache);

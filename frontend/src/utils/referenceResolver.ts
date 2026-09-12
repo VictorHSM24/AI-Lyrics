@@ -182,6 +182,14 @@ function resolveBook(
   const exact = index.aliases.get(bookPart);
   if (exact) return { bookId: exact.bookId, bookName: exact.bookName };
 
+  // Tentar forma compacta: remover espaço após número inicial.
+  // Ex.: "2 tm" → "2tm", "1 co" → "1co", "3 jo" → "3jo"
+  const compact = bookPart.replace(/^(\d)\s+/, "$1");
+  if (compact !== bookPart) {
+    const compactMatch = index.aliases.get(compact);
+    if (compactMatch) return { bookId: compactMatch.bookId, bookName: compactMatch.bookName };
+  }
+
   // Fuzzy: alias que começa com bookPart ou vice-versa.
   let best: { bookId: number; bookName: string; score: number } | null = null;
   for (const book of index.books) {
@@ -191,6 +199,21 @@ function resolveBook(
           Math.max(bookPart.length, alias.length);
         if (!best || score > best.score) {
           best = { bookId: book.id, bookName: book.canonical, score };
+        }
+      }
+    }
+  }
+
+  // Tentar fuzzy com forma compacta também.
+  if (!best && compact !== bookPart) {
+    for (const book of index.books) {
+      for (const alias of book.normalizedAliases) {
+        if (alias.startsWith(compact) || compact.startsWith(alias)) {
+          const score = Math.min(compact.length, alias.length) /
+            Math.max(compact.length, alias.length);
+          if (!best || score > best.score) {
+            best = { bookId: book.id, bookName: book.canonical, score };
+          }
         }
       }
     }

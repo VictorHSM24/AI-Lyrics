@@ -90,6 +90,19 @@ _DETECTION_THRESHOLD = 0.90
 # (confidence 0.75). Book-only (0.40) é muito incerto.
 _DEFAULT_ANTICIPATION_THRESHOLD = 0.60
 
+# Sprint 29 — Filtro de aliases curtas para reconhecimento de voz.
+# Aliases de 1-2 caracteres (ex.: "de" para Deuteronômio, "na" para
+# Naum) são preposições/artigos comuns em português e causam falsos
+# positivos quando o pregador fala normalmente. O parser incremental
+# processa chunks pequenos de texto committed, então uma alias de 2
+# chars pode aparecer como palavra completa no chunk e ser interpretada
+# como referência bíblica.
+# Solução: exigir no mínimo 3 caracteres na alias matched para aceitar
+# o livro no parser de fala. Isso NÃO afeta o Command Palette do
+# operador (que usa o resolver do frontend com aliases de qualquer
+# tamanho, pois o operador digita explicitamente).
+_MIN_SPEECH_ALIAS_LEN = 3
+
 # Marcadores de capítulo/versículo por extenso.
 _CHAPTER_EXTENSO = frozenset({"cap", "capitulo", "capitulo:"})
 _VERSE_EXTENSO = frozenset({"vers", "versiculo", "versiculo:", "v", "verso"})
@@ -372,9 +385,42 @@ class IncrementalBiblicalParser:
         """Tenta identificar um livro bíblico no texto.
 
         Retorna True se encontrou (e avança expectativa para "chapter").
+
+        Sprint 29 — Filtro de aliases curtas para reconhecimento de voz.
+
+        Aliases de 1-2 caracteres (ex.: "de" para Deuteronômio, "na" para
+        Naum) são preposições/artigos comuns em português e causam
+        falsos positivos quando o pregador fala normalmente. O parser
+        incremental processa chunks pequenos de texto committed, então
+        uma alias de 2 chars pode aparecer como palavra completa no
+        chunk e ser interpretada como referência bíblica.
+
+        Solução: exigir no mínimo 3 caracteres na alias matched para
+        aceitar o livro no parser de fala. Isso NÃO afeta o Command
+        Palette do operador (que usa o resolver do frontend com
+        aliases de qualquer tamanho, pois o operador digita
+        explicitamente).
+
+        Exemplos filtrados: "de" → Deuteronômio, "na" → Naum, "jo" →
+        João, "rm" → Romanos. Exemplos que ainda funcionam: "rom" →
+        Romanos, "joao" → João, "naum" → Naum, "deut" → Deuteronômio.
         """
         result = self._books.resolve(norm_text)
         if result is None:
+            return False
+
+        # Sprint 29 — filtrar aliases muito curtas para evitar falsos
+        # positivos em reconhecimento de voz. "de", "na", "jo", etc.
+        # são palavras comuns em português que aparecem frequentemente
+        # na fala do pregador.
+        matched_alias_norm = self._norm.normalize(result.matched_alias)
+        if matched_alias_norm and len(matched_alias_norm) < _MIN_SPEECH_ALIAS_LEN:
+            logger.debug(
+                "IncrementalParser: ignoring short alias '%s' (len=%d < %d) "
+                "for book=%s (speech false-positive prevention)",
+                result.matched_alias, len(matched_alias_norm),
+                _MIN_SPEECH_ALIAS_LEN, result.book.canonical,
+            )
             return False
 
         # Se já tínhamos um livro e é o mesmo, não mudou.
@@ -387,8 +433,8 @@ class IncrementalBiblicalParser:
         self._current_book = result
         self._expecting = "chapter"
         logger.debug(
-            "IncrementalParser: book=%s (conf=%.2f)",
-            result.book.canonical, result.confidence,
+            "IncrementalParser: book=%s (conf=%.2f, alias=%s)",
+            result.book.canonical, result.confidence, result.matched_alias,
         )
         return True
 

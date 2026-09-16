@@ -16,7 +16,7 @@
  */
 
 import { useState } from "react";
-import { RefreshCw, Mic, Play, Square } from "lucide-react";
+import { RefreshCw, Mic, Play, Square, CheckCircle2 } from "lucide-react";
 import { useOperationState } from "@/contexts/OperationContext";
 import { useAudio } from "@/hooks";
 import { useServices } from "@/contexts/InfraContext";
@@ -44,6 +44,16 @@ export function AudioTab() {
   const selectedDeviceId = audio?.selectedDeviceId ?? (current ? String(current.index) : "");
   const selected = devices.find((d) => String(d.index) === selectedDeviceId) ?? current ?? null;
   const noDevice = !selected;
+
+  // Ordenar: dispositivo ativo primeiro, depois por nome.
+  // Remover duplicatas de nome (ex.: Webcam 1-4 com mesma descrição).
+  const uniqueDevices = devices.filter((d, i, arr) =>
+    arr.findIndex(x => x.name === d.name && x.sample_rate === d.sample_rate) === i
+  );
+  const sortedDevices = [
+    ...(selected ? [selected] : []),
+    ...uniqueDevices.filter(d => d.index !== selected?.index),
+  ];
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -141,6 +151,20 @@ export function AudioTab() {
           />
         ) : (
           <div className="flex flex-col gap-4">
+            {/* Indicador visual do dispositivo ativo */}
+            {selected && (
+              <div className="flex items-center gap-2 rounded-md bg-status-success/10 border border-status-success/30 px-3 py-2">
+                <CheckCircle2 className="h-4 w-4 text-status-success shrink-0" />
+                <div className="text-sm">
+                  <span className="font-medium text-text">Ativo: </span>
+                  <span className="text-text">{selected.name}</span>
+                  <span className="text-text-muted ml-2">
+                    ({selected.sample_rate / 1000}kHz, {selected.channels === 1 ? "mono" : "stereo"})
+                  </span>
+                </div>
+              </div>
+            )}
+
             <SelectField
               label="Dispositivo de entrada"
               description="Microfone usado para captura de áudio."
@@ -148,9 +172,9 @@ export function AudioTab() {
               value={selectedDeviceId}
               options={[
                 { value: "", label: "— Selecionar —" },
-                ...devices.map((d) => ({
+                ...sortedDevices.map((d) => ({
                   value: String(d.index),
-                  label: `${d.name} (${d.sample_rate / 1000}kHz, ${d.channels === 1 ? "mono" : "stereo"})${d.is_default ? " (padrão)" : ""}`,
+                  label: `${d.name} (${d.sample_rate / 1000}kHz, ${d.channels === 1 ? "mono" : "stereo"})${d.index === selected?.index ? " ← ATIVO" : ""}${d.is_default ? " (padrão)" : ""}`,
                 })),
               ]}
               onChange={handleSelectDevice}

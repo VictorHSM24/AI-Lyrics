@@ -21,7 +21,7 @@ stt:
 
 llm:
   base_url: "http://127.0.0.1:11434"
-  model: "qwen3:8b-q4_k_m"
+  model: "qwen3:1.7b"
   lazy_load: true
   timeout_ms: 15000
   max_tokens: 200
@@ -54,7 +54,7 @@ semantic:
     enabled: true
     base_url: "http://localhost:11434/v1"
     api_key: "ollama"
-    model: "qwen3:8b-q4_K_M"
+    model: "qwen3:1.7b"
     temperature: 0.1
     top_p: 0.9
     max_tokens: 300

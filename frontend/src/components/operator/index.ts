@@ -41,3 +41,6 @@ export { SearchHistoryController, type SearchHistoryState } from "./SearchHistor
 
 // Sprint 28 (Fase 9) — Busca Semântica com Ollama.
 export { SemanticSearchPanel } from "./SemanticSearchPanel";
+
+// Sprint 29 — StatusBar (indicadores de pipeline/mic/holyrics).
+export { StatusBar } from "./StatusBar";

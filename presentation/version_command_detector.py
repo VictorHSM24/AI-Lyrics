@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 import unicodedata
 from typing import Any, Protocol
 
@@ -92,6 +93,18 @@ _VERSION_ALIASES: dict[str, str] = {
 _NAVIGATION_THRESHOLD = 0.90
 _NAVIGATION_THRESHOLD_GOTO = 0.85  # "capítulo N" / "versículo N"
 
+# Comandos de voz são curtos. Spans longos de committed text são
+# leitura/pregação, não comandos — sem este guarda, "vamos voltar a
+# velhas práticas" disparava "back" (partial_ratio casava "volta"
+# como substring de "voltar").
+_NAVIGATION_MAX_WORDS = 5
+_NAVIGATION_MAX_FILLER = 2
+
+# Dedup: o LocalAgreement-2 re-emite spans sobrepostos — o mesmo
+# comando pode chegar em múltiplos SpeechCommittedWords consecutivos.
+_NAV_DEDUP_S = 3.0
+_NAV_MIN_INTERVAL_S = 2.0
+
 _NAVIGATION_COMMANDS_BACK: list[str] = [
     "verso anterior",
     "versículo anterior",
@@ -104,8 +117,6 @@ _NAVIGATION_COMMANDS_FORWARD: list[str] = [
     "próximo versículo",
     "proximo verso",
     "proximo versículo",
-    "próximo",
-    "proximo",
     "pula",
     "pular",
 ]
@@ -127,17 +138,6 @@ def _normalize_text(text: str) -> str:
     text = re.sub(r"[^\w\s]", "", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
-
-
-def _fuzzy_similarity(text1: str, text2: str) -> float:
-    """Calcula similaridade fuzzy entre dois textos [0.0, 1.0]."""
-    try:
-        from rapidfuzz import fuzz
-        score = fuzz.partial_ratio(text1, text2)
-        return score / 100.0
-    except ImportError:
-        from difflib import SequenceMatcher
-        return SequenceMatcher(None, text1, text2).ratio()
 
 
 class HolyricsProtocol(Protocol):
@@ -173,6 +173,9 @@ class VersionCommandDetector:
         self._current_version = current_version
         self._subscribed = False
         self._available_versions: frozenset[str] | None = None
+        self._last_nav_sig: tuple[str, int, str] | None = None
+        self._last_nav_ts: float = 0.0
+        self._last_nav_cmd: tuple[str, float] | None = None
 
         logger.info(
             "VersionCommandDetector initialized (auto_enabled=%s, version=%s).",
@@ -287,6 +290,22 @@ class VersionCommandDetector:
             return
 
         command, target_value, confidence = result
+
+        # Dedup: spans committed sobrepostos re-emitem as mesmas
+        # palavras — sem isto, um único "volta" disparava vários
+        # NavigationCommandDetected e a apresentação recuava N versos.
+        now = time.monotonic()
+        sig = (command, target_value, _normalize_text(text_to_check)[:80])
+        if (self._last_nav_sig == sig
+                and now - self._last_nav_ts < _NAV_DEDUP_S):
+            return
+        last_cmd, last_ts = self._last_nav_cmd or ("", 0.0)
+        if command == last_cmd and now - last_ts < _NAV_MIN_INTERVAL_S:
+            return
+        self._last_nav_sig = sig
+        self._last_nav_ts = now
+        self._last_nav_cmd = (command, now)
+
         self._publish_navigation_command(
             event, command, target_value, text_to_check, confidence,
         )
@@ -312,11 +331,12 @@ class VersionCommandDetector:
             confidence: score do fuzzy match
         """
         norm = _normalize_text(text)
+        tokens = norm.split()
 
         # Verificar "capítulo N" e "versículo N" primeiro (regex),
         # pois "versículo" pode confundir com "verso anterior".
         # Só aceitar se o texto for curto (comando, não leitura).
-        if len(norm.split()) <= 5:
+        if len(tokens) <= 5:
             match = _CHAPTER_PATTERN.search(text)
             if match:
                 n = int(match.group(1))
@@ -327,19 +347,43 @@ class VersionCommandDetector:
                 n = int(match.group(1))
                 return ("goto_verse", n, _NAVIGATION_THRESHOLD_GOTO)
 
+        # Comandos de navegação são curtos — spans longos são
+        # leitura/pregação, não comandos de voz.
+        if len(tokens) > _NAVIGATION_MAX_WORDS:
+            return None
+
         # Verificar comandos de retrocesso.
         for canonical in _NAVIGATION_COMMANDS_BACK:
-            score = _fuzzy_similarity(norm, _normalize_text(canonical))
-            if score >= _NAVIGATION_THRESHOLD:
-                return ("back", 0, score)
+            if self._matches_command(tokens, canonical):
+                return ("back", 0, _NAVIGATION_THRESHOLD)
 
         # Verificar comandos de avanço.
         for canonical in _NAVIGATION_COMMANDS_FORWARD:
-            score = _fuzzy_similarity(norm, _normalize_text(canonical))
-            if score >= _NAVIGATION_THRESHOLD:
-                return ("forward", 0, score)
+            if self._matches_command(tokens, canonical):
+                return ("forward", 0, _NAVIGATION_THRESHOLD)
 
         return None
+
+    @staticmethod
+    def _matches_command(tokens: list[str], canonical: str) -> bool:
+        """Verifica se o comando aparece como frase de tokens contíguos.
+
+        Match por tokens inteiros (nunca substring) — "volta" não casa
+        com "voltar"/"voltamos"/"voltou". Comandos de 1 palavra só
+        disparam quando são o texto inteiro do span committed, pois
+        palavras soltas ("volta", "pula") aparecem naturalmente na
+        pregação ("vamos voltar", "pula essa parte").
+        """
+        cmd_tokens = _normalize_text(canonical).split()
+        n = len(cmd_tokens)
+        if n == 1:
+            return tokens == cmd_tokens
+        if len(tokens) < n or len(tokens) > n + _NAVIGATION_MAX_FILLER:
+            return False
+        for i in range(len(tokens) - n + 1):
+            if tokens[i:i + n] == cmd_tokens:
+                return True
+        return False
 
     def _publish_navigation_command(
         self,

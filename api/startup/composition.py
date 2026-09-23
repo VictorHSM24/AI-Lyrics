@@ -448,6 +448,29 @@ def create_composition_root() -> CompositionRoot:
         blocksize=int(audio_sr * 0.03),  # 30ms
         buffer_size=100,
     )
+    # Aplicar audio.input_device configurado — resolve o nome para o
+    # índice PortAudio no startup, senão a captura cai no dispositivo
+    # default do Windows (que pode ser silencioso/virtual).
+    input_device_cfg = getattr(audio_config, "input_device", None) if audio_config else None
+    if input_device_cfg:
+        try:
+            from microfone.capture import MicrophoneCapture, match_input_device
+            _devices = MicrophoneCapture.list_input_devices()
+            _resolved = match_input_device(input_device_cfg, _devices)
+            if _resolved is not None:
+                audio_capture.select_device(_resolved)
+                logger.info(
+                    "audio.input_device '%s' resolvido para índice %d",
+                    input_device_cfg, _resolved,
+                )
+            else:
+                logger.warning(
+                    "audio.input_device '%s' não encontrado — "
+                    "captura usará o dispositivo default do Windows",
+                    input_device_cfg,
+                )
+        except Exception as e:
+            logger.warning("Falha ao resolver audio.input_device: %s", e)
     audio_service = AudioPresentationService(
         audio_config=audio_config,
         capture_service=audio_capture,

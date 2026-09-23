@@ -29,7 +29,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOperator } from "@/hooks";
 import { useVersePresentation } from "@/hooks";
-import { cn } from "@/utils";
+import { cn, formatVersionKey } from "@/utils";
 
 interface OperatorPanelProps {
   className?: string;
@@ -289,7 +289,7 @@ function CurrentVerseCard({ verse }: CurrentVerseCardProps) {
           <p className="text-sm text-text italic border-l-2 border-primary/30 pl-3">
             "{verse.text}"
           </p>
-          <span className="text-[10px] text-text-subtle">{verse.version}</span>
+          <span className="text-[10px] text-text-subtle">{formatVersionKey(verse.version)}</span>
         </div>
       ) : (
         <p className="text-xs text-text-muted italic">

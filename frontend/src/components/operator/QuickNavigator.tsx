@@ -19,7 +19,7 @@ import { ChevronLeft, ChevronRight, BookOpen, FileText, Hash, Loader2 } from "lu
 import { useCallback, useEffect, useState } from "react";
 import { useWorkspaceSnapshot, useOperatorNavigation } from "@/hooks";
 import type { OperatorVerseDTO } from "@/types";
-import { cn } from "@/utils";
+import { cn, formatVersionKey } from "@/utils";
 import {
   NextVerseCommand,
   PreviousVerseCommand,
@@ -176,9 +176,16 @@ export function QuickNavigator({ ctx, className }: QuickNavigatorProps) {
       />
 
       {!hasSelection && (
-        <p className="text-xs text-text-muted italic text-center py-1">
-          Use os atalhos de teclado ou comece a navegar para selecionar.
-        </p>
+        <div className="flex flex-col items-center gap-2 py-3 rounded-md border border-dashed border-border-subtle bg-surface-hover/30">
+          <BookOpen className="h-6 w-6 text-text-subtle" />
+          <p className="text-xs text-text-muted text-center max-w-[200px]">
+            Nenhum versículo selecionado.
+          </p>
+          <p className="text-[10px] text-text-subtle text-center max-w-[220px]">
+            Use <kbd className="px-1 py-0.5 rounded border border-border bg-surface text-[9px]">Ctrl+F</kbd> ou
+            digite uma referência acima.
+          </p>
+        </div>
       )}
 
       {/* Preview do versículo selecionado */}
@@ -200,7 +207,9 @@ export function QuickNavigator({ ctx, className }: QuickNavigatorProps) {
               <p className="text-sm text-text italic border-l-2 border-primary/30 pl-3 leading-relaxed">
                 "{preview.text}"
               </p>
-              <span className="text-[10px] text-text-subtle">{preview.version}</span>
+              <span className="text-[10px] text-text-subtle">
+                {formatVersionKey(preview.version)}
+              </span>
             </>
           ) : (
             <p className="text-xs text-text-muted italic py-1">

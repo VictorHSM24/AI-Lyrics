@@ -32,6 +32,7 @@ import { FavoritesPanel } from "./FavoritesPanel";
 import { MostUsedPanel } from "./MostUsedPanel";
 import { SemanticSearchPanel } from "./SemanticSearchPanel";
 import { CommandPalette, type CommandPaletteHandle } from "./CommandPalette";
+import { StatusBar } from "./StatusBar";
 import { useWorkspaceContext } from "./useWorkspaceContext";
 import { useAutoSyncSelected } from "./useAutoSyncSelected";
 import { useKeyboardController } from "./KeyboardController";
@@ -107,6 +108,9 @@ export function OperatorWorkspace({ className }: OperatorWorkspaceProps) {
 
       {/* Linha 1: CommandPalette (Sprint 26, substitui QuickSearch) */}
       <CommandPalette ref={commandPaletteRef} ctx={ctx} />
+
+      {/* Status bar: pipeline + mic + holyrics */}
+      <StatusBar />
 
       {/* Sprint 28 (Fase 9): Busca Semântica com Ollama */}
       <SemanticSearchPanel />

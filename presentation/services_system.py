@@ -122,15 +122,12 @@ class AudioPresentationService:
         if self._audio_config is not None:
             target = getattr(self._audio_config, "input_device", "")
             if target:
-                if isinstance(target, int) or (isinstance(target, str) and target.strip().isdigit()):
-                    idx = int(target)
+                from microfone.capture import match_input_device
+                idx = match_input_device(target, devices)
+                if idx is not None:
                     for d in devices:
                         if d.index == idx:
                             return d
-                target_lower = target.lower().strip()
-                for d in devices:
-                    if target_lower in d.name.lower():
-                        return d
 
         for d in devices:
             if d.is_default:

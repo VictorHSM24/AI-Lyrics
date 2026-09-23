@@ -713,9 +713,15 @@ async def list_versions(
     try:
         versions = client.get_bible_versions()
         if isinstance(versions, list):
-            version_list = [str(v) for v in versions]
+            version_list = [
+                v.version if hasattr(v, "version") else str(v)
+                for v in versions
+            ]
         elif hasattr(versions, "versions"):
-            version_list = [str(v) for v in versions.versions]
+            version_list = [
+                v.version if hasattr(v, "version") else str(v)
+                for v in versions.versions
+            ]
         else:
             version_list = []
     except Exception as e:

@@ -18,7 +18,7 @@
 import { Bot, User, Search, History, ChevronRight } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useVersePresentation } from "@/hooks";
-import { cn, formatLatency } from "@/utils";
+import { cn, formatLatency, formatVersionKey } from "@/utils";
 import {
   SelectByReferenceCommand,
   PresentVerseCommand,
@@ -232,7 +232,7 @@ function HistoryItem({ entry, onSelect, onPresent }: HistoryItemProps) {
 
       {/* Versão */}
       <span className="text-[10px] text-text-subtle shrink-0">
-        {entry.version}
+        {formatVersionKey(entry.version)}
       </span>
 
       {/* Status/latência */}

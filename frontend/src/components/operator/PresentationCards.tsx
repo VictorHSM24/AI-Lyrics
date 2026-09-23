@@ -12,7 +12,7 @@
 
 import { Loader2, CheckCircle2, Radio, XCircle } from "lucide-react";
 import { useVersePresentation } from "@/hooks";
-import { cn, formatLatency } from "@/utils";
+import { cn, formatLatency, formatVersionKey } from "@/utils";
 import type { OperatorPresentResultDTO } from "@/types";
 
 interface PresentationCardsProps {
@@ -100,7 +100,7 @@ function PresentedCard({ entry }: PresentedCardProps) {
             </p>
           )}
           <div className="flex items-center gap-3 text-[10px] text-text-subtle">
-            <span>{entry.version}</span>
+            <span className="font-medium text-text-muted">{formatVersionKey(entry.version)}</span>
             <span>·</span>
             <span>{formatLatency(entry.totalLatencyMs)}</span>
             <span>·</span>

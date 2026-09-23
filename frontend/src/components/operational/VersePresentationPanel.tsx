@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { useVersePresentation } from "@/hooks";
 import type { VersePresentationEntry } from "@/stores";
-import { cn } from "@/utils";
+import { cn, formatVersionKey } from "@/utils";
 
 interface VersePresentationPanelProps {
   className?: string;
@@ -125,7 +125,7 @@ function CurrentPresentation({ entry }: { entry: VersePresentationEntry }) {
         <DetailRow label="Livro" value={entry.book} />
         <DetailRow label="Capítulo" value={String(entry.chapter)} />
         <DetailRow label="Versículo" value={String(entry.verse)} />
-        <DetailRow label="Versão" value={entry.version || "—"} />
+        <DetailRow label="Versão" value={entry.version ? formatVersionKey(entry.version) : "—"} />
         <DetailRow
           label="Horário"
           value={formatTimestamp(entry.timestamp)}

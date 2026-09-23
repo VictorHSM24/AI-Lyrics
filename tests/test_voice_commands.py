@@ -183,6 +183,37 @@ class TestVersionCommandDetectorNavigation:
         bus.publish(_make_committed(""))
         assert len(nav) == 0
 
+    def test_preaching_voltar_does_not_trigger(self, setup):
+        """Pregação com 'voltar' em frase não dispara back.
+
+        Regressão: partial_ratio casava 'volta' como substring de
+        'voltar' — 'vamos voltar a velhas práticas' recuava N versos.
+        """
+        bus, vcd, _, _, _, nav, _, _, _ = setup
+        bus.publish(_make_committed(
+            "que se ele morrer o que nós vamos fazer nós vamos voltar a velhas práticas"
+        ))
+        assert len(nav) == 0
+
+    def test_short_span_vamos_voltar_does_not_trigger(self, setup):
+        """'vamos voltar' (span curto) não dispara — comando solto ≠ frase."""
+        bus, vcd, _, _, _, nav, _, _, _ = setup
+        bus.publish(_make_committed("vamos voltar"))
+        assert len(nav) == 0
+
+    def test_voltamos_does_not_trigger(self, setup):
+        """'voltamos' não casa com 'volta' (match é por token inteiro)."""
+        bus, vcd, _, _, _, nav, _, _, _ = setup
+        bus.publish(_make_committed("voltamos"))
+        assert len(nav) == 0
+
+    def test_duplicate_command_deduped(self, setup):
+        """Mesmo comando em commits sobrepostos dispara uma vez só."""
+        bus, vcd, _, _, _, nav, _, _, _ = setup
+        bus.publish(_make_committed("volta"))
+        bus.publish(_make_committed("volta"))
+        assert len(nav) == 1
+
 
 class TestReadingFollowNavigation:
     """Testes do ReadingFollowService com NavigationCommandDetected."""

@@ -22,7 +22,7 @@
  * - D11: Feedback visual discreto (preview + indicador de ambiguidade)
  */
 
-import { Search, X, Loader2, CornerDownLeft, ChevronUp, ChevronDown } from "lucide-react";
+import { Search, X, Loader2, CornerDownLeft, ChevronUp, ChevronDown, Terminal } from "lucide-react";
 import {
   forwardRef,
   useCallback,
@@ -139,20 +139,20 @@ export const CommandPalette = forwardRef<CommandPaletteHandle, CommandPalettePro
         {/* Input principal */}
         <div
           className={cn(
-            "flex items-center gap-2 rounded-lg border bg-surface px-3 py-2.5 transition-colors min-h-[44px]",
+            "flex items-center gap-2 rounded-lg border-2 bg-surface px-3 py-2.5 transition-colors min-h-[44px]",
             palette.isBusy
               ? "border-primary/50"
               : isLow
                 ? "border-status-error/40"
                 : isMedium
                   ? "border-warning/40"
-                  : "border-border focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20",
+                  : "border-primary/30 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20",
           )}
         >
           {palette.isBusy ? (
             <Loader2 className="h-4 w-4 text-primary animate-spin shrink-0" />
           ) : (
-            <Search className="h-4 w-4 text-text-muted shrink-0" />
+            <Terminal className="h-4 w-4 text-primary shrink-0" />
           )}
           <div className="flex-1 relative">
             <input
@@ -161,7 +161,7 @@ export const CommandPalette = forwardRef<CommandPaletteHandle, CommandPalettePro
               value={palette.query}
               onChange={(e) => palette.setQuery(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder="Buscar referência... (ex.: Rm 8:28, João 316, Lucas 248)"
+              placeholder="Buscar referência bíblica... (ex.: Rm 8:28, João 316)"
               className="w-full bg-transparent text-sm text-text placeholder:text-text-muted outline-none"
               role="combobox"
               aria-expanded={isMedium}

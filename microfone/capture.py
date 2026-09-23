@@ -38,6 +38,7 @@ Dispositivo "CODEC USB":
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Iterator
@@ -70,6 +71,52 @@ class DeviceInfo:
     channels: int
     sample_rate: float
     is_default: bool
+
+
+def match_input_device(
+    name_or_index: str | int, devices: list[DeviceInfo]
+) -> int | None:
+    """Resolve nome/índice configurado para o índice PortAudio.
+
+    Ordem de tentativa:
+      1. índice exato (int ou string numérica);
+      2. substring case-insensitive no nome;
+      3. match por tokens — todos os tokens do alvo devem aparecer no
+         nome do dispositivo, em qualquer ordem. Cobre nomes truncados
+         pelo driver (MME limita a ~31 chars) e ordens diferentes.
+         Ex.: "CODEC USB" casa com "Microfone Pastor (USB Audio CODEC)".
+
+    Returns:
+        Índice do dispositivo ou None se não encontrado.
+    """
+    if isinstance(name_or_index, int):
+        for d in devices:
+            if d.index == name_or_index:
+                return d.index
+        return None
+
+    target = str(name_or_index).strip()
+    if target.isdigit():
+        idx = int(target)
+        for d in devices:
+            if d.index == idx:
+                return d.index
+        return None
+
+    target_lower = target.lower()
+
+    for d in devices:
+        if target_lower in d.name.lower():
+            return d.index
+
+    tokens = [t for t in re.split(r"[^\w]+", target_lower) if t]
+    if tokens:
+        for d in devices:
+            name_lower = d.name.lower()
+            if all(t in name_lower for t in tokens):
+                return d.index
+
+    return None
 
 
 @dataclass(frozen=True)
@@ -539,39 +586,19 @@ class MicrophoneCapture:
         """
         devices = self.list_input_devices()
 
-        # Tentar por índice
-        if isinstance(name_or_index, int):
-            for d in devices:
-                if d.index == name_or_index:
-                    return d.index
-            raise AudioError(
-                f"input device index {name_or_index} not found. "
-                f"Available: {self._format_devices(devices)}"
-            )
-
-        # Tentar por índice como string
-        if name_or_index.strip().isdigit():
-            idx = int(name_or_index.strip())
+        idx = match_input_device(name_or_index, devices)
+        if idx is not None:
             for d in devices:
                 if d.index == idx:
-                    return d.index
-            raise AudioError(
-                f"input device index {idx} not found. "
-                f"Available: {self._format_devices(devices)}"
-            )
-
-        # Match parcial case-insensitive por nome
-        target = name_or_index.lower().strip()
-        for d in devices:
-            if target in d.name.lower():
-                logger.info(
-                    "Found input device: '%s' (index=%d, ch=%d, sr=%.0f)",
-                    d.name,
-                    d.index,
-                    d.channels,
-                    d.sample_rate,
-                )
-                return d.index
+                    logger.info(
+                        "Found input device: '%s' (index=%d, ch=%d, sr=%.0f)",
+                        d.name,
+                        d.index,
+                        d.channels,
+                        d.sample_rate,
+                    )
+                    break
+            return idx
 
         raise AudioError(
             f"input device '{name_or_index}' not found. "

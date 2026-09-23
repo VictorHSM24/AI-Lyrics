@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useReadingFollow, useOperator } from "@/hooks";
-import { cn } from "@/utils";
+import { cn, formatVersionKey } from "@/utils";
 
 interface ReadingFollowPanelProps {
   className?: string;
@@ -273,11 +273,13 @@ export function ReadingFollowPanel({ className }: ReadingFollowPanelProps) {
             {follow.versions.length > 0 ? (
               follow.versions.map((v) => (
                 <option key={v} value={v}>
-                  {v}
+                  {formatVersionKey(v)}
                 </option>
               ))
             ) : (
-              <option value={follow.currentVersion}>{follow.currentVersion}</option>
+              <option value={follow.currentVersion}>
+                {formatVersionKey(follow.currentVersion)}
+              </option>
             )}
           </select>
         </div>

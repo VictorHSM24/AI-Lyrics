@@ -23,7 +23,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Search,
   Loader2,
   X,
   CornerDownLeft,
@@ -31,9 +30,12 @@ import {
   AlertTriangle,
   Zap,
   ZapOff,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { useSemanticSearch, useOperator, useStores } from "@/hooks";
-import { cn } from "@/utils";
+import { cn, formatVersionKey } from "@/utils";
 import type { SemanticSearchResultDTO, OperatorPresentResultDTO } from "@/types";
 
 interface SemanticSearchPanelProps {
@@ -47,10 +49,18 @@ export function SemanticSearchPanel({ className }: SemanticSearchPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [presentingId, setPresentingId] = useState<string | null>(null);
   const [presentError, setPresentError] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(true);
   // Mapa de versão selecionada por referência (ex.: "João 3:16" → "ACF").
   // Persiste entre re-renders e permite que Enter apresente com a versão
   // escolhida no dropdown do candidato selecionado.
   const [versionOverrides, setVersionOverrides] = useState<Record<string, string>>({});
+
+  // Expandir automaticamente quando há resultados ou query.
+  useEffect(() => {
+    if (sem.results.length > 0 || sem.query.trim().length > 0) {
+      setCollapsed(false);
+    }
+  }, [sem.results.length, sem.query]);
 
   // Resetar overrides de versão quando uma nova busca é realizada.
   useEffect(() => {
@@ -132,19 +142,34 @@ export function SemanticSearchPanel({ className }: SemanticSearchPanelProps) {
 
   return (
     <div
-      className={cn("rounded-lg border border-border bg-surface", className)}
+      className={cn(
+        "rounded-lg border transition-colors",
+        collapsed
+          ? "border-border-subtle bg-surface/50"
+          : "border-accent/30 bg-surface",
+        className,
+      )}
       data-testid="semantic-search-panel"
     >
-      {/* Header */}
-      <div className="px-3 py-2 border-b border-border-subtle">
+      {/* Header — sempre visível, clicável para expandir/colapsar */}
+      <div
+        className="px-3 py-2 cursor-pointer select-none"
+        onClick={() => setCollapsed(!collapsed)}
+        role="button"
+        aria-expanded={!collapsed}
+        data-testid="semantic-search-toggle"
+      >
         <div className="flex items-center gap-2">
-          <Search className="h-3.5 w-3.5 text-text-muted shrink-0" />
+          <Sparkles className="h-3.5 w-3.5 text-accent shrink-0" />
           <span className="text-xs font-medium text-text">Busca Semântica</span>
           <span className="text-[10px] text-text-subtle">
             {sem.useOllama ? "Ollama + FTS5" : "Apenas FTS5"}
           </span>
           <button
-            onClick={() => sem.setUseOllama(!sem.useOllama)}
+            onClick={(e) => {
+              e.stopPropagation();
+              sem.setUseOllama(!sem.useOllama);
+            }}
             className={cn(
               "ml-auto flex items-center gap-1 text-[10px] px-2 py-1 rounded-md border transition-colors",
               sem.useOllama
@@ -167,23 +192,31 @@ export function SemanticSearchPanel({ className }: SemanticSearchPanelProps) {
               </>
             )}
           </button>
+          {collapsed ? (
+            <ChevronDown className="h-3.5 w-3.5 text-text-subtle shrink-0" />
+          ) : (
+            <ChevronUp className="h-3.5 w-3.5 text-text-subtle shrink-0" />
+          )}
         </div>
       </div>
 
-      {/* Input */}
-      <div className="p-3">
+      {/* Conteúdo — visível apenas quando expandido */}
+      {!collapsed && (
+        <>
+          {/* Input */}
+          <div className="px-3 pb-3">
         <div
           className={cn(
             "flex items-center gap-2 rounded-md border bg-surface px-3 py-2 transition-colors min-h-[40px]",
             sem.searching
-              ? "border-primary/50"
-              : "border-border focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20",
+              ? "border-accent/50"
+              : "border-border focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20",
           )}
         >
           {sem.searching ? (
-            <Loader2 className="h-4 w-4 text-primary animate-spin shrink-0" />
+            <Loader2 className="h-4 w-4 text-accent animate-spin shrink-0" />
           ) : (
-            <Search className="h-4 w-4 text-text-muted shrink-0" />
+            <Sparkles className="h-4 w-4 text-accent shrink-0" />
           )}
           <input
             ref={inputRef}
@@ -208,10 +241,16 @@ export function SemanticSearchPanel({ className }: SemanticSearchPanelProps) {
               <X className="h-3.5 w-3.5" />
             </button>
           )}
-          {hasQuery && !sem.searching && (
+          {!sem.searching && (
             <button
               onClick={() => void sem.search()}
-              className="text-xs px-2 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors shrink-0"
+              disabled={!hasQuery}
+              className={cn(
+                "text-xs px-2 py-1 rounded transition-colors shrink-0",
+                hasQuery
+                  ? "bg-primary/10 text-primary hover:bg-primary/20"
+                  : "bg-border text-text-muted cursor-not-allowed",
+              )}
               data-testid="semantic-search-button"
             >
               Buscar
@@ -260,8 +299,10 @@ export function SemanticSearchPanel({ className }: SemanticSearchPanelProps) {
           </div>
         )}
       </div>
+      </>
+      )}
 
-      {/* Lista de candidatos */}
+      {/* Lista de candidatos — fora do collapse para ocupar largura total */}
       {sem.results.length > 0 && (
         <div
           className="border-t border-border-subtle max-h-[400px] overflow-y-auto"
@@ -383,7 +424,7 @@ function CandidateCard({
             <div className="mt-2 space-y-1.5 pl-2 border-l-2 border-border-subtle">
               {result.versions.map((v) => (
                 <div key={v.version} className="text-[11px]">
-                  <span className="font-medium text-text-subtle">{v.version}: </span>
+                  <span className="font-medium text-text-subtle">{formatVersionKey(v.version)}: </span>
                   <span className="text-text-muted">{v.text}</span>
                 </div>
               ))}
@@ -458,7 +499,7 @@ function VersionSelector({
       >
         {versions.map((v) => (
           <option key={v.version} value={v.version}>
-            {v.version}
+            {formatVersionKey(v.version)}
           </option>
         ))}
       </select>

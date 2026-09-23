@@ -130,3 +130,47 @@ export {
   autoCompleteBook,
   type AutoCompleteResult,
 } from "./autoCompleteEngine";
+
+// ============================================================
+// Version name formatting
+// ============================================================
+
+/**
+ * Formata chave de versão bíblica para exibição curta.
+ * "pt_acf" → "ACF", "pt_ra" → "ARA", "en_kjv" → "KJV"
+ */
+export function formatVersionKey(key: string): string {
+  // Remove prefixo de idioma (pt_, en_, es_, uk_)
+  const short = key.replace(/^[a-z]{2,3}_/i, "");
+  return short.toUpperCase();
+}
+
+/**
+ * Retorna o título completo da versão a partir da chave.
+ * "pt_acf" → "Almeida Corrigida Fiel"
+ */
+export function versionTitle(key: string): string {
+  const map: Record<string, string> = {
+    pt_acf: "Almeida Corrigida Fiel",
+    pt_ra: "Almeida Revista e Atualizada",
+    pt_arc: "Almeida Revista e Corrigida",
+    pt_a21: "Almeida Século 21",
+    pt_bkj1611: "BKJ Bíblia King James Fiel 1611",
+    pt_kja: "King James Atualizada",
+    pt_naa: "Nova Almeida Atualizada",
+    pt_nbv: "Nova Bíblia Viva",
+    pt_ntlh: "Nova Tradução na Linguagem de Hoje",
+    pt_nvi: "Nova Versão Internacional",
+    pt_nvt: "Nova Versão Transformadora",
+    en_akjv: "American King James Version",
+    en_kjv: "King James Version",
+    en_niv: "New International Version",
+    es_lbla: "La Biblia de las Américas",
+    es_nbla: "Nueva Biblia de las Américas",
+    es_ntv: "Nueva Traducción Viviente",
+    es_nvi: "Nueva Versión Internacional",
+    es_rv: "Reina Valera 1909",
+    uk_ukr1996: "Ukranian Bible, BJU 1996",
+  };
+  return map[key] ?? key;
+}

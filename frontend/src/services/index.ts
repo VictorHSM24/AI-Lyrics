@@ -193,6 +193,8 @@ export interface OperatorService {
   followStop(options?: CallOptions): Promise<FollowResultDTO>;
   followAdvance(options?: CallOptions): Promise<FollowResultDTO>;
   followState(options?: CallOptions): Promise<FollowStateDTO>;
+  /** Sprint 30 — versão da Bíblia que o pastor lê (comparação). */
+  setMatchVersion(version: string, options?: CallOptions): Promise<FollowResultDTO>;
   // Sprint 23.2 — Version Management
   getVersions(options?: CallOptions): Promise<VersionListDTO>;
   getVersion(options?: CallOptions): Promise<{ version: string }>;
@@ -336,6 +338,11 @@ export function createServices(client: Client): PresentationServices {
       followStop: (o?) => call<FollowResultDTO>("operator.followStop", {}, o),
       followAdvance: (o?) => call<FollowResultDTO>("operator.followAdvance", {}, o),
       followState: (o?) => call<FollowStateDTO>("operator.followState", {}, o),
+      setMatchVersion: (version: string, o?) => call<FollowResultDTO>(
+        "operator.setMatchVersion",
+        { version },
+        o,
+      ),
       // Sprint 23.2 — Version Management
       getVersions: (o?) => call<VersionListDTO>("operator.getVersions", {}, o),
       getVersion: (o?) => call<{ version: string }>("operator.getVersion", {}, o),
@@ -406,6 +413,7 @@ export function createStubServices(): PresentationServices {
       followStop: reject,
       followAdvance: reject,
       followState: reject,
+      setMatchVersion: reject,
       getVersions: reject,
       getVersion: reject,
       setVersion: reject,

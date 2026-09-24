@@ -103,6 +103,52 @@ _DEFAULT_ANTICIPATION_THRESHOLD = 0.60
 # tamanho, pois o operador digita explicitamente).
 _MIN_SPEECH_ALIAS_LEN = 3
 
+# Sprint 29 — Blocklist de aliases para reconhecimento de voz.
+# Nomes ingleses dos livros (úteis na busca digitada do Command Palette)
+# são falso-positivos em fala PT-BR: "jude" casa com "Judéia"/"judé",
+# "job" com palavras inglesas, etc. Em fala só aceitamos formas PT.
+# Aliases idênticas ao canônico PT (daniel, joel, amos) não são listadas.
+#
+# Sprint 30 — aliases PT que colidem com vocabulário comum de pregação
+# (observado em culto real): "eu amo você" → Amós ("amo"); "uma
+# revelação" → Apocalipse ("revelacao"); "o mal" → Malaquias ("mal").
+# O canônico PT continua funcionando ("Amós 9:1", "Apocalipse 22"...).
+_SPEECH_ALIAS_BLOCKLIST = frozenset({
+    # Nota: "genesis" NÃO está aqui — é igual ao canônico PT normalizado
+    # ("Gênesis" → "genesis"), bloquear quebraria fala legítima. Idem
+    # "daniel", "joel", "amos" (canônicos PT).
+    "ruth", "ezra", "nehemiah", "esther", "job", "psalms",
+    "ecclesiastes", "isaiah", "jeremiah", "lamentations", "ezekiel",
+    "hosea", "obadiah", "jonah", "micah", "nahum", "habakkuk",
+    "zephaniah", "haggai", "zechariah", "malachi", "matthew", "mark",
+    "luke", "john", "acts", "romans", "galatians", "ephesians",
+    "philippians", "colossians", "titus", "philemon", "hebrews",
+    "james", "jude", "revelation",
+    # PT — palavras comuns de pregação (Sprint 30).
+    "amo", "mal", "revelacao",
+})
+
+# Sprint 29 — Janela de proximidade (em palavras) para completar uma
+# referência em andamento. Um livro detectado narrativamente ("como em
+# toda a Judéia") ficava pendente indefinidamente e qualquer número
+# falado dezenas de palavras depois completava como capítulo —
+# causando apresentações espúrias (ex.: "Judas 1:1" a partir de
+# "Judéia" + "um testemunho" 40s depois). Agora o capítulo só é
+# aceito se estiver próximo do livro, e o versículo próximo do capítulo.
+_MAX_BOOK_TO_CHAPTER_WORDS = 10
+_MAX_CHAPTER_TO_VERSE_WORDS = 10
+
+# Números sem marcador ("joao 3") precisam ser adjacentes ao livro —
+# referências reais falam número logo após o nome. Um gap maior indica
+# número narrativo ("Judas foi um dos doze apóstolos").
+_MAX_UNMARKED_CHAPTER_WORDS = 3
+_MAX_UNMARKED_VERSE_WORDS = 3
+
+# Livros de capítulo único: "Judas 9" significa versículo 9 (capítulo
+# 1 implícito), não capítulo 9. IDs: Obadias=31, Filemom=57,
+# 2 João=63, 3 João=64, Judas=65.
+_SINGLE_CHAPTER_BOOKS = frozenset({31, 57, 63, 64, 65})
+
 # Marcadores de capítulo/versículo por extenso.
 _CHAPTER_EXTENSO = frozenset({"cap", "capitulo", "capitulo:"})
 _VERSE_EXTENSO = frozenset({"vers", "versiculo", "versiculo:", "v", "verso"})
@@ -136,7 +182,12 @@ class IncrementalBiblicalParser:
         anticipation_threshold: float = _DEFAULT_ANTICIPATION_THRESHOLD,
     ) -> None:
         self._books = books
-        self._norm = normalizer or Normalizer()
+        # Sprint 29 — protect_function_words: não converte artigo "um"
+        # nem ordinais ("primeiro") para dígitos no texto da fala —
+        # são palavras funcionais comuns que completavam referências
+        # espúrias. Marcadores ("capítulo um") continuam aceitos via
+        # extenso_to_digit/ordinal_to_int explícitos no parser.
+        self._norm = normalizer or Normalizer(protect_function_words=True)
         self._bus = bus
         self._session_id = session_id
         self._threshold = threshold
@@ -153,6 +204,10 @@ class IncrementalBiblicalParser:
         self._current_verse: int | None = None
         self._current_verse_end: int | None = None
         self._seen_text: str = ""
+        # Sprint 29 — posição (em palavras do fluxo normalizado) onde
+        # livro/capítulo foram aceitos, para a janela de proximidade.
+        self._book_word_pos: int | None = None
+        self._chapter_word_pos: int | None = None
         self._correlation_id: str | None = None
         self._causation_id: str | None = None
         self._last_completeness: str = ""  # "book" | "chapter" | "verse"
@@ -225,6 +280,8 @@ class IncrementalBiblicalParser:
         self._current_verse = None
         self._current_verse_end = None
         self._seen_text = ""
+        self._book_word_pos = None
+        self._chapter_word_pos = None
         self._correlation_id = None
         self._causation_id = None
         self._last_completeness = ""
@@ -341,6 +398,9 @@ class IncrementalBiblicalParser:
             return
 
         # Acumular texto visto (para contexto futuro, se necessário).
+        # norm_base = posição (em palavras) onde este chunk começa no
+        # fluxo — usado pela janela de proximidade livro→cap→verso.
+        norm_base = len(self._seen_text.split())
         self._seen_text = (self._seen_text + " " + norm).strip()
 
         # Processar conforme expectativa.
@@ -351,13 +411,13 @@ class IncrementalBiblicalParser:
         changed = False
 
         if self._expecting == "book":
-            changed = self._try_find_book(norm) or changed
+            changed = self._try_find_book(norm, norm_base) or changed
 
         if self._expecting == "chapter":
-            changed = self._try_find_chapter(norm) or changed
+            changed = self._try_find_chapter(norm, norm_base) or changed
 
         if self._expecting == "verse":
-            changed = self._try_find_verse(norm) or changed
+            changed = self._try_find_verse(norm, norm_base) or changed
 
         # Sprint 23.2 — apos encontrar versiculo, tentar encontrar
         # verse_end (intervalo "do 1 ao 3"). _try_find_verse ja setou
@@ -369,7 +429,7 @@ class IncrementalBiblicalParser:
             # Tentar encontrar livro mesmo em estágio avançado
             # (caso o Whisper tenha reescrito o texto).
             if self._expecting in ("chapter", "verse") and self._current_book is None:
-                changed = self._try_find_book(norm)
+                changed = self._try_find_book(norm, norm_base)
 
         latency_ms = int((time.monotonic() - t0) * 1000)
         self._total_latency_ms += latency_ms
@@ -381,7 +441,66 @@ class IncrementalBiblicalParser:
     # Detecção incremental de componentes
     # ------------------------------------------------------------------
 
-    def _try_find_book(self, norm_text: str) -> bool:
+    # ------------------------------------------------------------------
+    # Sprint 29 — helpers de número e janela de proximidade
+    # ------------------------------------------------------------------
+
+    def _number_token(self, tok: str) -> int | None:
+        """Interpreta um token como número (dígito, ordinal ou extenso).
+
+        Com protect_function_words, "um"/"primeiro" permanecem palavras
+        no texto — mas após marcadores ("capítulo um") são aceitos
+        explicitamente aqui.
+        """
+        if tok.isdigit():
+            return int(tok)
+        val = self._norm.ordinal_to_int(tok)
+        if val is not None:
+            return val
+        return self._norm.extenso_to_digit(tok)
+
+    def _within_chapter_window(self, digit_pos: int, *, marked: bool) -> bool:
+        """True se o dígito de capítulo está próximo do livro pendente.
+
+        Marcado ("capítulo N") tolera gap maior; sem marcador exige
+        adjacência — "joao 3" é citação, "judas foi um dos doze" é
+        narrativa.
+        """
+        if self._book_word_pos is None:
+            return True
+        limit = (_MAX_BOOK_TO_CHAPTER_WORDS if marked
+                 else _MAX_UNMARKED_CHAPTER_WORDS)
+        return digit_pos - self._book_word_pos <= limit
+
+    def _within_verse_window(self, digit_pos: int, *, marked: bool) -> bool:
+        """True se o dígito de versículo está próximo do capítulo."""
+        if self._chapter_word_pos is None:
+            return True
+        limit = (_MAX_CHAPTER_TO_VERSE_WORDS if marked
+                 else _MAX_UNMARKED_VERSE_WORDS)
+        return digit_pos - self._chapter_word_pos <= limit
+
+    def _expire_book(self, norm_text: str, norm_base: int, why: str) -> bool:
+        """Expira livro pendente — número distante demais.
+
+        O livro era menção narrativa (ex.: "como em toda a Judéia"), não
+        início de referência. Reseta expectativa e tenta achar um novo
+        livro neste mesmo chunk (pode conter outra referência).
+        """
+        logger.debug(
+            "IncrementalParser: pending book %s expired — %s (corr=%s).",
+            self._current_book.book.canonical if self._current_book else "?",
+            why, self._correlation_id,
+        )
+        self._current_book = None
+        self._current_chapter = None
+        self._current_verse = None
+        self._expecting = "book"
+        self._book_word_pos = None
+        self._chapter_word_pos = None
+        return self._try_find_book(norm_text, norm_base)
+
+    def _try_find_book(self, norm_text: str, norm_base: int) -> bool:
         """Tenta identificar um livro bíblico no texto.
 
         Retorna True se encontrou (e avança expectativa para "chapter").
@@ -423,26 +542,45 @@ class IncrementalBiblicalParser:
             )
             return False
 
-        # Se já tínhamos um livro e é o mesmo, não mudou.
+        # Sprint 29 — blocklist de aliases inglesas para fala PT-BR.
+        # "jude" (Judas) casa com "Judéia"/"judé"; "job" etc. idem.
+        if matched_alias_norm in _SPEECH_ALIAS_BLOCKLIST:
+            logger.debug(
+                "IncrementalParser: ignoring English alias '%s' "
+                "for book=%s (speech false-positive prevention)",
+                result.matched_alias, result.book.canonical,
+            )
+            return False
+
+        # Posição do livro no fluxo normalizado — para a janela de
+        # proximidade (capítulo só é aceito perto do livro).
+        book_pos = norm_base + len(norm_text[: result.end].split())
+
+        # Se já tínhamos um livro e é o mesmo, não mudou — mas a
+        # re-menção ancora a janela nesta ocorrência mais recente.
         if (self._current_book is not None
                 and self._current_book.book.id == result.book.id):
-            # Livro já identificado — tentar avançar para chapter.
+            self._book_word_pos = book_pos
             self._expecting = "chapter"
             return False
 
         self._current_book = result
+        self._book_word_pos = book_pos
         self._expecting = "chapter"
         logger.debug(
-            "IncrementalParser: book=%s (conf=%.2f, alias=%s)",
+            "IncrementalParser: book=%s (conf=%.2f, alias=%s, pos=%d)",
             result.book.canonical, result.confidence, result.matched_alias,
+            book_pos,
         )
         return True
 
-    def _try_find_chapter(self, norm_text: str) -> bool:
+    def _try_find_chapter(self, norm_text: str, norm_base: int) -> bool:
         """Tenta identificar o capítulo no texto.
 
         Procura por marcadores ("capitulo N") ou número isolado
-        após o livro.
+        após o livro — mas apenas dentro da janela de proximidade do
+        livro. Número distante expira o livro pendente (menção
+        narrativa, não início de referência).
 
         Retorna True se encontrou (e avança expectativa para "verse").
         """
@@ -453,14 +591,47 @@ class IncrementalBiblicalParser:
         tokens = norm_text.split()
         for i, tok in enumerate(tokens):
             if tok in _CHAPTER_MARKERS:
-                if i + 1 < len(tokens) and tokens[i + 1].isdigit():
-                    chapter = int(tokens[i + 1])
-                    if 1 <= chapter <= 200:
-                        self._current_chapter = chapter
-                        self._expecting = "verse"
+                num = self._number_token(tokens[i + 1]) if i + 1 < len(tokens) else None
+                if num is not None and 1 <= num <= 200:
+                    if not self._within_chapter_window(norm_base + i + 1, marked=True):
+                        return self._expire_book(
+                            norm_text, norm_base,
+                            f"chapter marker too far from book "
+                            f"(gap={norm_base + i + 1 - (self._book_word_pos or 0)} words)",
+                        )
+                    self._current_chapter = num
+                    self._chapter_word_pos = norm_base + i + 1
+                    self._expecting = "verse"
+                    logger.debug(
+                        "IncrementalParser: chapter=%d (marker)",
+                        num,
+                    )
+                    return True
+
+        # Passada 1b — livros de capítulo único: "Judas versículo 9"
+        # tem capítulo 1 implícito (o marcador é de versículo, não de
+        # capítulo).
+        if (self._current_chapter is None
+                and self._current_book.book.id in _SINGLE_CHAPTER_BOOKS):
+            for i, tok in enumerate(tokens):
+                if tok in _VERSE_MARKERS and i + 1 < len(tokens):
+                    num = self._number_token(tokens[i + 1])
+                    if num is not None and 1 <= num <= 200:
+                        if not self._within_chapter_window(
+                                norm_base + i + 1, marked=True):
+                            return self._expire_book(
+                                norm_text, norm_base,
+                                "verse marker too far from "
+                                "single-chapter book",
+                            )
+                        self._current_chapter = 1
+                        self._chapter_word_pos = norm_base + i + 1
+                        self._current_verse = num
+                        self._expecting = "done"
                         logger.debug(
-                            "IncrementalParser: chapter=%d (marker)",
-                            chapter,
+                            "IncrementalParser: single-chapter book "
+                            "%s 1:%d (verse marker)",
+                            self._current_book.book.canonical, num,
                         )
                         return True
 
@@ -474,7 +645,26 @@ class IncrementalBiblicalParser:
                         continue
                     num = int(tok)
                     if 1 <= num <= 200:
+                        if not self._within_chapter_window(norm_base + i + 1, marked=False):
+                            return self._expire_book(
+                                norm_text, norm_base,
+                                f"unmarked chapter too far from book "
+                                f"(gap={norm_base + i + 1 - (self._book_word_pos or 0)} words)",
+                            )
+                        # Livros de capítulo único ("Judas 9" = verso 9).
+                        if self._current_book.book.id in _SINGLE_CHAPTER_BOOKS:
+                            self._current_chapter = 1
+                            self._chapter_word_pos = norm_base + i + 1
+                            self._current_verse = num
+                            self._expecting = "done"
+                            logger.debug(
+                                "IncrementalParser: single-chapter book "
+                                "%s 1:%d (unmarked)",
+                                self._current_book.book.canonical, num,
+                            )
+                            return True
                         self._current_chapter = num
+                        self._chapter_word_pos = norm_base + i + 1
                         self._expecting = "verse"
                         logger.debug(
                             "IncrementalParser: chapter=%d (unmarked)",
@@ -545,8 +735,9 @@ class IncrementalBiblicalParser:
         # Passada 1: marcador explícito ("verso 4", "versículo 4").
         for i, tok in enumerate(tokens):
             if tok in _VERSE_MARKERS:
-                if i + 1 < len(tokens) and tokens[i + 1].isdigit():
-                    new_verse = int(tokens[i + 1])
+                num = self._number_token(tokens[i + 1]) if i + 1 < len(tokens) else None
+                if num is not None:
+                    new_verse = num
                     if 1 <= new_verse <= 200:
                         old_verse = self._current_verse
                         if old_verse == new_verse:
@@ -584,8 +775,9 @@ class IncrementalBiblicalParser:
         tokens = norm_text.split()
         for i, tok in enumerate(tokens):
             if tok in _CHAPTER_MARKERS:
-                if i + 1 < len(tokens) and tokens[i + 1].isdigit():
-                    new_chapter = int(tokens[i + 1])
+                num = self._number_token(tokens[i + 1]) if i + 1 < len(tokens) else None
+                if num is not None:
+                    new_chapter = num
                     if 1 <= new_chapter <= 200:
                         old_chapter = self._current_chapter
                         if old_chapter == new_chapter:
@@ -607,10 +799,12 @@ class IncrementalBiblicalParser:
                         return True
         return False
 
-    def _try_find_verse(self, norm_text: str) -> bool:
+    def _try_find_verse(self, norm_text: str, norm_base: int) -> bool:
         """Tenta identificar o versículo no texto.
 
-        Procura por marcadores ("versiculo N") ou número após capítulo.
+        Procura por marcadores ("versiculo N") ou número após capítulo —
+        apenas dentro da janela de proximidade do capítulo. Número
+        distante expira a referência pendente.
 
         Retorna True se encontrou (e avança expectativa para "done").
         """
@@ -619,7 +813,6 @@ class IncrementalBiblicalParser:
 
         tokens = norm_text.split()
 
-        # Passada 1: marcadores explícitos (prioridade).
         # Passada 1: marcadores explícitos (prioridade).
         # Ignora marcadores que aparecem antes do capítulo no texto
         # (provavelmente de uma utterance anterior misturada).
@@ -634,16 +827,21 @@ class IncrementalBiblicalParser:
                 # Pular se o marcador aparece antes do capítulo.
                 if chapter_idx >= 0 and i < chapter_idx:
                     continue
-                if i + 1 < len(tokens) and tokens[i + 1].isdigit():
-                    verse = int(tokens[i + 1])
-                    if 1 <= verse <= 200:
-                        self._current_verse = verse
-                        self._expecting = "done"
-                        logger.debug(
-                            "IncrementalParser: verse=%d (marker)",
-                            verse,
+                num = self._number_token(tokens[i + 1]) if i + 1 < len(tokens) else None
+                if num is not None and 1 <= num <= 200:
+                    if not self._within_verse_window(norm_base + i + 1, marked=True):
+                        return self._expire_book(
+                            norm_text, norm_base,
+                            f"verse marker too far from chapter "
+                            f"(gap={norm_base + i + 1 - (self._chapter_word_pos or 0)} words)",
                         )
-                        return True
+                    self._current_verse = num
+                    self._expecting = "done"
+                    logger.debug(
+                        "IncrementalParser: verse=%d (marker)",
+                        num,
+                    )
+                    return True
 
         # Passada 2: números sem marcador (apenas se nenhum marcador).
         # Se o texto tem 2+ números, o primeiro é o capítulo (já
@@ -653,24 +851,38 @@ class IncrementalBiblicalParser:
         # anterior). Se o número único é igual ao capítulo, ignorar
         # (é o próprio capítulo sendo repetido pelo Whisper).
         if self._current_verse is None:
-            digits = [int(t) for t in tokens if t.isdigit()
-                      and 1 <= int(t) <= 200]
-            if len(digits) >= 2:
+            digit_positions = [
+                (i, int(t)) for i, t in enumerate(tokens)
+                if t.isdigit() and 1 <= int(t) <= 200
+            ]
+            if len(digit_positions) >= 2:
                 # Pular o primeiro (capítulo), usar o segundo.
-                self._current_verse = digits[1]
+                idx, verse = digit_positions[1]
+                if not self._within_verse_window(norm_base + idx + 1, marked=False):
+                    return self._expire_book(
+                        norm_text, norm_base,
+                        "unmarked verse too far from chapter",
+                    )
+                self._current_verse = verse
                 self._expecting = "done"
                 logger.debug(
                     "IncrementalParser: verse=%d (unmarked, skip chapter)",
-                    digits[1],
+                    verse,
                 )
                 return True
-            elif len(digits) == 1 and digits[0] != self._current_chapter:
+            elif len(digit_positions) == 1 and digit_positions[0][1] != self._current_chapter:
                 # Só um número diferente do capítulo — é o verso.
-                self._current_verse = digits[0]
+                idx, verse = digit_positions[0]
+                if not self._within_verse_window(norm_base + idx + 1, marked=False):
+                    return self._expire_book(
+                        norm_text, norm_base,
+                        "unmarked verse too far from chapter",
+                    )
+                self._current_verse = verse
                 self._expecting = "done"
                 logger.debug(
                     "IncrementalParser: verse=%d (unmarked, single)",
-                    digits[0],
+                    verse,
                 )
                 return True
 
@@ -692,8 +904,9 @@ class IncrementalBiblicalParser:
         tokens = norm_text.split()
         for i, tok in enumerate(tokens):
             if tok in _RANGE_END_MARKERS:
-                if i + 1 < len(tokens) and tokens[i + 1].isdigit():
-                    verse_end = int(tokens[i + 1])
+                num = self._number_token(tokens[i + 1]) if i + 1 < len(tokens) else None
+                if num is not None:
+                    verse_end = num
                     if verse_end > self._current_verse and verse_end <= 200:
                         self._current_verse_end = verse_end
                         logger.debug(

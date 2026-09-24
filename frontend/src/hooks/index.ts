@@ -1019,6 +1019,8 @@ export interface UseReadingFollowResult {
   loadVersions: () => Promise<void>;
   setVersion: (version: string) => Promise<void>;
   setAutoVersion: (enabled: boolean) => Promise<void>;
+  /** Sprint 30 — versão da Bíblia que o pastor lê (comparação). */
+  setMatchVersion: (version: string) => Promise<void>;
 }
 
 export function useReadingFollow(): UseReadingFollowResult {
@@ -1123,6 +1125,18 @@ export function useReadingFollow(): UseReadingFollowResult {
     }
   };
 
+  const setMatchVersion = async (version: string) => {
+    setError(null);
+    try {
+      const res = await services.operator.setMatchVersion(version);
+      if (res.ok && res.state) {
+        setState(res.state);
+      }
+    } catch (e) {
+      setError(`Erro ao mudar versão de leitura: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
   return {
     state,
     versions,
@@ -1137,5 +1151,6 @@ export function useReadingFollow(): UseReadingFollowResult {
     loadVersions,
     setVersion,
     setAutoVersion,
+    setMatchVersion,
   };
 }

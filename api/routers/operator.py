@@ -59,6 +59,12 @@ def _get_book_table(root: CompositionRoot):
     return book_table
 
 
+def _local_version(version: str) -> str:
+    """Mapeia key Holyrics (pt_*) para a versão da base local, se houver."""
+    from presentation.version_map import local_version
+    return local_version(version)
+
+
 def _default_version(root: CompositionRoot) -> str:
     """Versão bíblica padrão da config."""
     cfg = root.config
@@ -336,7 +342,7 @@ async def get_verse(
 ) -> dict:
     """Obtém o texto de um versículo específico."""
     searcher = _get_searcher(root)
-    ver = version or _default_version(root)
+    ver = _local_version(version or _default_version(root))
     try:
         result = searcher.get_verse_by_id(book_id, chapter, verse, version=ver)
     except Exception as e:
@@ -379,9 +385,18 @@ async def present_verse(
     holyrics = _get_holyrics(root)
     ver = req.version or _default_version(root)
 
-    # Resolver o versículo para obter texto e referência formatada.
+    # Resolver o versículo na base local para obter texto e referência.
+    # Keys do Holyrics (pt_acf etc.) são mapeadas para a versão local
+    # equivalente; se a versão pedida não existir localmente, usa a
+    # padrão só para referência/eventos — o Holyrics resolve o texto
+    # da versão solicitada por conta própria.
+    local_ver = _local_version(ver)
     try:
-        result = searcher.get_verse_by_id(req.book_id, req.chapter, req.verse, version=ver)
+        result = searcher.get_verse_by_id(req.book_id, req.chapter, req.verse, version=local_ver)
+        if result is None and local_ver != _default_version(root):
+            result = searcher.get_verse_by_id(
+                req.book_id, req.chapter, req.verse, version=_default_version(root),
+            )
     except Exception as e:
         logger.warning("operator: erro resolvendo verse: %s", e)
         raise HTTPException(500, f"Erro ao resolver versículo: {e}")
@@ -610,6 +625,9 @@ class FollowStartRequest(BaseModel):
     verse_start: int
     verse_end: int
     version: str | None = None
+    # Versão que o pastor está lendo (comparação). Default: a versão
+    # apresentada. Útil quando a Bíblia do pastor difere do telão.
+    match_version: str | None = None
 
 
 class FollowStartResult(BaseModel):
@@ -629,6 +647,8 @@ class FollowStateResult(BaseModel):
     verse_end: int = 0
     current_verse: int = 0
     version: str = ""
+    match_version: str = ""
+    verse_progress: float = 0.0
     total_verses: int = 0
     verses_read: int = 0
 
@@ -659,6 +679,7 @@ async def follow_start(
         verse_start=req.verse_start,
         verse_end=req.verse_end,
         version=version,
+        match_version=req.match_version,
     )
     msg = "Modo de acompanhamento ativado." if ok else "Falha ao ativar modo de acompanhamento."
     result = FollowStartResult(ok=ok, message=msg, state=svc.get_state())
@@ -701,6 +722,31 @@ async def follow_state(
     state = svc.get_state()
     result = FollowStateResult(**state)
     return versioned(result)
+
+
+class MatchVersionRequest(BaseModel):
+    """Payload para POST /operator/follow/match-version.
+
+    Versão da Bíblia que o pastor está lendo — usada na comparação
+    da leitura. Vazio/ausente = mesma versão apresentada.
+    """
+    version: str = ""
+
+
+@router.post("/follow/match-version")
+@router.post("/follow/match-version/")
+async def set_match_version(
+    req: MatchVersionRequest,
+    root: CompositionRoot = Depends(get_composition_root),
+) -> dict:
+    """Define a versão de leitura (comparação) do acompanhamento."""
+    svc = _get_follow_service(root)
+    ok = svc.set_match_version(req.version or None)
+    msg = (
+        f"Versão de leitura: {req.version}." if req.version
+        else "Versão de leitura = versão apresentada."
+    )
+    return versioned({"ok": ok, "message": msg, "state": svc.get_state()})
 
 
 @router.get("/versions")

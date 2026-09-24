@@ -92,6 +92,7 @@ const METHOD_TO_ENDPOINT: Record<string, string> = {
   "operator.followStop": "/operator/follow/stop",
   "operator.followAdvance": "/operator/follow/advance",
   "operator.followState": "/operator/follow/state",
+  "operator.setMatchVersion": "/operator/follow/match-version",
   "operator.getVersions": "/operator/versions",
   "operator.getVersion": "/operator/version",
   "operator.setVersion": "/operator/version",
@@ -118,6 +119,8 @@ const POST_METHODS: ReadonlySet<string> = new Set([
   "operator.followStart",
   "operator.followStop",
   "operator.followAdvance",
+  "operator.setMatchVersion",
+  "operator.setVersion",
   "operator.semanticSearch",
   "system.restart",
 ]);

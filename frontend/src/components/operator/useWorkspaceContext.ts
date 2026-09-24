@@ -49,7 +49,8 @@ export function useWorkspaceContext(): WorkspaceContext {
       },
       getChapters: (bookId: number) => nav.getChapters(bookId),
       getVerses: (bookId: number, chapter: number) => nav.getVerses(bookId, chapter),
-      getVerse: (bookId: number, chapter: number, verse: number) => nav.getVerse(bookId, chapter, verse),
+      getVerse: (bookId: number, chapter: number, verse: number, version?: string) =>
+        nav.getVerse(bookId, chapter, verse, version),
       presentVerse: (req) => services.operator.presentVerse(req),
       setSelected: (ref: OperatorRef | null) => workspaceStore.setSelected(ref),
       recordUsage: (ref: OperatorRef, label: string) => {

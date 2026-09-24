@@ -46,6 +46,14 @@ export function ReadingFollowPanel({ className }: ReadingFollowPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Sprint 30 — polling do progresso do cursor enquanto ativo.
+  useEffect(() => {
+    if (!follow.state?.active) return;
+    const id = setInterval(() => follow.refreshState(), 1000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [follow.state?.active]);
+
   const onBookChange = (bookId: number) => {
     setSelBookId(bookId);
     setSelChapter(null);
@@ -143,16 +151,31 @@ export function ReadingFollowPanel({ className }: ReadingFollowPanelProps) {
               {follow.state.verses_read} / {follow.state.total_verses} versículos
             </span>
           </div>
-          {/* Progress bar */}
+          {/* Progress bar (versículos lidos) */}
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-bg-base">
             <div
               className="h-full rounded-full bg-accent-primary transition-all duration-300"
               style={{ width: `${progress}%` }}
             />
           </div>
+          {/* Progresso dentro do versículo atual (cursor de palavras) */}
+          <div className="flex items-center gap-2">
+            <div className="h-1 w-full overflow-hidden rounded-full bg-bg-base">
+              <div
+                className="h-full rounded-full bg-status-success transition-all duration-150"
+                style={{ width: `${Math.round((follow.state.verse_progress ?? 0) * 100)}%` }}
+              />
+            </div>
+            <span className="text-[10px] text-text-subtle whitespace-nowrap">
+              {Math.round((follow.state.verse_progress ?? 0) * 100)}%
+            </span>
+          </div>
           {/* Verse range */}
           <div className="text-[10px] text-text-subtle">
             Intervalo: {follow.state.verse_start} ao {follow.state.verse_end}
+            {follow.state.match_version && follow.state.match_version !== follow.state.version && (
+              <> · leitura em {formatVersionKey(follow.state.match_version)}</>
+            )}
           </div>
           {/* Controls */}
           <div className="flex gap-2 mt-1">
@@ -262,7 +285,7 @@ export function ReadingFollowPanel({ className }: ReadingFollowPanelProps) {
       <div className="border-t border-border-subtle pt-3">
         <div className="flex items-center justify-between gap-2">
           <label className="text-xs font-medium text-text-secondary">
-            Versão:
+            Versão apresentada:
           </label>
           <select
             value={follow.currentVersion}
@@ -281,6 +304,28 @@ export function ReadingFollowPanel({ className }: ReadingFollowPanelProps) {
                 {formatVersionKey(follow.currentVersion)}
               </option>
             )}
+          </select>
+        </div>
+
+        {/* Sprint 30 — versão que o pastor está lendo (comparação). */}
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <label className="text-xs font-medium text-text-secondary" title="Versão da Bíblia que o pastor está lendo — usada para detectar o fim do versículo">
+            Versão lida:
+          </label>
+          <select
+            value={follow.state?.match_version && follow.state.match_version !== follow.state.version
+              ? follow.state.match_version
+              : ""}
+            onChange={(e) => follow.setMatchVersion(e.target.value)}
+            disabled={follow.versions.length === 0}
+            className="rounded-md border border-border-default bg-bg-base px-2 py-1 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent-primary disabled:opacity-50"
+          >
+            <option value="">= apresentada</option>
+            {follow.versions.map((v) => (
+              <option key={v} value={v}>
+                {formatVersionKey(v)}
+              </option>
+            ))}
           </select>
         </div>
 

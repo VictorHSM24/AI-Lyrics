@@ -52,9 +52,9 @@ export interface WorkspaceContext {
   /** Carrega versículos de um capítulo (com cache LRU). */
   getVerses(bookId: number, chapter: number): Promise<number[]>;
   /** Carrega versículo específico (com cache LRU). */
-  getVerse(bookId: number, chapter: number, verse: number): Promise<OperatorVerseDTO>;
+  getVerse(bookId: number, chapter: number, verse: number, version?: string): Promise<OperatorVerseDTO>;
   /** Apresenta versículo no Holyrics. */
-  presentVerse(req: { book_id: number; chapter: number; verse: number; quick?: boolean }): Promise<OperatorPresentResultDTO>;
+  presentVerse(req: { book_id: number; chapter: number; verse: number; version?: string; quick?: boolean }): Promise<OperatorPresentResultDTO>;
   /** Atualiza selected no workspace store. */
   setSelected(ref: OperatorRef | null): void;
   /** Registra uso no recents store (para Fase C). */

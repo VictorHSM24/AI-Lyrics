@@ -269,3 +269,214 @@ class TestContinuousReadingFollow:
         verse_words = len(verse_text.split())
         expected_threshold = adaptive_threshold(verse_words)
         assert expected_threshold == 0.65  # versículo curto
+
+
+class TestSequentialCursor:
+    """Sprint 30 — cursor sequencial: avança só quando a CAUDA é lida."""
+
+    def test_partial_prefix_does_not_advance(self, setup):
+        """Só o início do versículo (sem a cauda) não avança."""
+        bus, rfs, _, _, _, advanced, _, _ = setup
+        bus.publish(_make_detected(verse_start=16, verse_end=18))
+        # Apenas o começo do versículo (7/13 palavras < 80%).
+        bus.publish(_make_committed("porque Deus amou o mundo de tal"))
+        time.sleep(0.1)
+        assert rfs.get_state()["current_verse"] == 16
+        assert len(advanced) == 0
+
+    def test_out_of_order_words_do_not_advance(self, setup):
+        """Palavras do versículo fora de ordem não completam."""
+        bus, rfs, _, _, _, advanced, _, _ = setup
+        bus.publish(_make_detected(verse_start=16, verse_end=18))
+        # Palavras do versículo mas embaralhadas/fora de ordem.
+        bus.publish(_make_committed("Filho unigenito seu deu mundo amou Deus porque"))
+        time.sleep(0.1)
+        assert rfs.get_state()["current_verse"] == 16
+        assert len(advanced) == 0
+
+    def test_tail_reading_advances(self, setup):
+        """Leitura completa até a cauda avança."""
+        bus, rfs, _, _, _, advanced, _, _ = setup
+        bus.publish(_make_detected(verse_start=16, verse_end=18))
+        bus.publish(_make_committed(
+            "porque Deus amou o mundo de tal maneira que deu o seu Filho unigenito"
+        ))
+        assert rfs.get_state()["current_verse"] == 17
+        assert len(advanced) == 1
+
+    def test_continuous_reading_advances_twice_in_one_chunk(self, setup):
+        """Chunk com fim do verso 16 + verso 17 inteiro avança duas vezes."""
+        bus, rfs, _, _, _, advanced, _, verse_texts = setup
+        bus.publish(_make_detected(verse_start=16, verse_end=18))
+        bus.publish(_make_committed(
+            verse_texts[16] + ". " + verse_texts[17]
+        ))
+        assert rfs.get_state()["current_verse"] == 18
+        assert len(advanced) == 2
+
+    def test_unrelated_speech_does_not_advance(self, setup):
+        """Fala sem relação com o versículo não avança."""
+        bus, rfs, _, _, _, advanced, _, _ = setup
+        bus.publish(_make_detected(verse_start=16, verse_end=18))
+        bus.publish(_make_committed(
+            "irmãos vamos pensar na família e nas provações da vida"
+        ))
+        time.sleep(0.1)
+        assert rfs.get_state()["current_verse"] == 16
+        assert len(advanced) == 0
+
+    def test_verse_progress_exposed(self, setup):
+        """Estado expõe progresso do cursor dentro do versículo."""
+        bus, rfs, _, _, _, _, _, _ = setup
+        bus.publish(_make_detected(verse_start=16, verse_end=18))
+        bus.publish(_make_committed("porque Deus amou o mundo de tal"))
+        state = rfs.get_state()
+        assert 0.0 < state["verse_progress"] < 1.0
+
+
+class TestSingleVerseAnchor:
+    """Sprint 30 — versículo único apresentado ancora o follow."""
+
+    @pytest.fixture
+    def setup_single(self):
+        """Setup com search_chapter mockado (João 3 vai até verso 36)."""
+        bus = PipelineEventBus()
+        searcher = MagicMock()
+        holyrics = MagicMock()
+
+        verse_texts = {
+            16: "Porque Deus amou o mundo de tal maneira que deu o seu Filho unigenito",
+            17: "Para que todo aquele que nele crê não pereça mas tenha a vida eterna",
+            18: "Quem crê nele não é condenado mas quem não crê já está condenado",
+        }
+
+        def search_side_effect(book, chapter, verse, *, version=None):
+            r = MagicMock()
+            r.text = verse_texts.get(verse, f"texto do verso {verse}")
+            r.book = book
+            r.book_id = 43
+            r.chapter = chapter
+            r.verse = verse
+            r.reference = f"{book} {chapter}:{verse}"
+            r.version = version or "ACF"
+            return r
+
+        def chapter_side_effect(book, chapter, *, version=None):
+            return [
+                MagicMock(verse=v) for v in range(1, 37)  # João 3 tem 36 versos
+            ]
+
+        searcher.search_by_reference.side_effect = search_side_effect
+        searcher.search_chapter.side_effect = chapter_side_effect
+
+        rfs = ReadingFollowService(
+            searcher=searcher, holyrics=holyrics, bus=bus,
+            session_id="test", version="ACF",
+        )
+        rfs.start()
+        return bus, rfs, searcher, holyrics, verse_texts
+
+    def test_presented_verse_anchors_follow(self, setup_single):
+        """VersePresented ancora o follow até o fim do capítulo."""
+        bus, rfs, _, _, _ = setup_single
+        from pipeline.events import VersePresented
+        bus.publish(VersePresented(
+            meta=_make_meta(),
+            book="João", book_id=43, chapter=3, verse=16,
+            version="ACF", reference="João 3:16",
+            quick_presentation=False, holyrics_status="ok",
+            holyrics_latency_ms=0, total_latency_ms=0,
+        ))
+        state = rfs.get_state()
+        assert state["active"] is True
+        assert state["current_verse"] == 16
+        assert state["verse_end"] == 36  # fim do capítulo
+
+    def test_presented_verse_reading_advances(self, setup_single):
+        """Após anchor, ler o versículo até o fim avança sozinho."""
+        bus, rfs, _, _, verse_texts = setup_single
+        from pipeline.events import VersePresented
+        bus.publish(VersePresented(
+            meta=_make_meta(),
+            book="João", book_id=43, chapter=3, verse=16,
+            version="ACF", reference="João 3:16",
+            quick_presentation=False, holyrics_status="ok",
+            holyrics_latency_ms=0, total_latency_ms=0,
+        ))
+        bus.publish(_make_committed(verse_texts[16]))
+        assert rfs.get_state()["current_verse"] == 17
+
+    def test_new_presented_verse_reanchors(self, setup_single):
+        """Nova apresentação re-ancora o follow."""
+        bus, rfs, _, _, _ = setup_single
+        from pipeline.events import VersePresented
+        for v in (16, 20):
+            bus.publish(VersePresented(
+                meta=_make_meta(),
+                book="João", book_id=43, chapter=3, verse=v,
+                version="ACF", reference=f"João 3:{v}",
+                quick_presentation=False, holyrics_status="ok",
+                holyrics_latency_ms=0, total_latency_ms=0,
+            ))
+        state = rfs.get_state()
+        assert state["current_verse"] == 20
+        assert state["verse_start"] == 20
+
+
+class TestMatchVersion:
+    """Sprint 30 — versão de leitura separada da apresentada."""
+
+    def test_match_version_used_for_texts(self):
+        """Textos de comparação carregados na match_version."""
+        bus = PipelineEventBus()
+        searcher = MagicMock()
+        holyrics = MagicMock()
+        calls: list[str | None] = []
+
+        def search_side_effect(book, chapter, verse, *, version=None):
+            calls.append(version)
+            r = MagicMock()
+            r.text = f"texto {version} verso {verse}"
+            r.verse = verse
+            return r
+
+        searcher.search_by_reference.side_effect = search_side_effect
+
+        rfs = ReadingFollowService(
+            searcher=searcher, holyrics=holyrics, bus=bus,
+            session_id="test", version="pt_acf",
+            match_version="NVI",
+        )
+        rfs.start()
+        bus.publish(_make_detected(verse_start=16, verse_end=18))
+        # Todos os loads devem ter usado a match_version (NVI).
+        assert calls and all(v == "NVI" for v in calls)
+        # Apresentação usa a versão apresentada (pt_acf).
+        assert holyrics.show_verse.call_args.kwargs["version"] == "pt_acf"
+
+    def test_set_match_version_reloads(self):
+        """set_match_version em runtime recarrega textos."""
+        bus = PipelineEventBus()
+        searcher = MagicMock()
+        holyrics = MagicMock()
+
+        def search_side_effect(book, chapter, verse, *, version=None):
+            r = MagicMock()
+            r.text = f"texto {version} verso {verse}"
+            r.verse = verse
+            return r
+
+        searcher.search_by_reference.side_effect = search_side_effect
+
+        rfs = ReadingFollowService(
+            searcher=searcher, holyrics=holyrics, bus=bus,
+            session_id="test", version="ACF",
+        )
+        rfs.start()
+        bus.publish(_make_detected(verse_start=16, verse_end=18))
+        assert rfs.get_state()["match_version"] == "ACF"
+
+        rfs.set_match_version("NVI")
+        assert rfs.get_state()["match_version"] == "NVI"
+        # Textos recarregados com NVI.
+        assert rfs._state.verse_texts[16].startswith("texto NVI")

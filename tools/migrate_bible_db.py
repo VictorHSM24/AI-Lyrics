@@ -80,8 +80,13 @@ _VERSION_FILES: dict[str, str] = {
     "ACF": "data/sources/ACF.sqlite",
     "ARC": "data/sources/ARC.sqlite",
     "ARA": "data/sources/ARA.sqlite",
-    "NAA": "data/sources/NAA.sqlite",
+    "AS21": "data/sources/AS21.sqlite",
     "JFAA": "data/sources/JFAA.sqlite",
+    "NAA": "data/sources/NAA.sqlite",
+    "NBV": "data/sources/NBV.sqlite",
+    "NTLH": "data/sources/NTLH.sqlite",
+    "NVI": "data/sources/NVI.sqlite",
+    "NVT": "data/sources/NVT.sqlite",
 }
 
 

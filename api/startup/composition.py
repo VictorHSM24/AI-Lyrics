@@ -661,6 +661,16 @@ def create_composition_root() -> CompositionRoot:
                             getattr(rf_config, "auto_version_change", True)
                             if rf_config is not None else True
                         )
+                        # Sprint 30 — auto-follow em verso apresentado e
+                        # versão de leitura separada.
+                        rf_auto_follow = (
+                            getattr(rf_config, "auto_follow_on_present", True)
+                            if rf_config is not None else True
+                        )
+                        rf_match_version = (
+                            getattr(rf_config, "match_version", "") or None
+                            if rf_config is not None else None
+                        )
 
                         reading_follow_service = ReadingFollowService(
                             searcher=searcher_instance,
@@ -669,6 +679,8 @@ def create_composition_root() -> CompositionRoot:
                             session_id=session.session_id,
                             version=default_version,
                             fuzzy_threshold=rf_threshold,
+                            match_version=rf_match_version,
+                            auto_follow_on_present=rf_auto_follow,
                         )
                         reading_follow_service.start()
                         logger.info(

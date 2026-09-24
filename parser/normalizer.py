@@ -110,8 +110,27 @@ class Normalizer:
       - ``ordinal_to_int(token)``: converte um ordinal para int.
       - ``roman_to_int(token)``: converte um numeral romano para int.
 
+    Args:
+        protect_function_words: quando True, ``normalize()`` NÃO converte
+            artigos indefinidos ("um", "uma") nem ordinais isolados
+            ("primeiro", "terceiro") para dígitos — são palavras
+            funcionais extremamente comuns na fala natural e geram
+            falsos positivos no parser incremental de voz. Composições
+            ("vinte e um" → 21) continuam funcionando, e as conversões
+            explícitas (``extenso_to_digit``/``ordinal_to_int``)
+            continuam disponíveis para uso pontual (ex.: após marcadores
+            "capítulo"/"versículo"). Default False — comportamento
+            original preservado para o parser determinístico/busca.
+
     Totalmente determinístico, sem LLM, sem dependências externas.
     """
+
+    # Tokens de artigo indefinido — palavras funcionais, não números,
+    # quando ``protect_function_words`` está ativo.
+    _ARTICLES: Final[frozenset[str]] = frozenset({"um", "uma", "uns", "umas"})
+
+    def __init__(self, *, protect_function_words: bool = False) -> None:
+        self._protect_function_words = protect_function_words
 
     # ------------------------------------------------------------------
     # Normalização principal
@@ -152,7 +171,8 @@ class Normalizer:
 
         # 5–7. conversões token a token / sequência
         tokens = s.split(" ")
-        tokens = self._replace_ordinals(tokens)
+        if not self._protect_function_words:
+            tokens = self._replace_ordinals(tokens)
         tokens = self._replace_romans(tokens)
         tokens = self._replace_extenso_sequences(tokens)
 
@@ -289,8 +309,7 @@ class Normalizer:
                 result.append(token)
         return result
 
-    @staticmethod
-    def _replace_extenso_sequences(tokens: list[str]) -> list[str]:
+    def _replace_extenso_sequences(self, tokens: list[str]) -> list[str]:
         """Identifica e substitui sequências de números por extenso.
 
         Regras de composição (gramática do português):
@@ -302,6 +321,10 @@ class Normalizer:
           - Um único token extenso é convertido isoladamente.
 
         Ou seja: a composição só acontece através do conectivo "e".
+
+        Com ``protect_function_words``, artigos ("um", "uma", "uns",
+        "umas") não iniciam sequência — permanecem literais no texto —
+        mas continuam válidos como continuação ("vinte e um" → 21).
         """
         result: list[str] = []
         i = 0
@@ -310,6 +333,10 @@ class Normalizer:
         while i < n:
             token = tokens[i]
             if token not in _EXTENSO_VOCAB or token == "e":
+                result.append(token)
+                i += 1
+                continue
+            if self._protect_function_words and token in self._ARTICLES:
                 result.append(token)
                 i += 1
                 continue

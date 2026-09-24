@@ -15,9 +15,9 @@
  * Não contém lógica de negócio — apenas dispara comandos.
  */
 
-import { ChevronLeft, ChevronRight, BookOpen, FileText, Hash, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, BookOpen, FileText, Hash, Languages, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { useWorkspaceSnapshot, useOperatorNavigation } from "@/hooks";
+import { useServices, useWorkspaceSnapshot, useOperatorNavigation } from "@/hooks";
 import type { OperatorVerseDTO } from "@/types";
 import { cn, formatVersionKey } from "@/utils";
 import {
@@ -29,6 +29,31 @@ import {
   type CommandResult,
   type WorkspaceContext,
 } from "./WorkspaceCommands";
+
+// Mapa key Holyrics (pt_*) → versão presente na base FTS5 local.
+// Versões fora deste mapa não têm texto local para preview — o
+// Holyrics resolve o texto na apresentação.
+const LOCAL_VERSION_MAP: Record<string, string> = {
+  pt_acf: "ACF",
+  pt_ra: "ARA",
+  pt_arc: "ARC",
+  pt_a21: "AS21",
+  pt_jfaa: "JFAA",
+  pt_naa: "NAA",
+  pt_nbv: "NBV",
+  pt_ntlh: "NTLH",
+  pt_nvi: "NVI",
+  pt_nvt: "NVT",
+};
+const LOCAL_VERSION_SET = new Set(Object.values(LOCAL_VERSION_MAP));
+
+function toLocalVersion(version: string): string | undefined {
+  if (!version) return undefined;
+  if (LOCAL_VERSION_MAP[version]) return LOCAL_VERSION_MAP[version];
+  const upper = version.toUpperCase();
+  if (LOCAL_VERSION_SET.has(upper)) return upper;
+  return undefined;
+}
 
 interface QuickNavigatorProps {
   /** Contexto do workspace (construído via useWorkspaceContext). */
@@ -54,12 +79,47 @@ export function QuickNavigator({ ctx, className }: QuickNavigatorProps) {
   const [preview, setPreview] = useState<OperatorVerseDTO | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
+  // Versão apresentada — lista vem do Holyrics (keys pt_*), a ativa
+  // vem do backend (/operator/version).
+  const services = useServices();
+  const [versions, setVersions] = useState<string[]>([]);
+  const [version, setVersion] = useState<string>("");
+  const [versionBusy, setVersionBusy] = useState(false);
+
   // Carregar books na montagem (para resolver bookId → nome).
   useEffect(() => {
     if (nav.books.length === 0) {
       void nav.loadBooks();
     }
   }, [nav]);
+
+  // Carregar versões do Holyrics + versão ativa na montagem.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const vs = await services.operator.getVersions();
+        if (cancelled) return;
+        setVersions(vs.versions);
+        try {
+          const cur = await services.operator.getVersion();
+          if (cancelled) return;
+          // Backend retorna nome local ("ACF") — casar com a key pt_*.
+          const match = vs.versions.find(
+            (v) => v === cur.version || formatVersionKey(v) === cur.version.toUpperCase(),
+          );
+          setVersion(match ?? cur.version ?? vs.versions[0] ?? "");
+        } catch {
+          if (!cancelled && vs.versions.length > 0) setVersion(vs.versions[0]);
+        }
+      } catch {
+        // Holyrics offline — seletor fica desabilitado.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [services]);
 
   // Quando selected muda, atualizar display e carregar preview.
   useEffect(() => {
@@ -75,11 +135,18 @@ export function QuickNavigator({ ctx, className }: QuickNavigatorProps) {
     setChapter(selected.chapter);
     setVerse(selected.verse);
 
-    // Carregar texto do versículo via cache LRU.
+    // Carregar texto do versículo via cache LRU (na versão local
+    // equivalente, se existir — versões fora da base local não têm
+    // texto para preview, mas o Holyrics resolve na apresentação).
+    if (version !== "" && toLocalVersion(version) === undefined) {
+      setPreview(null);
+      setPreviewLoading(false);
+      return;
+    }
     let cancelled = false;
     setPreviewLoading(true);
     void ctx
-      .getVerse(selected.bookId, selected.chapter, selected.verse)
+      .getVerse(selected.bookId, selected.chapter, selected.verse, toLocalVersion(version))
       .then((v) => {
         if (!cancelled) setPreview(v);
       })
@@ -92,7 +159,7 @@ export function QuickNavigator({ ctx, className }: QuickNavigatorProps) {
     return () => {
       cancelled = true;
     };
-  }, [selected, nav.books, ctx]);
+  }, [selected, nav.books, ctx, version]);
 
   // Navegar e apresentar automaticamente: após o comando de navegação
   // atualizar `selected` no store, dispara PresentVerseCommand para o novo
@@ -125,7 +192,40 @@ export function QuickNavigator({ ctx, className }: QuickNavigatorProps) {
     [ctx, navigateAndPresent],
   );
 
+  // Trocar a versão: persiste no backend e re-apresenta o versículo
+  // atualmente apresentado na nova tradução (se houver um).
+  const onVersionChange = useCallback(
+    (v: string) => {
+      setVersion(v);
+      setVersionBusy(true);
+      void (async () => {
+        try {
+          await services.operator.setVersion(v);
+        } catch {
+          // Backend indisponível — ainda tenta reapresentar.
+        }
+        const ref = ctx.presented;
+        if (ref) {
+          try {
+            await ctx.presentVerse({
+              book_id: ref.bookId,
+              chapter: ref.chapter,
+              verse: ref.verse,
+              version: v,
+              quick: ctx.quickPresentation,
+            });
+          } catch {
+            // Falha de apresentação aparece no histórico/painel.
+          }
+        }
+        setVersionBusy(false);
+      })();
+    },
+    [ctx, services],
+  );
+
   const hasSelection = selected !== null;
+  const localVersionMissing = version !== "" && toLocalVersion(version) === undefined;
 
   return (
     <div
@@ -175,6 +275,36 @@ export function QuickNavigator({ ctx, className }: QuickNavigatorProps) {
         testIdPrefix="operator-verse"
       />
 
+      {/* Linha 4: Versão — troca a tradução do versículo apresentado. */}
+      <div className="flex items-center gap-2" data-testid="operator-version-row">
+        <span className="flex items-center gap-1 text-[10px] font-medium text-text-muted uppercase tracking-wide w-16 shrink-0">
+          <Languages className="h-3.5 w-3.5 text-text-muted" />
+          Versão
+        </span>
+        <select
+          value={version}
+          onChange={(e) => onVersionChange(e.target.value)}
+          disabled={versions.length === 0 || versionBusy}
+          title="Tradução apresentada no Holyrics — trocar re-apresenta o versículo atual"
+          className="flex-1 rounded-md border border-border bg-surface-elevated px-2.5 py-2 text-sm font-semibold text-text focus:border-primary focus:outline-none disabled:opacity-50"
+          data-testid="operator-version-select"
+        >
+          {versions.length === 0 ? (
+            <option value="">{version ? formatVersionKey(version) : "—"}</option>
+          ) : (
+            versions.map((v) => (
+              <option key={v} value={v}>
+                {formatVersionKey(v)}
+              </option>
+            ))
+          )}
+          {version !== "" && !versions.includes(version) && (
+            <option value={version}>{formatVersionKey(version)}</option>
+          )}
+        </select>
+        {versionBusy && <Loader2 className="h-3.5 w-3.5 animate-spin text-text-muted" />}
+      </div>
+
       {!hasSelection && (
         <div className="flex flex-col items-center gap-2 py-3 rounded-md border border-dashed border-border-subtle bg-surface-hover/30">
           <BookOpen className="h-6 w-6 text-text-subtle" />
@@ -213,7 +343,9 @@ export function QuickNavigator({ ctx, className }: QuickNavigatorProps) {
             </>
           ) : (
             <p className="text-xs text-text-muted italic py-1">
-              Versículo não disponível.
+              {localVersionMissing
+                ? "Texto indisponível nesta versão — o Holyrics resolve na apresentação."
+                : "Versículo não disponível."}
             </p>
           )}
         </div>

@@ -136,6 +136,15 @@ knowledge:
 # Sprint 23.2 — Reading Follow Mode (acompanhamento de leitura).
 # Quando o pregador diz um intervalo de versículos (ex.: "Mateus 7 do 1 ao 3"),
 # o sistema acompanha a leitura e avança automaticamente.
+# Sprint 30 — cursor sequencial: avança quando a cauda do versículo foi
+# lida (não basta similaridade parcial). Versículo apresentado ancora o
+# follow até o fim do capítulo.
 reading_follow:
   fuzzy_threshold: 0.70
   auto_version_change: true
+  # Ancora o follow automaticamente em qualquer versículo apresentado
+  # (painel ou pipeline) — segue a leitura até o fim do capítulo.
+  auto_follow_on_present: true
+  # Versão da Bíblia que o pastor lê (comparação). Vazio = mesma versão
+  # apresentada. Configurável em runtime via /operator/follow/match-version.
+  match_version: ""

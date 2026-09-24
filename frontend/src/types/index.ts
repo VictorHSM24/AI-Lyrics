@@ -495,6 +495,10 @@ export interface FollowStateDTO {
   verse_end: number;
   current_verse: number;
   version: string;
+  /** Versão da Bíblia do pastor usada na comparação (Sprint 30). */
+  match_version: string;
+  /** Progresso dentro do versículo atual, 0..1 (cursor de palavras). */
+  verse_progress: number;
   total_verses: number;
   verses_read: number;
 }
@@ -506,6 +510,7 @@ export interface FollowStartRequestDTO {
   verse_start: number;
   verse_end: number;
   version?: string;
+  match_version?: string;
 }
 
 export interface FollowResultDTO {

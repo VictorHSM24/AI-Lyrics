@@ -21,6 +21,7 @@ from config.models import (
     ConfidenceConfig,
     Config,
     HolyricsConfig,
+    IncrementalParserConfig,
     KnowledgeConfig,
     LLMConfig,
     LogConfig,
@@ -466,6 +467,16 @@ def _build_reading_follow(data: dict[str, Any]) -> ReadingFollowConfig:
     )
 
 
+def _build_incremental_parser(data: dict[str, Any]) -> IncrementalParserConfig:
+    """Sprint 31 — Constrói IncrementalParserConfig (opcional)."""
+    if not isinstance(data, dict):
+        return IncrementalParserConfig()
+    return IncrementalParserConfig(
+        chapter_anticipation=bool(data.get("chapter_anticipation", False)),
+        carry_seconds=float(data.get("carry_seconds", 10.0)),
+    )
+
+
 def _build_config(data: dict[str, Any]) -> Config:
     """Constrói ``Config`` imutável a partir de dict parseado do YAML."""
     holyrics = _build_holyrics(_require(data, "holyrics", "root"))
@@ -502,6 +513,9 @@ def _build_config(data: dict[str, Any]) -> Config:
     reading_follow: ReadingFollowConfig | None = None
     if "reading_follow" in data:
         reading_follow = _build_reading_follow(data["reading_follow"])
+    incremental_parser: IncrementalParserConfig | None = None
+    if "incremental_parser" in data:
+        incremental_parser = _build_incremental_parser(data["incremental_parser"])
     return Config(
         holyrics=holyrics,
         stt=stt,
@@ -517,6 +531,7 @@ def _build_config(data: dict[str, Any]) -> Config:
         telemetry=telemetry,
         knowledge=knowledge,
         reading_follow=reading_follow,
+        incremental_parser=incremental_parser,
     )
 
 

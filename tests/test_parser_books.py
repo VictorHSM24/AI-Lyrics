@@ -149,12 +149,13 @@ class TestAmbiguityPriority:
         assert r.confidence == 0.5
 
     def test_hb_resolves_to_hebreus(self, table: ParserBookTable) -> None:
-        """'hb' é ambíguo (Habacuque, Hebreus); prioridade → Hebreus (priority=80)."""
+        """'hb' é exclusivo de Hebreus (convenção PT-BR: Hb=Hebreus,
+        Hc=Habacuque). Removido de Habacuque em a0c5cf2 — não ambíguo."""
         r = table.resolve("hb")
         assert r is not None
         assert r.book.id == 58
-        assert r.ambiguous is True
-        assert r.confidence == 0.5
+        assert r.ambiguous is False
+        assert r.confidence == 1.0
 
     def test_ez_ambiguous(self, table: ParserBookTable) -> None:
         """'ez' é ambíguo (Esdras, Ezequiel); mesma prioridade → menor ID (Esdras)."""
@@ -166,12 +167,12 @@ class TestAmbiguityPriority:
         assert r.book.id == 15
 
     def test_ambiguous_aliases_set(self, table: ParserBookTable) -> None:
-        """Verifica que exatamente 3 aliases são ambíguas."""
+        """Verifica que exatamente 2 aliases são ambíguas ("jo", "ez")."""
         amb = table.ambiguous_aliases()
         assert "jo" in amb
-        assert "hb" in amb
+        assert "hb" not in amb
         assert "ez" in amb
-        assert len(amb) == 3
+        assert len(amb) == 2
 
 
 # ---------------------------------------------------------------------------

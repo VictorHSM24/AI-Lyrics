@@ -194,7 +194,7 @@ class DecisionEngine:
         Returns:
             Decision com outcome, confidence, flags e reason.
         """
-        t0 = time.monotonic()
+        t0 = time.perf_counter()
         self._metrics.total_evaluations += 1
 
         c_stt = _clamp(c_stt)
@@ -468,7 +468,7 @@ class DecisionEngine:
 
     def _record_metric(self, outcome: str, t0: float) -> None:
         """Registra métrica de outcome."""
-        elapsed = (time.monotonic() - t0) * 1000
+        elapsed = (time.perf_counter() - t0) * 1000
         self._metrics.total_time_ms += elapsed
 
         if outcome == "execute":

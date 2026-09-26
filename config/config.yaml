@@ -98,6 +98,18 @@ confidence:
 
 mode: "auto"
 
+# Antecipação de capítulo: apresenta <livro> <cap>:1 assim que o
+# capítulo é falado, antes do versículo (ex.: "Hebreus capítulo 12"
+# → mostra 12:1). false = só apresenta quando o versículo for dito.
+# Sprint 31: false (padrão). "Abra em Hebreus capítulo 12" é instrução à
+# congregação — mostrar 12:1 só acerta se a leitura começar no v. 1 (spec
+# do benchmark: capítulo sem versículo = PREPARE, sem apresentação).
+# carry_seconds: janela para completar após pausa ("Primeira Coríntios"
+# [pausa] "capítulo 14, versículo 10").
+incremental_parser:
+  chapter_anticipation: false
+  carry_seconds: 10
+
 audio:
   input_device: "CODEC USB"
   sample_rate: 16000

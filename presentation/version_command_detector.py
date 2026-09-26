@@ -33,6 +33,12 @@ from pipeline.events import (
     VersionChanged,
 )
 from pipeline.metadata import EventMetadata
+from pipeline.speech_reference_grammar import (
+    CHAPTER_MARKERS,
+    VERSE_MARKERS,
+    number_token,
+)
+from parser.normalizer import Normalizer
 
 logger = logging.getLogger(__name__)
 
@@ -105,11 +111,21 @@ _NAVIGATION_MAX_FILLER = 2
 _NAV_DEDUP_S = 3.0
 _NAV_MIN_INTERVAL_S = 2.0
 
+# Sprint 31 — formas faladas reais: "voltar um", "volta versículo",
+# "próximo". Comandos de 1 palavra só disparam quando são a utterance
+# inteira (ver _on_committed_words).
 _NAVIGATION_COMMANDS_BACK: list[str] = [
     "verso anterior",
     "versículo anterior",
+    "voltar um versículo",
+    "volta um versículo",
+    "voltar versículo",
+    "volta versículo",
+    "voltar um",
+    "volta um",
     "volta",
     "voltar",
+    "anterior",
 ]
 
 _NAVIGATION_COMMANDS_FORWARD: list[str] = [
@@ -117,17 +133,17 @@ _NAVIGATION_COMMANDS_FORWARD: list[str] = [
     "próximo versículo",
     "proximo verso",
     "proximo versículo",
+    "avançar versículo",
+    "próximo",
+    "avança",
+    "avançar",
     "pula",
     "pular",
+    "seguinte",
 ]
 
-# Padrões regex para "capítulo N" e "versículo N".
-_CHAPTER_PATTERN = re.compile(
-    r"cap[ií]tulo\s+(\d+)", re.IGNORECASE,
-)
-_VERSE_PATTERN = re.compile(
-    r"vers[ií]culo\s+(\d+)", re.IGNORECASE,
-)
+# "capítulo N" / "versículo N" — mesmos marcadores/números do parser.
+_SPEECH_NORM = Normalizer(protect_function_words=True)
 
 
 def _normalize_text(text: str) -> str:
@@ -278,10 +294,13 @@ class VersionCommandDetector:
         if not self._auto_enabled:
             return
 
-        # Usar committed_text (palavras novas desta iteração) em vez
-        # de full_committed_text, para que "próximo" sozinho seja
-        # detectado mesmo após uma referência longa.
-        text_to_check = event.committed_text or event.full_committed_text
+        # Sprint 31 — avaliar a UTTERANCE (full_committed_text), não o
+        # chunk. Chunks do LocalAgreement têm 1–3 palavras e cortam frases
+        # em qualquer ponto: "...e o | próximo versículo | diz..." virava
+        # comando no meio da leitura. Uma utterance nova começa após pausa
+        # (novo correlation_id), então um comando dito isoladamente é a
+        # utterance inteira; no meio de uma frase, nunca dispara.
+        text_to_check = event.full_committed_text or event.committed_text
         if not text_to_check:
             return
 
@@ -337,15 +356,16 @@ class VersionCommandDetector:
         # pois "versículo" pode confundir com "verso anterior".
         # Só aceitar se o texto for curto (comando, não leitura).
         if len(tokens) <= 5:
-            match = _CHAPTER_PATTERN.search(text)
-            if match:
-                n = int(match.group(1))
-                return ("goto_chapter", n, _NAVIGATION_THRESHOLD_GOTO)
-
-            match = _VERSE_PATTERN.search(text)
-            if match:
-                n = int(match.group(1))
-                return ("goto_verse", n, _NAVIGATION_THRESHOLD_GOTO)
+            # Números por extenso também ("versículo dezessete").
+            ntoks = _SPEECH_NORM.normalize(text).split()
+            for i, tok in enumerate(ntoks[:-1]):
+                n = number_token(ntoks[i + 1])
+                if not n:
+                    continue
+                if tok in CHAPTER_MARKERS:
+                    return ("goto_chapter", n, _NAVIGATION_THRESHOLD_GOTO)
+                if tok in VERSE_MARKERS and tok != "v":
+                    return ("goto_verse", n, _NAVIGATION_THRESHOLD_GOTO)
 
         # Comandos de navegação são curtos — spans longos são
         # leitura/pregação, não comandos de voz.

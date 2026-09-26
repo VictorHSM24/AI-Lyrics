@@ -876,10 +876,21 @@ def create_composition_root() -> CompositionRoot:
                 from parser.books import load_parser_books
                 parser_books_s19 = load_parser_books("config/books.json")
 
+            ip_config = getattr(config, "incremental_parser", None)
+            ip_chapter_anticipation = bool(
+                getattr(ip_config, "chapter_anticipation", False)
+                if ip_config is not None else False
+            )
+            ip_carry_seconds = float(
+                getattr(ip_config, "carry_seconds", 10.0)
+                if ip_config is not None else 10.0
+            )
             incremental_parser = IncrementalBiblicalParser(
                 books=parser_books_s19,
                 bus=bus,
                 session_id=session.session_id,
+                chapter_anticipation=ip_chapter_anticipation,
+                carry_seconds=ip_carry_seconds,
             )
             incremental_parser.start()
 

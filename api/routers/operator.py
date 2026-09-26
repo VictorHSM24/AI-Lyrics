@@ -651,6 +651,9 @@ class FollowStateResult(BaseModel):
     verse_progress: float = 0.0
     total_verses: int = 0
     verses_read: int = 0
+    # Sprint 31 — True após /follow/stop: não re-ancora em versículos
+    # apresentados por voz até o operador apresentar/reativar.
+    auto_follow_paused: bool = False
 
 
 class VersionRequest(BaseModel):

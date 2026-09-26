@@ -513,6 +513,11 @@ class TestPipelineEventDrivenConcurrency:
                     version=version,
                 )
 
+            # Sprint 27 — o VPS apresenta via referência textual.
+            def show_verse_references(self, references, version="ACF", quick=False):
+                self.calls.append(references)
+                return {"status": "ok"}
+
         store = MagicMock()
         bus = PipelineEventBus(store=store)
         holyrics = FakeHolyrics()
@@ -568,4 +573,4 @@ class TestPipelineEventDrivenConcurrency:
         )
         # Holyrics foi chamado.
         assert len(holyrics.calls) == 1
-        assert holyrics.calls[0] == (43, 3, 16)
+        assert "3:16" in holyrics.calls[0]

@@ -16,6 +16,7 @@ from parser.books import ParserBookTable, load_parser_books
 from parser.normalizer import Normalizer
 from pipeline.bus import PipelineEventBus
 from pipeline.events import (
+    ReferenceAntecipada,
     ReferenceCandidate,
     ReferenceDetected,
     SpeechCommittedWords,
@@ -320,3 +321,50 @@ class TestSpeechFalsePositives:
         assert detected[0].book == "Amós"
         assert detected[0].chapter == 9
         assert detected[0].verse_start == 13
+
+
+class TestChapterAnticipationFlag:
+    """Sprint 30b — chapter_anticipation=False desliga apresentação
+    antecipada de <livro> <cap>:1 (versículo ainda não falado)."""
+
+    def _make_parser(self, bus, enabled: bool):
+        books = load_parser_books("config/books.json")
+        p = IncrementalBiblicalParser(
+            books=books,
+            bus=bus,
+            session_id="test-session",
+            chapter_anticipation=enabled,
+        )
+        p.start()
+        return p
+
+    def test_chapter_only_no_anticipation_when_disabled(self):
+        """Com flag off, "hebreus capítulo 12" não publica antecipada."""
+        bus = PipelineEventBus()
+        p = self._make_parser(bus, enabled=False)
+        anticipated = []
+        candidates = []
+        bus.subscribe(ReferenceAntecipada, lambda e: anticipated.append(e))
+        bus.subscribe(ReferenceCandidate, lambda e: candidates.append(e))
+
+        bus.publish(_make_committed(
+            "abra hebreus capítulo doze",
+            "abra hebreus capítulo doze",
+        ))
+        assert len(anticipated) == 0
+        # Candidato de capítulo continua sendo publicado (telemetria).
+        assert any(c.completeness == "chapter" for c in candidates)
+
+    def test_chapter_anticipation_opt_in(self):
+        """chapter_anticipation=True (opt-in) antecipa no capítulo."""
+        bus = PipelineEventBus()
+        p = self._make_parser(bus, enabled=True)
+        anticipated = []
+        bus.subscribe(ReferenceAntecipada, lambda e: anticipated.append(e))
+
+        bus.publish(_make_committed(
+            "abra hebreus capítulo doze",
+            "abra hebreus capítulo doze",
+        ))
+        assert len(anticipated) == 1
+        assert anticipated[0].chapter == 12

@@ -68,10 +68,10 @@ def _measure(stage: str, fn, *args, **kwargs):
         PipelineError: se fn levanta qualquer exceção. O erro carrega
             ``stage_timing`` com success=False e error_msg preenchido.
     """
-    t0 = time.monotonic()
+    t0 = time.perf_counter()
     try:
         result = fn(*args, **kwargs)
-        duration_ms = (time.monotonic() - t0) * 1000.0
+        duration_ms = (time.perf_counter() - t0) * 1000.0
         timing = StageTiming(
             stage=stage,
             duration_ms=duration_ms,
@@ -80,7 +80,7 @@ def _measure(stage: str, fn, *args, **kwargs):
         )
         return result, timing
     except AILyricsError as e:
-        duration_ms = (time.monotonic() - t0) * 1000.0
+        duration_ms = (time.perf_counter() - t0) * 1000.0
         timing = StageTiming(
             stage=stage,
             duration_ms=duration_ms,
@@ -92,7 +92,7 @@ def _measure(stage: str, fn, *args, **kwargs):
             stage_timing=timing,
         ) from e
     except Exception as e:
-        duration_ms = (time.monotonic() - t0) * 1000.0
+        duration_ms = (time.perf_counter() - t0) * 1000.0
         timing = StageTiming(
             stage=stage,
             duration_ms=duration_ms,

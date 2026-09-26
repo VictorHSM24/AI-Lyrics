@@ -108,6 +108,31 @@ async def start_capture(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _publish_pipeline_stopped(root, reason: str) -> None:
+    """Sprint 31 — parar a captura encerra o pipeline de fala.
+
+    Sem PipelineStopped, o acompanhamento de leitura e o parser ficavam
+    com estado vivo durante a parada e "ratcheavam" na fala ao retomar.
+    """
+    pipeline_service = getattr(root, "pipeline_service", None)
+    if pipeline_service is not None and pipeline_service.is_running():
+        pipeline_service.stop(reason=reason)
+        return
+    bus = getattr(root, "bus", None)
+    if bus is None:
+        return
+    from pipeline.events import PipelineStopped
+    from pipeline.metadata import EventMetadata
+    session = getattr(root, "session", None)
+    bus.publish(PipelineStopped(
+        meta=EventMetadata.for_session_event(
+            session_id=getattr(session, "session_id", "session"),
+            origin="AudioRouter",
+        ),
+        reason=reason,
+    ))
+
+
 @router.post("/stop")
 @router.post("/stop/")
 async def stop_capture(
@@ -122,6 +147,7 @@ async def stop_capture(
         if root.speech_worker is not None and root.speech_worker.is_running:
             root.speech_worker.stop()
         result = svc.stop_capture()
+        _publish_pipeline_stopped(root, reason="audio_stopped")
         # Emitir evento WebSocket audio.stopped.
         from api.websocket.audio_events import get_audio_event_publisher
         try:

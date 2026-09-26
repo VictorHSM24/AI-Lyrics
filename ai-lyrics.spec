@@ -56,7 +56,7 @@ project_datas = []
 
 # Configuração padrão (Categoria A).
 for f in ['config/books.json', 'config/config.yaml', 'config/knowledge_base.json',
-          'config/config.overrides.json']:
+          'config/config.overrides.json', 'config/canon_bounds.json']:
     if os.path.exists(f):
         project_datas.append((f, 'config'))
 

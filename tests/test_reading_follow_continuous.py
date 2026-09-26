@@ -480,3 +480,64 @@ class TestMatchVersion:
         assert rfs.get_state()["match_version"] == "NVI"
         # Textos recarregados com NVI.
         assert rfs._state.verse_texts[16].startswith("texto NVI")
+
+
+class TestTailDensity:
+    """Sprint 30b — cauda precisa ser lida DENSA e RECENTE.
+
+    Bug real em culto: o cursor ratcheava em palavras comuns da
+    pregação por ~4 minutos e completava a cauda sem leitura —
+    avanço espúrio para Hebreus 12:2 com o pastor comentando.
+    """
+
+    # Palavras de pregação que NÃO constam no versículo 16
+    # (porque/deus/amou/o/mundo/de/tal/maneira/que/deu/o/seu/filho/unigenito).
+    FILLER = (
+        "irmaos estamos reunidos aqui hoje familia igreja gloria "
+        "senhor jesus cristo amem povo vida culto culto culto"
+    )
+
+    def test_sparse_ratchet_does_not_advance(self, setup):
+        """Palavras da cauda espalhadas em pregação longa não avançam."""
+        bus, rfs, _, _, _, advanced, _, _ = setup
+        bus.publish(_make_detected(verse_start=16, verse_end=18))
+        # Início do versículo lido contiguamente (8 palavras).
+        bus.publish(_make_committed(
+            "porque deus amou o mundo de tal maneira",
+        ))
+        # Cauda ratcheada: cada palavra do fim do versículo separada
+        # por ~16 palavras de pregação não-relacionada.
+        for tail_word in ("que", "deu", "seu", "filho"):
+            bus.publish(_make_committed(f"{self.FILLER} {tail_word}"))
+        assert rfs.get_state()["current_verse"] == 16
+        assert len(advanced) == 0
+
+    def test_dense_tail_still_advances(self, setup):
+        """Cauda lida contiguamente continua avançando (regressão)."""
+        bus, rfs, _, _, _, advanced, _, _ = setup
+        bus.publish(_make_detected(verse_start=16, verse_end=18))
+        bus.publish(_make_committed(
+            "porque deus amou o mundo de tal maneira que deu o seu filho unigenito",
+        ))
+        assert rfs.get_state()["current_verse"] == 17
+        assert len(advanced) == 1
+
+    def test_pause_then_tail_reread_advances(self, setup):
+        """Pastor pausa no meio do verso e relê a cauda → avança.
+
+        A cauda é re-casada mesmo atrás do cursor — a pausa não trava
+        o follow.
+        """
+        bus, rfs, _, _, _, advanced, _, _ = setup
+        bus.publish(_make_detected(verse_start=16, verse_end=18))
+        # Miolo do versículo lido (cursor chega a ~8).
+        bus.publish(_make_committed(
+            "porque deus amou o mundo de tal maneira",
+        ))
+        # Longa pausa/comentário — nenhuma palavra do versículo.
+        for _ in range(4):
+            bus.publish(_make_committed(self.FILLER))
+        # Pastor retoma lendo a cauda inteira.
+        bus.publish(_make_committed("que deu o seu filho unigenito"))
+        assert rfs.get_state()["current_verse"] == 17
+        assert len(advanced) == 1

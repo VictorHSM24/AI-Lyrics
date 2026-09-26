@@ -332,6 +332,21 @@ class ReadingFollowConfig:
 
 
 @dataclass(frozen=True)
+class IncrementalParserConfig:
+    """Sprint 31 — parser incremental de referências faladas.
+
+    Campos:
+        chapter_anticipation: apresenta <livro> <cap>:1 quando só o
+            capítulo foi falado (default False — spec do benchmark).
+        carry_seconds: janela para completar uma referência iniciada
+            antes de uma pausa (default 10s).
+    """
+
+    chapter_anticipation: bool = False
+    carry_seconds: float = 10.0
+
+
+@dataclass(frozen=True)
 class Config:
     """Configuração raiz do sistema. Imutável após carregamento."""
 
@@ -353,3 +368,5 @@ class Config:
     knowledge: "KnowledgeConfig | None" = None
     # Sprint 23.2 — Reading Follow Mode (opcional).
     reading_follow: "ReadingFollowConfig | None" = None
+    # Sprint 31 — parser incremental (opcional).
+    incremental_parser: "IncrementalParserConfig | None" = None

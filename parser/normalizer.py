@@ -37,8 +37,9 @@ _EXTENSO_UNITS: Final[dict[str, int]] = {
     "dez": 10, "onze": 11, "doze": 12, "treze": 13,
     "quatorze": 14, "catorze": 14,  # PT-BR / PT-PT
     "quinze": 15,
-    "dezesseis": 16, "dezassete": 17, "dezesete": 17,  # PT-BR / PT-PT
-    "dezoito": 18, "dezenove": 19,
+    "dezesseis": 16, "dezasseis": 16,  # PT-BR / PT-PT
+    "dezessete": 17, "dezassete": 17, "dezesete": 17,
+    "dezoito": 18, "dezenove": 19, "dezanove": 19,
 }
 
 _EXTENSO_TENS: Final[dict[str, int]] = {
@@ -89,6 +90,13 @@ _ROMAN_SKIP: Final[frozenset[str]] = frozenset({"v"})
 
 _ROMAN_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[ivxlcdm]+$", re.IGNORECASE)
 
+# Na fala (protect_function_words), só "I/II/III" (prefixo de livro:
+# "II Reis") viram dígito. Qualquer outro token formado por letras
+# romanas é palavra portuguesa: "eu vi" → 6, "eu li" → 51, "mil" →
+# 1049, "di", "mi"... geravam números fantasmas que completavam
+# referências espúrias ("Salmos, eu vi três..." → Salmos 6:3).
+_SPEECH_ROMANS: Final[dict[str, str]] = {"i": "1", "ii": "2", "iii": "3"}
+
 # ---------------------------------------------------------------------------
 # Regex de pontuação e whitespace
 # ---------------------------------------------------------------------------
@@ -115,7 +123,9 @@ class Normalizer:
             artigos indefinidos ("um", "uma") nem ordinais isolados
             ("primeiro", "terceiro") para dígitos — são palavras
             funcionais extremamente comuns na fala natural e geram
-            falsos positivos no parser incremental de voz. Composições
+            falsos positivos no parser incremental de voz. Também
+            restringe numerais romanos a "i"/"ii"/"iii" ("eu vi" não
+            vira "eu 6"). Composições
             ("vinte e um" → 21) continuam funcionando, e as conversões
             explícitas (``extenso_to_digit``/``ordinal_to_int``)
             continuam disponíveis para uso pontual (ex.: após marcadores
@@ -173,7 +183,9 @@ class Normalizer:
         tokens = s.split(" ")
         if not self._protect_function_words:
             tokens = self._replace_ordinals(tokens)
-        tokens = self._replace_romans(tokens)
+            tokens = self._replace_romans(tokens)
+        else:
+            tokens = [_SPEECH_ROMANS.get(t, t) for t in tokens]
         tokens = self._replace_extenso_sequences(tokens)
 
         return " ".join(tokens)

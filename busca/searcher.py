@@ -430,7 +430,7 @@ class Searcher:
         version = version or self._default_version
         query_stripped = query.strip()
 
-        t0 = time.monotonic()
+        t0 = time.perf_counter()
         self._metrics.total_searches += 1
 
         try:
@@ -442,7 +442,7 @@ class Searcher:
             self._metrics.failed += 1
             raise SearchError(f"search failed: {e}") from e
 
-        elapsed_ms = (time.monotonic() - t0) * 1000
+        elapsed_ms = (time.perf_counter() - t0) * 1000
         self._metrics.total_time_ms += elapsed_ms
 
         if results:
@@ -501,7 +501,7 @@ class Searcher:
         top_k = top_k or self._config.top_k
         version = version or self._default_version
 
-        t0 = time.monotonic()
+        t0 = time.perf_counter()
         self._metrics.total_searches += 1
 
         try:
@@ -513,7 +513,7 @@ class Searcher:
             self._metrics.failed += 1
             raise SearchError(f"search_with_plan failed: {e}") from e
 
-        elapsed_ms = (time.monotonic() - t0) * 1000
+        elapsed_ms = (time.perf_counter() - t0) * 1000
         self._metrics.total_time_ms += elapsed_ms
 
         if results:

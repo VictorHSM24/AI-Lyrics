@@ -70,6 +70,8 @@ from busca.exceptions import SearchError
 from pipeline.bus import PipelineEventBus
 from pipeline.events import (
     NavigationCommandDetected,
+    ReadingFollowEnded,
+    ReadingFollowStarted,
     ReferenceAntecipada,
     ReferenceDetected,
     VersePresentationFailed,
@@ -183,6 +185,8 @@ class VersePresentationService:
         self._last_book_name: str | None = None
         self._last_chapter: int | None = None
         self._last_verse: int | None = None
+        # Sprint 31 — acompanhamento de leitura ativo (dono da navegação).
+        self._follow_active = False
 
         # Sprint 21.4 — Streaming First.
         # Track de antecipações pendentes por correlation_id, para dedup
@@ -232,6 +236,11 @@ class VersePresentationService:
         self._bus.subscribe(ReferenceAntecipada, self._on_reference_anticipada)
         # Sprint 28 (Fase 8) — Navegação por voz ("próximo", "anterior").
         self._bus.subscribe(NavigationCommandDetected, self._on_navigation_command)
+        # Sprint 31 — acompanha o que está na tela (painel/follow) e quem
+        # é dono da navegação por voz (follow ativo → follow navega).
+        self._bus.subscribe(VersePresented, self._on_external_presented)
+        self._bus.subscribe(ReadingFollowStarted, self._on_follow_started)
+        self._bus.subscribe(ReadingFollowEnded, self._on_follow_ended)
         self._subscribed = True
         logger.info(
             "VersePresentationService started — subscribed to "
@@ -251,6 +260,9 @@ class VersePresentationService:
             self._bus.unsubscribe(NavigationCommandDetected, self._on_navigation_command)
         except Exception:
             pass
+        self._bus.unsubscribe(VersePresented, self._on_external_presented)
+        self._bus.unsubscribe(ReadingFollowStarted, self._on_follow_started)
+        self._bus.unsubscribe(ReadingFollowEnded, self._on_follow_ended)
         self._subscribed = False
         logger.info("VersePresentationService stopped.")
 
@@ -258,13 +270,44 @@ class VersePresentationService:
     # Sprint 28 (Fase 8) — Navegação por voz ("próximo"/"anterior").
     # ------------------------------------------------------------------
 
+    def _on_external_presented(self, event: VersePresented) -> None:
+        """Sincroniza "o que está na tela" com apresentações de terceiros.
+
+        Painel do operador e acompanhamento de leitura apresentam sem
+        passar pelo VPS. Sem isto, o dedup e a base de "próximo"/"anterior"
+        ficavam no último versículo que o VPS apresentou (desatualizado).
+        """
+        if event.origin.startswith("VersePresentationService"):
+            return
+        if event.book_id <= 0 or event.chapter <= 0 or event.verse <= 0:
+            return
+        self._last_presented_key = (event.book_id, event.chapter, event.verse)
+        self._last_book_name = event.book
+        self._last_chapter = event.chapter
+        self._last_verse = event.verse
+
+    def _on_follow_started(self, event: Any) -> None:
+        self._follow_active = True
+
+    def _on_follow_ended(self, event: Any) -> None:
+        self._follow_active = False
+
     def _on_navigation_command(self, event: NavigationCommandDetected) -> None:
         """Avança/recua o último versículo apresentado via comando de voz.
 
-        Funciona independentemente do ReadingFollowService — usa o
-        último verso apresentado pelo VPS.
+        Sprint 31 — com o acompanhamento de leitura ativo, ELE é o dono da
+        navegação (respeita o intervalo e re-sincroniza o cursor). Antes,
+        VPS e follow reagiam ao mesmo comando: o VPS apresentava a partir
+        de uma base desatualizada, o follow re-ancorava nisso e ainda
+        aplicava o comando de novo — "brigavam".
         """
+        # goto_verse ("versículo N" isolado) NÃO é tratado aqui: após
+        # "Hebreus capítulo 12" [pausa] "versículo 1", o parser completa
+        # Hebreus 12:1 pelo contexto da pausa — aplicar "versículo 1" ao
+        # capítulo antigo da tela piscaria um versículo errado.
         if event.command not in ("forward", "back"):
+            return
+        if self._follow_active:
             return
         if self._last_book_name is None or self._last_chapter is None:
             logger.info(
@@ -357,8 +400,9 @@ class VersePresentationService:
     ) -> tuple[bool, str]:
         """Verifica se a referência deve ser apresentada (Sprint 28 — Fase 6).
 
-        Consulta StateOrchestrator.current_state para verificar se o
-        estado permite apresentação. O dedup por (book_id, chapter, verse)
+        Sprint 31: apenas dedup contra o que está NA TELA (inclui
+        apresentações do painel e do acompanhamento de leitura, via
+        VersePresented). O dedup por (book_id, chapter, verse)
         é feito internamente pelo VPS via _last_presented_key, NÃO via
         last_presented_reference do StateOrchestrator (que é atualizado
         antes do VPS processar o evento, causando falso dedup).
@@ -367,27 +411,13 @@ class VersePresentationService:
             (should_present, reason): should_present=True se deve
             apresentar; False caso contrário com reason explicando.
         """
-        if self._state_orchestrator is None:
-            # Fallback — sem StateOrchestrator, apresenta sempre.
-            return True, "no_orchestrator"
-
-        # Verificar estado atual.
-        # Aceita PRESENT (estado normal), PREPARE (transição) e WAIT
-        # (estado inicial — o StateOrchestrator pode não ter processado
-        # ReferenceDetected ainda se o VPS foi inscrito primeiro no
-        # EventBus). ReferenceDetected é definitivo e sempre transita
-        # para PRESENT, então confiar no evento é seguro.
-        from pipeline.state_orchestrator import State
-        current = self._state_orchestrator.current_state
-        if current not in (State.PRESENT, State.PREPARE, State.WAIT):
-            self._total_state_rejected += 1
-            logger.info(
-                "VersePresentationService: rejeitado por estado "
-                "(current=%s, esperado=PRESENT/PREPARE/WAIT, ref=(%d,%d,%d))",
-                current.value, book_id, chapter, verse,
-            )
-            return False, f"state_not_present:{current.value}"
-
+        # Sprint 31 — o estado do StateOrchestrator NÃO veta mais a
+        # apresentação. O VPS é inscrito ANTES do orquestrador, então o
+        # estado lido aqui é o do segmento ANTERIOR: após qualquer trecho
+        # sem conteúdo bíblico (WAIT → IGNORE), um "João 3:16" dito de uma
+        # vez (sem ReferenceCandidate prévio) era rejeitado e nunca
+        # apresentado. ReferenceDetected já é definitivo e validado
+        # (livro falado + limites canônicos) — o dedup abaixo basta.
         # Dedup interno por (book_id, chapter, verse).
         # Não consulta last_presented_reference do StateOrchestrator
         # porque esse campo é atualizado quando o StateOrchestrator

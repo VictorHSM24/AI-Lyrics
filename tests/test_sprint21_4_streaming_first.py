@@ -278,15 +278,32 @@ class TestIncrementalParserAnticipation(unittest.TestCase):
         except Exception:
             self.skipTest("config/books.json não disponível")
 
+        # Sprint 31 — antecipação de capítulo é opt-in (default False);
+        # estes testes validam o mecanismo quando habilitado.
         self.parser = IncrementalBiblicalParser(
             books=self.books,
             bus=self.bus,
             session_id="test-session",
+            chapter_anticipation=True,
         )
         self.parser.start()
 
     def tearDown(self):
         self.parser.stop()
+
+    def test_chapter_anticipation_default_off(self):
+        """Sem opt-in, "Salmos 23" (sem versículo) NÃO antecipa."""
+        from pipeline.incremental_parser import IncrementalBiblicalParser
+        self.parser.stop()
+        default_parser = IncrementalBiblicalParser(
+            books=self.books, bus=self.bus, session_id="test-session",
+        )
+        default_parser.start()
+        events = _collect_events(self.bus)
+        self._publish_partial("Salmos 23")
+        anticipations = [e for e in events if isinstance(e, ReferenceAntecipada)]
+        self.assertEqual(anticipations, [])
+        default_parser.stop()
 
     def _publish_partial(self, text: str, correlation_id: str = "corr-1"):
         """Publica um SpeechCommittedWords com o texto dado (Sprint 28)."""

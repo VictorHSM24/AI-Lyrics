@@ -166,6 +166,18 @@ class ParserBookTable:
         """Retorna o conjunto de aliases normalizadas que são ambíguas."""
         return set(self._ambiguous)
 
+    def alias_entries(self) -> list[tuple[str, Book, str, bool]]:
+        """Lista ``(alias_normalizada, Book, alias_original, ambígua)``.
+
+        Usado pelo matcher de fala (``pipeline.speech_reference_grammar``)
+        para montar seu índice por tokens com a política própria de
+        elegibilidade de aliases.
+        """
+        return [
+            (norm, book, orig, norm in self._ambiguous)
+            for norm, (book, orig) in self._by_alias.items()
+        ]
+
     @staticmethod
     def _word_find(text: str, word: str) -> int:
         """Encontra ``word`` em ``text`` respeitando word boundaries.

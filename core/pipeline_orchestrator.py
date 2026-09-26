@@ -168,7 +168,7 @@ class PipelineOrchestrator:
             ProcessResult com log_entry, decision, search_results,
             candidates e requires_confirmation.
         """
-        t0 = time.monotonic()
+        t0 = time.perf_counter()
         self._metrics.record_utterance()
 
         exec_id = uuid.uuid4().hex[:12]
@@ -393,7 +393,7 @@ class PipelineOrchestrator:
             3. Chamar searcher.search_with_plan(plan).
             4. Medir tempo e construir StageTiming.
         """
-        t0 = time.monotonic()
+        t0 = time.perf_counter()
         try:
             # Knowledge enrichment (entre LLM e QueryPlanner)
             knowledge_match = None
@@ -412,7 +412,7 @@ class PipelineOrchestrator:
                 plan,
                 state=self._state.current(),
             )
-            elapsed_ms = (time.monotonic() - t0) * 1000
+            elapsed_ms = (time.perf_counter() - t0) * 1000
             kb_info = (
                 f" kb={knowledge_match.concept}" if knowledge_match and knowledge_match.is_found else ""
             )
@@ -432,7 +432,7 @@ class PipelineOrchestrator:
             )
             return results, timing
         except Exception as e:
-            elapsed_ms = (time.monotonic() - t0) * 1000
+            elapsed_ms = (time.perf_counter() - t0) * 1000
             timing = StageTiming(
                 "search", elapsed_ms, False, f"plan failed: {e}",
             )
@@ -447,10 +447,10 @@ class PipelineOrchestrator:
         """Executa reranking por LLM (opcional, com fallback)."""
         if self._reranker is None or not results or len(results) <= 1:
             return results
-        t0 = time.monotonic()
+        t0 = time.perf_counter()
         try:
             reranked = self._reranker.rerank(query, results)
-            elapsed_ms = (time.monotonic() - t0) * 1000
+            elapsed_ms = (time.perf_counter() - t0) * 1000
             if reranked is not results:
                 logger.info(
                     "rerank: query=%r time=%.1fms top_changed=%s",
@@ -490,7 +490,7 @@ class PipelineOrchestrator:
         Stages não executados ou que falharam têm campos preenchidos
         com o que estiver disponível (duration_ms=0, error=...).
         """
-        total_ms = int((time.monotonic() - t0) * 1000.0)
+        total_ms = int((time.perf_counter() - t0) * 1000.0)
 
         # LLM dict
         llm_dict: dict = {}

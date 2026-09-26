@@ -128,24 +128,41 @@ class TestVersePresentationCoordination:
         assert len(presented) == 1
         assert holyrics.show_verse_references.called
 
-    def test_rejects_when_state_wait(self, setup):
-        """Rejeita apresentação quando estado == WAIT (sem ReferenceDetected)."""
+    def test_accepts_when_state_wait(self, setup):
+        """WAIT é aceito: o VPS pode receber ReferenceDetected antes do
+        StateOrchestrator transitar (ordem de inscrição) — o evento é
+        definitivo e sempre leva a PRESENT (ver _should_present)."""
         bus, orch, vps, searcher, holyrics, presented, failed = setup
         searcher.search_by_reference.return_value = _make_search_result()
-        # Publicar ReferenceDetected com correlation_id diferente —
-        # StateOrchestrator transita para PRESENT.
-        # Mas para testar rejeição, precisamos que o VPS receba o evento
-        # ANTES do StateOrchestrator. Como o EventBus é síncrono e a ordem
-        # de inscrição importa, o StateOrchestrator foi inscrito primeiro.
-        # Vamos simular: forçar estado WAIT e publicar diretamente no VPS.
-        orch._ctx.current_state = State.WAIT
         with orch._lock:
             orch._ctx.current_state = State.WAIT
-        # Chamar VPS diretamente (não via bus, para não acionar StateOrchestrator).
         vps._on_reference_detected(_make_detected())
-        # Não deve apresentar.
-        assert len(presented) == 0
-        assert holyrics.show_verse_references.called is False
+        assert len(presented) == 1
+
+    def test_accepts_when_state_ignore(self, setup):
+        """Sprint 31 — IGNORE (segmento anterior sem conteúdo bíblico) não
+        veta: o VPS lê o estado ANTES do orquestrador processar o evento,
+        e "João 3:16" dito de uma vez era descartado."""
+        bus, orch, vps, searcher, holyrics, presented, failed = setup
+        searcher.search_by_reference.return_value = _make_search_result()
+        with orch._lock:
+            orch._ctx.current_state = State.IGNORE
+        vps._on_reference_detected(_make_detected())
+        assert len(presented) == 1
+
+    def test_ignore_state_via_bus_still_presents(self, setup):
+        """Regressão ponta a ponta: segmento sem bíblia → IGNORE → referência
+        completa publicada pelo bus é apresentada."""
+        from pipeline.events import SpeechTranscribed
+        bus, orch, vps, searcher, holyrics, presented, failed = setup
+        searcher.search_by_reference.return_value = _make_search_result()
+        bus.publish(SpeechTranscribed(
+            meta=EventMetadata.for_initial(session_id="s", origin="test"),
+            text="bom dia igreja",
+        ))
+        assert orch.current_state == State.IGNORE
+        bus.publish(_make_detected())
+        assert len(presented) == 1
 
     def test_dedup_rejects_same_reference(self, setup):
         """Dedup: mesma referência (book_id, chapter, verse) é rejeitada.
@@ -234,13 +251,14 @@ class TestVersePresentationCoordination:
         # Deve apresentar a correção.
         assert len(presented) == 2
 
-    def test_state_rejected_metric_incremented(self, setup):
-        """Métrica _total_state_rejected é incrementada quando rejeitado."""
+    def test_state_never_rejects_detected(self, setup):
+        """Nenhum estado rejeita ReferenceDetected (só o dedup)."""
         bus, orch, vps, searcher, holyrics, presented, failed = setup
         searcher.search_by_reference.return_value = _make_search_result()
-        # Forçar estado WAIT.
-        with orch._lock:
-            orch._ctx.current_state = State.WAIT
-        # Chamar VPS diretamente.
-        vps._on_reference_detected(_make_detected())
-        assert vps._total_state_rejected >= 1
+        for st in State:
+            with orch._lock:
+                orch._ctx.current_state = st
+            vps._last_presented_key = None
+            vps._on_reference_detected(_make_detected())
+        assert vps._total_state_rejected == 0
+        assert len(presented) == len(State)

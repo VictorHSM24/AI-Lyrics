@@ -102,6 +102,7 @@ export function createPresentationApi(): PresentationApi {
       start: notImplemented,
       stop: notImplemented,
       setOutputDir: notImplemented,
+      browse: notImplemented,
     },
   };
 }

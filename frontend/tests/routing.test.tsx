@@ -177,7 +177,7 @@ describe("Padrão visual das páginas", () => {
     // Controles de gravação
     expect(screen.getByTestId("recording-status-badge")).toBeInTheDocument();
     expect(screen.getByTestId("recording-start-btn")).toBeInTheDocument();
-    expect(screen.getByTestId("recording-save-dir-btn")).toBeInTheDocument();
+    expect(screen.getByTestId("recording-browse-dir-btn")).toBeInTheDocument();
     unmount();
   });
 

@@ -105,6 +105,7 @@ const METHOD_TO_ENDPOINT: Record<string, string> = {
   "recording.start": "/recording/start",
   "recording.stop": "/recording/stop",
   "recording.setOutputDir": "/recording/output-dir",
+  "recording.browse": "/recording/browse",
 };
 
 /** Métodos que usam PUT (body JSON) em vez de GET (query params). */
@@ -132,6 +133,7 @@ const POST_METHODS: ReadonlySet<string> = new Set([
   "recording.start",
   "recording.stop",
   "recording.setOutputDir",
+  "recording.browse",
 ]);
 
 // ============================================================

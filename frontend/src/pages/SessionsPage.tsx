@@ -56,9 +56,8 @@ export function SessionsPage() {
   const [status, setStatus] = useState<RecordingStatusDTO | null>(null);
   const [recordings, setRecordings] = useState<RecordingEntryDTO[]>([]);
   const [label, setLabel] = useState("");
-  const [dirInput, setDirInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [savingDir, setSavingDir] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const mountedRef = useRef(true);
@@ -72,7 +71,6 @@ export function SessionsPage() {
       if (!mountedRef.current) return;
       setStatus(st);
       setRecordings(list.recordings);
-      setDirInput((prev) => prev || st.output_dir);
     } catch (e) {
       if (!mountedRef.current) return;
       setError(e instanceof Error ? e.message : String(e));
@@ -129,19 +127,22 @@ export function SessionsPage() {
     }
   };
 
-  const handleSaveDir = async () => {
-    setSavingDir(true);
+  const handleBrowseDir = async () => {
+    setBrowsing(true);
     setError(null);
     setNotice("");
     try {
-      const st = await services.recording.setOutputDir(dirInput.trim());
+      // Seletor nativo do Windows aberto pelo backend — o caminho
+      // escolhido já é aplicado e persistido em seguida.
+      const res = await services.recording.browse();
+      if (res.cancelled || !res.path) return;
+      const st = await services.recording.setOutputDir(res.path);
       setStatus(st);
-      setDirInput(st.output_dir);
       setNotice(`Pasta de gravação definida: ${st.output_dir}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setSavingDir(false);
+      setBrowsing(false);
     }
   };
 
@@ -275,28 +276,15 @@ export function SessionsPage() {
                 { label: "Pasta padrão", value: status?.default_dir ?? "—" },
               ]}
             />
-            <div className="flex flex-wrap items-end gap-2">
-              <div className="min-w-64 flex-1">
-                <label htmlFor="recording-dir" className="mb-1 block text-xs text-text-muted">
-                  Personalizar pasta
-                </label>
-                <input
-                  id="recording-dir"
-                  type="text"
-                  value={dirInput}
-                  onChange={(e) => setDirInput(e.target.value)}
-                  disabled={recording}
-                  className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-subtle focus:border-accent focus:outline-none disabled:opacity-50"
-                />
-              </div>
+            <div className="flex flex-wrap items-center gap-2">
               <Button
-                onClick={handleSaveDir}
-                loading={savingDir}
-                disabled={recording || !dirInput.trim()}
+                onClick={handleBrowseDir}
+                loading={browsing}
+                disabled={recording}
                 icon={<FolderOpen className="h-4 w-4" />}
-                data-testid="recording-save-dir-btn"
+                data-testid="recording-browse-dir-btn"
               >
-                Salvar pasta
+                Selecionar pasta…
               </Button>
             </div>
             {recording && (

@@ -19,6 +19,7 @@ from api.schemas import (
     RecordingStatusModel,
     versioned,
 )
+from core.folder_dialog import pick_folder
 
 logger = logging.getLogger(__name__)
 
@@ -121,3 +122,25 @@ async def set_output_dir(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return versioned(RecordingStatusModel(**rec.status()))
+
+
+@router.post("/browse")
+def browse_output_dir(rec=Depends(_recorder)) -> dict:
+    """Abre o seletor nativo de pastas do Windows (IFileOpenDialog).
+
+    Endpoint síncrono — roda no threadpool, então o diálogo modal não
+    bloqueia o event loop. O browser não expõe o caminho real de uma
+    pasta, por isso o seletor abre no backend (que também escreve os
+    arquivos).
+
+    Retorna {"path": <caminho>, "cancelled": false} ao confirmar ou
+    {"path": null, "cancelled": true} ao cancelar. 501 fora do Windows.
+    """
+    try:
+        path = pick_folder(
+            initial_dir=str(rec.output_dir),
+            title="Selecionar pasta de gravação",
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    return versioned({"path": path, "cancelled": path is None})

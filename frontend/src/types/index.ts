@@ -585,3 +585,11 @@ export interface RecordingListDTO {
   recordings: RecordingEntryDTO[];
   count: number;
 }
+
+/** Resposta do seletor nativo de pastas (POST /recording/browse). */
+export interface RecordingBrowseDTO {
+  /** Caminho absoluto escolhido (null quando o usuário cancelou). */
+  path: string | null;
+  /** True se o usuário fechou o seletor sem escolher. */
+  cancelled: boolean;
+}

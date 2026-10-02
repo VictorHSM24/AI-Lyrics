@@ -36,6 +36,7 @@ import type {
   OperatorVerseListDTO,
   PipelineSnapshot,
   PipelineStatusDTO,
+  RecordingBrowseDTO,
   RecordingListDTO,
   RecordingStatusDTO,
   SemanticSearchRequestDTO,
@@ -224,6 +225,11 @@ export interface RecordingService {
   stop(options?: CallOptions): Promise<RecordingStatusDTO>;
   /** Define e persiste o diretório base de gravação. */
   setOutputDir(outputDir: string, options?: CallOptions): Promise<RecordingStatusDTO>;
+  /**
+   * Abre o seletor nativo de pastas do Windows e retorna o caminho
+   * escolhido (path=null + cancelled=true quando o usuário cancela).
+   */
+  browse(options?: CallOptions): Promise<RecordingBrowseDTO>;
 }
 
 // ============================================================
@@ -403,6 +409,7 @@ export function createServices(client: Client): PresentationServices {
         { output_dir: outputDir },
         o,
       ),
+      browse: (o) => call<RecordingBrowseDTO>("recording.browse", {}, o),
     },
   };
 }
@@ -468,6 +475,7 @@ export function createStubServices(): PresentationServices {
       start: reject,
       stop: reject,
       setOutputDir: reject,
+      browse: reject,
     },
   };
 }

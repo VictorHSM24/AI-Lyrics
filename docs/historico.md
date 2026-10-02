@@ -15,6 +15,32 @@ Entradas mais recentes no topo. Formato:
 
 ---
 
+## 2026-10-02 — Seletor nativo de pastas do Windows (página Sessões)
+
+- O campo de texto "Personalizar pasta" foi substituído por um botão
+  "Selecionar pasta…" que abre o **seletor nativo do Windows**
+  (IFileOpenDialog, estilo Explorer). O browser não expõe o caminho real
+  de pastas, então o diálogo abre no backend — que também escreve os
+  arquivos. O caminho escolhido é aplicado e persistido automaticamente
+  (`POST /recording/output-dir`).
+- Novo `core/folder_dialog.py` — `pick_folder()` implementa o diálogo
+  COM via **ctypes puro**, sem dependências. Escolha deliberada:
+  tkinter é excluído do build PyInstaller (`ai-lyrics.spec`) e pywin32
+  não é dependência do projeto — ctypes funciona em dev e no exe.
+- Novo endpoint `POST /recording/browse` (síncrono → threadpool: o
+  diálogo modal não bloqueia o event loop; pasta inicial = output_dir
+  atual; janela-pai = janela em foreground para o seletor aparecer na
+  frente do browser). Retorna `{path, cancelled}`; 501 fora do Windows.
+- Frontend: `recording.browse` no SDK/transport, `browse()` no
+  `RecordingService` (+ stubs em `api/client.ts` e `createStubServices`),
+  `RecordingBrowseDTO` em `types/index.ts`.
+- Testes: `tests/test_recording_browse.py` (4 casos com pick_folder
+  mockado); `routing.test.tsx` atualizado para o novo testid.
+- Verificado: mecânica COM validada direto no Windows (CoCreateInstance,
+  Get/SetOptions, SetFolder — todos S_OK); E2E real — diálogo abriu na
+  tela e o cancelamento retornou `{path: null, cancelled: true}`;
+  typecheck OK; 21 testes backend OK; 18 testes de rota OK.
+
 ## 2026-10-02 — Gravação de auditoria do pipeline (página Sessões)
 
 - Novo `pipeline/audit_recorder.py` — `PipelineAuditRecorder`: gravação
@@ -50,7 +76,7 @@ Entradas mais recentes no topo. Formato:
   OK, smoke test E2E via browser (gravação capturou PipelineStarted,
   SpeechPartial, SpeechCommittedWords, PipelineStopped).
 
-## 2026-09-30 → presente — Observabilidade e graceful shutdown (EM ANDAMENTO, não commitado)
+## 2026-09-30 — Observabilidade e graceful shutdown (commitado em d42b7eb)
 
 - Novo `pipeline/auditing_event_store.py`: event store com auditoria.
 - `pipeline/bus.py`: suporte a handlers wildcard `"*"` que recebem TODOS os

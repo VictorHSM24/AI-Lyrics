@@ -769,6 +769,11 @@ class StreamingSTTService:
     # ------------------------------------------------------------------
 
     @property
+    def is_active(self) -> bool:
+        """True entre start() e stop() — janelas só são processadas se ativo."""
+        return self._active
+
+    @property
     def current_text(self) -> str:
         return self._current_text
 
@@ -793,6 +798,14 @@ class StreamingSTTService:
     @property
     def total_skipped_no_change(self) -> int:
         return self._total_skipped_no_change
+
+    @property
+    def total_transcriptions(self) -> int:
+        return self._total_transcriptions
+
+    @property
+    def total_skipped_empty(self) -> int:
+        return self._total_skipped_empty
 
     # Sprint 21.3.2 — métricas de anti-alucinação.
     @property

@@ -55,6 +55,8 @@ class PipelineEventBus:
     def __init__(self, store: EventStore | None = None) -> None:
         # Mapeia tipo de evento → lista de handlers (ordem de inscrição).
         self._subscriptions: dict[type, list[EventHandler]] = {}
+        # Handlers wildcard "*" — recebem TODOS os eventos publicados.
+        self._wildcard_subscriptions: list[EventHandler] = []
         # EventStore para armazenamento (injetável).
         # Se não fornecido, usa MemoryEventStore padrão.
         self._store: EventStore = store if store is not None else MemoryEventStore()
@@ -68,11 +70,14 @@ class PipelineEventBus:
     # Inscrição
     # ------------------------------------------------------------------
 
-    def subscribe(self, event_type: type, handler: EventHandler) -> None:
+    def subscribe(self, event_type: type | str, handler: EventHandler) -> None:
         """Inscreve handler para receber eventos do tipo event_type.
 
         Args:
-            event_type: classe do evento (ex.: SpeechSegmentReceived).
+            event_type: classe do evento (ex.: SpeechSegmentReceived) ou
+                a string "*" para receber TODOS os eventos (wildcard —
+                incluindo TelemetryEvents, que são dispatchados aos
+                handlers mas não persistidos no EventStore).
             handler: callable que recebe o evento.
 
         Raises:
@@ -80,20 +85,31 @@ class PipelineEventBus:
         """
         if not callable(handler):
             raise TypeError("handler deve ser callable")
+        if event_type == "*":
+            if handler not in self._wildcard_subscriptions:
+                self._wildcard_subscriptions.append(handler)
+            return
         if not isinstance(event_type, type):
-            raise TypeError("event_type deve ser uma classe")
+            raise TypeError("event_type deve ser uma classe ou '*'")
         if event_type not in self._subscriptions:
             self._subscriptions[event_type] = []
         # Evitar duplicação exata
         if handler not in self._subscriptions[event_type]:
             self._subscriptions[event_type].append(handler)
 
-    def unsubscribe(self, event_type: type, handler: EventHandler) -> bool:
+    def unsubscribe(self, event_type: type | str, handler: EventHandler) -> bool:
         """Remove inscrição de handler para event_type.
+
+        Aceita a string "*" para remover handlers wildcard.
 
         Returns:
             True se removido, False se não estava inscrito.
         """
+        if event_type == "*":
+            if handler in self._wildcard_subscriptions:
+                self._wildcard_subscriptions.remove(handler)
+                return True
+            return False
         if event_type not in self._subscriptions:
             return False
         handlers = self._subscriptions[event_type]
@@ -145,7 +161,10 @@ class PipelineEventBus:
             self._store.append(event)
         # 2. Notificar handlers (sempre — operational e telemetry).
         event_type = type(event)
-        handlers = self._subscriptions.get(event_type, [])
+        handlers = (
+            self._subscriptions.get(event_type, [])
+            + self._wildcard_subscriptions
+        )
         # Sprint 23.0 — snapshot da lista para evitar mutação durante iteração.
         for handler in list(handlers):
             try:

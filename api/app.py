@@ -139,7 +139,7 @@ def create_app() -> FastAPI:
             if full_path.startswith(("api/", "wizard/", "health", "info", "system",
                                      "audio", "pipeline", "session", "metrics",
                                      "configuration", "diagnostics", "events",
-                                     "operator", "ws")):
+                                     "operator", "recording", "ws")):
                 from fastapi import HTTPException
                 raise HTTPException(status_code=404, detail=f"Endpoint não encontrado: /{full_path}")
             # Se o path corresponde a um arquivo estático em frontend/dist,
@@ -185,6 +185,14 @@ def create_app() -> FastAPI:
             get_event_publisher().stop()
         except Exception:
             pass
+        # Fechar conexões WebSocket abertas — sem isso o graceful
+        # shutdown/reload do uvicorn fica travado esperando o endpoint
+        # WS retornar (receiver bloqueado em receive_text).
+        try:
+            from api.websocket.events import get_ws_manager
+            await get_ws_manager().close_all()
+        except Exception:
+            pass
         # Sprint 15.1 — parar audio capture e publisher.
         try:
             from api.websocket.audio_events import get_audio_event_publisher
@@ -194,6 +202,25 @@ def create_app() -> FastAPI:
         try:
             from api.startup import get_root
             get_root().audio_capture.shutdown()
+        except Exception:
+            pass
+        # Parar o streaming (SlidingWindow + StreamingSTTService) —
+        # a thread daemon morreria com o processo, mas garante join limpo.
+        try:
+            from api.startup import get_root
+            _root = get_root()
+            if getattr(_root, "sliding_window", None) is not None:
+                _root.sliding_window.stop()
+            if getattr(_root, "streaming_stt", None) is not None:
+                _root.streaming_stt.stop()
+        except Exception:
+            pass
+        # Finalizar gravação de auditoria ativa (escreve summary.json).
+        try:
+            from api.startup import get_root
+            rec = getattr(get_root(), "audit_recorder", None)
+            if rec is not None and rec.is_recording:
+                rec.stop()
         except Exception:
             pass
         # Sprint 21.9 — encerrar telemetria graciosamente (drena fila).

@@ -132,7 +132,6 @@ describe("Padrão visual das páginas", () => {
   // Páginas que ainda estão em desenvolvimento (DevelopmentPage).
   const devPages = [
     { route: "/", title: "Dashboard" },
-    { route: "/sessoes", title: "Sessões" },
     { route: "/replay", title: "Replay" },
     { route: "/logs", title: "Logs" },
     { route: "/diagnostico", title: "Diagnóstico" },
@@ -167,6 +166,18 @@ describe("Padrão visual das páginas", () => {
     expect(screen.getByTestId("console-header")).toBeInTheDocument();
     expect(screen.getByTestId("timeline-panel")).toBeInTheDocument();
     expect(screen.getByTestId("pipeline-panel")).toBeInTheDocument();
+    unmount();
+  });
+
+  it("Sessões é funcional — gravação de auditoria do pipeline", () => {
+    const { unmount } = renderRoute("/sessoes");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Sessões");
+    // Sessões é funcional — não tem "Em desenvolvimento"
+    expect(screen.queryByText("Em desenvolvimento")).not.toBeInTheDocument();
+    // Controles de gravação
+    expect(screen.getByTestId("recording-status-badge")).toBeInTheDocument();
+    expect(screen.getByTestId("recording-start-btn")).toBeInTheDocument();
+    expect(screen.getByTestId("recording-save-dir-btn")).toBeInTheDocument();
     unmount();
   });
 

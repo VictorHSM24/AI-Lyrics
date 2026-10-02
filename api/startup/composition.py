@@ -329,6 +329,9 @@ class CompositionRoot:
     reading_follow_service: Any = None  # ReadingFollowService or None
     version_command_detector: Any = None  # VersionCommandDetector or None
 
+    # Gravação de auditoria do pipeline (POST /recording/*).
+    audit_recorder: Any = None  # PipelineAuditRecorder or None
+
 
 # ---------------------------------------------------------------------------
 # Factory — cria o CompositionRoot.
@@ -409,6 +412,10 @@ def create_composition_root() -> CompositionRoot:
 
     # 2. Core
     store = MemoryEventStore()
+    # Auditoria — cada OperationalEvent publicado no bus é persistido em
+    # events.jsonl na sessão de telemetria (no-op se telemetria off).
+    from pipeline.auditing_event_store import AuditingEventStore
+    store = AuditingEventStore(store)
     bus = PipelineEventBus(store=store)
     state = PipelineState()
     session = PipelineSession.create(session_id="session-api-default")
@@ -424,6 +431,16 @@ def create_composition_root() -> CompositionRoot:
     configuration_service = ConfigurationPresentationService(
         config=config, pipeline_policy=policy,
     )
+    # Contagem viva de clientes WebSocket (o ws_client_count estático
+    # capturado no boot era sempre 0 — o manager real vive em
+    # api.websocket.events).
+    def _ws_client_count() -> int:
+        try:
+            from api.websocket.events import get_ws_manager
+            return get_ws_manager().connection_count
+        except Exception:
+            return 0
+
     health_service = HealthPresentationService(
         pipeline_state=state, bus=bus, store=store,
         stt_config=getattr(config, "stt", None),
@@ -431,9 +448,12 @@ def create_composition_root() -> CompositionRoot:
         llm_config=getattr(config, "llm", None),
         holyrics_config=getattr(config, "holyrics", None),
         audio_config=getattr(config, "audio", None),
+        pipeline_service=pipeline_service,
+        ws_client_count_provider=_ws_client_count,
     )
     diagnostic_service = DiagnosticPresentationService(
         pipeline_state=state, bus=bus, store=store,
+        pipeline_service=pipeline_service,
     )
     event_service = EventPresentationService(bus=bus)
 
@@ -847,6 +867,10 @@ def create_composition_root() -> CompositionRoot:
             # SpeechPartial / SpeechPartialUpdated / SpeechCommittedWords.
             # Sprint 28 — LocalAgreement-2 com max_context_seconds e
             # trim_margin_seconds para proteção de buffer.
+            # O serviço NÃO é iniciado aqui — start()/stop() seguem o
+            # ciclo do pipeline (POST /pipeline/start|stop). Iniciá-lo
+            # no boot deixava a thread da SlidingWindow extraindo janelas
+            # sobre um RingBuffer morto enquanto a captura estava parada.
             streaming_stt = StreamingSTTService(
                 executor=stt_executor,
                 bus=bus,
@@ -856,16 +880,15 @@ def create_composition_root() -> CompositionRoot:
                 trim_margin_seconds=0.2,
                 min_rms=0.001,
             )
-            streaming_stt.start()
 
             # SlidingWindow — extrai 6s a cada 400ms, independente do VAD.
+            # Também não é iniciada aqui — ver comentário acima.
             sliding_window = SlidingWindow(
                 ring_buffer=ring_buffer,
                 window_seconds=6.0,
                 update_interval_ms=400,
                 on_window=streaming_stt.on_window,
             )
-            sliding_window.start()
 
             # IncrementalBiblicalParser — consome SpeechPartial e publica
             # ReferenceCandidate / ReferenceDetected.
@@ -903,6 +926,12 @@ def create_composition_root() -> CompositionRoot:
                 streaming_stt=streaming_stt,
                 incremental_parser=incremental_parser,
             )
+
+            # Late-binding nos services de métricas — expõe a seção
+            # "streaming" em /pipeline/metrics e /metrics (antes o
+            # endpoint reportava apenas contadores legados zerados).
+            pipeline_service._streaming_metrics = streaming_metrics
+            metrics_service._streaming_metrics = streaming_metrics
 
             # Conectar AudioCaptureService ao RingBuffer — além do
             # SpeechPipeline (VAD) existente. O callback _on_audio_data
@@ -1227,6 +1256,17 @@ def create_composition_root() -> CompositionRoot:
         verse_presentation_service.set_state_orchestrator(state_orchestrator)
         logger.info("Sprint 28 (Fase 6): VersePresentationService coordenado com StateOrchestrator.")
 
+    # Gravação de auditoria do pipeline — sob demanda via /recording/*.
+    # A inscrição wildcard no EventBus só existe durante uma gravação
+    # (start → stop); fora dela, custo zero. Diretório de saída
+    # personalizável e persistido (default ~/Documents/AI-Lyrics/gravacoes).
+    from pipeline.audit_recorder import PipelineAuditRecorder
+    audit_recorder = PipelineAuditRecorder(bus=bus)
+    logger.info(
+        "PipelineAuditRecorder pronto (output_dir=%s).",
+        audit_recorder.output_dir,
+    )
+
     return CompositionRoot(
         bus=bus,
         store=store,
@@ -1272,6 +1312,8 @@ def create_composition_root() -> CompositionRoot:
         # Sprint 23.2 — Reading Follow Mode
         reading_follow_service=locals().get("reading_follow_service", None),
         version_command_detector=locals().get("version_command_detector", None),
+        # Gravação de auditoria
+        audit_recorder=audit_recorder,
     )
 
 

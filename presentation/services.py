@@ -74,11 +74,14 @@ class PipelinePresentationService:
         session: Any,
         metrics: Any,
         bus: Any | None = None,
+        streaming_metrics: Any | None = None,
     ) -> None:
         self._state = state
         self._session = session
         self._metrics = metrics
         self._bus = bus
+        # Sprint 19+ — StreamingPipelineMetrics (late-bound na composition).
+        self._streaming_metrics = streaming_metrics
 
     def _set_state(self, new_state: Any) -> None:
         """Substitui a referência de estado interna (Sprint 17.1)."""
@@ -93,8 +96,10 @@ class PipelinePresentationService:
         return SessionMapper.to_dto(self._session)
 
     def get_metrics(self) -> MetricsDTO:
-        """Retorna DTO das métricas atuais."""
-        return MetricsMapper.to_dto(self._metrics)
+        """Retorna DTO das métricas atuais (legadas + streaming)."""
+        return MetricsMapper.to_dto(
+            self._metrics, streaming=self._streaming_metrics,
+        )
 
     def get_snapshot(self) -> PipelineSnapshot:
         """Retorna snapshot completo do pipeline."""
@@ -227,12 +232,19 @@ class SessionPresentationService:
 class MetricsPresentationService:
     """Service para consultar métricas."""
 
-    def __init__(self, metrics: Any) -> None:
+    def __init__(
+        self,
+        metrics: Any,
+        streaming_metrics: Any | None = None,
+    ) -> None:
         self._metrics = metrics
+        self._streaming_metrics = streaming_metrics
 
     def get_metrics(self) -> MetricsDTO:
-        """Retorna DTO das métricas."""
-        return MetricsMapper.to_dto(self._metrics)
+        """Retorna DTO das métricas (legadas + streaming)."""
+        return MetricsMapper.to_dto(
+            self._metrics, streaming=self._streaming_metrics,
+        )
 
     def get_snapshot(self) -> MetricsSnapshot:
         """Retorna snapshot das métricas."""
@@ -406,8 +418,16 @@ class HealthPresentationService:
         audio_config: Any | None = None,
         ws_server: Any | None = None,
         ws_client_count: int = 0,
+        pipeline_service: Any | None = None,
+        ws_client_count_provider: Any | None = None,
     ) -> None:
         self._pipeline_state = pipeline_state
+        # PipelinePresentationService — fonte viva do estado do pipeline.
+        # O pipeline_state acima é uma snapshot imutável do boot: quando o
+        # pipeline inicia, o service substitui seu _state interno e esta
+        # referência fica obsoleta (era a causa de /health reportar
+        # "Pipeline parado" durante uma sessão ativa).
+        self._pipeline_service = pipeline_service
         self._bus = bus
         self._store = store
         self._stt = stt
@@ -421,6 +441,9 @@ class HealthPresentationService:
         self._audio_config = audio_config
         self._ws_server = ws_server
         self._ws_client_count = ws_client_count
+        # Provider de contagem viva de clientes WS (o int acima é estático,
+        # capturado no boot e sempre 0).
+        self._ws_client_count_provider = ws_client_count_provider
 
     def backend_health(self) -> HealthDTO:
         """Saúde do backend (sempre saudável se o endpoint responde)."""
@@ -430,9 +453,15 @@ class HealthPresentationService:
     def websocket_health(self) -> HealthDTO:
         """Saúde do WebSocket (verificação real)."""
         from presentation.health_checks import check_websocket_health
+        connected = self._ws_client_count
+        if self._ws_client_count_provider is not None:
+            try:
+                connected = int(self._ws_client_count_provider())
+            except Exception:
+                connected = self._ws_client_count
         return check_websocket_health(
             ws_server=self._ws_server,
-            connected_clients=self._ws_client_count,
+            connected_clients=connected,
         )
 
     def eventstream_health(self) -> HealthDTO:
@@ -442,6 +471,13 @@ class HealthPresentationService:
 
     def pipeline_health(self) -> HealthDTO:
         """Saúde do pipeline."""
+        svc = self._pipeline_service
+        if svc is not None:
+            if svc.is_paused():
+                return HealthMapper.degraded("pipeline", "Pipeline pausado")
+            if svc.is_running():
+                return HealthMapper.healthy("pipeline", "Pipeline em execução")
+            return HealthMapper.unhealthy("pipeline", "Pipeline parado")
         if self._pipeline_state is None:
             return HealthMapper.unknown("pipeline", "state not available")
         if self._pipeline_state.is_active:
@@ -559,8 +595,12 @@ class DiagnosticPresentationService:
         pipeline_state: Any | None = None,
         bus: Any | None = None,
         store: Any | None = None,
+        pipeline_service: Any | None = None,
     ) -> None:
         self._pipeline_state = pipeline_state
+        # PipelinePresentationService — estado vivo do pipeline (a
+        # snapshot acima fica congelada em running=False do boot).
+        self._pipeline_service = pipeline_service
         self._bus = bus
         self._store = store
 
@@ -598,6 +638,17 @@ class DiagnosticPresentationService:
 
     def pipeline_diagnostic(self) -> DiagnosticDTO:
         """Diagnóstico do pipeline."""
+        if self._pipeline_service is not None:
+            status = self._pipeline_service.get_status()
+            return DiagnosticMapper.to_dto(
+                component="pipeline", category="pipeline",
+                available=status.running,
+                info={
+                    "running": status.running,
+                    "paused": status.paused,
+                    "last_event_type": status.last_event_type,
+                },
+            )
         if self._pipeline_state is None:
             return DiagnosticMapper.to_dto(
                 component="pipeline", category="pipeline",

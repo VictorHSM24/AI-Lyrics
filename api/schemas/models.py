@@ -199,9 +199,13 @@ class MetricsModel(BaseModel):
     processing_success_rate: float
     duration_s: float
     correlation_count: int
+    # Métricas do Streaming Pipeline (Sprint 19+). None quando o coletor
+    # não está disponível (ex.: test_mode).
+    streaming: dict | None = None
 
     @classmethod
     def from_dto(cls, dto: Any) -> "MetricsModel":
+        streaming = getattr(dto, "streaming", None)
         return cls(
             segments_received=dto.segments_received,
             segments_processed=dto.segments_processed,
@@ -227,6 +231,7 @@ class MetricsModel(BaseModel):
             processing_success_rate=dto.processing_success_rate,
             duration_s=dto.duration_s,
             correlation_count=dto.correlation_count,
+            streaming=streaming if isinstance(streaming, dict) else None,
         )
 
 
@@ -365,6 +370,40 @@ class EventSnapshotModel(BaseModel):
             event_count=dto.event_count,
             event_types=tuple(dto.event_types),
         )
+
+
+class RecordingStatusModel(BaseModel):
+    """Status do PipelineAuditRecorder (gravação de auditoria)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    recording: bool
+    label: str = ""
+    output_dir: str = ""
+    default_dir: str = ""
+    session_dir: str | None = None
+    started_at: float | None = None
+    elapsed_s: float = 0.0
+    events_count: int = 0
+    telemetry_count: int = 0
+    errors_count: int = 0
+    last_error: str = ""
+    last_summary: dict | None = None
+
+
+class RecordingEntryModel(BaseModel):
+    """Entrada de uma gravação anterior (list_recordings)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    path: str
+    started_at: str = ""
+    duration_s: float = 0.0
+    events_count: int = 0
+    errors_count: int = 0
+    label: str = ""
+    has_summary: bool = False
 
 
 # ---------------------------------------------------------------------------

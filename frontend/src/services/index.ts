@@ -36,6 +36,8 @@ import type {
   OperatorVerseListDTO,
   PipelineSnapshot,
   PipelineStatusDTO,
+  RecordingListDTO,
+  RecordingStatusDTO,
   SemanticSearchRequestDTO,
   SemanticSearchResponseDTO,
   SessionDTO,
@@ -205,6 +207,26 @@ export interface OperatorService {
 }
 
 // ============================================================
+// RecordingService — gravação de auditoria do pipeline (Sessões).
+// ============================================================
+
+export interface RecordingStartParams {
+  /** Override pontual do diretório base (não persiste). */
+  output_dir?: string;
+  /** Rótulo livre da gravação (ex.: "culto de domingo"). */
+  label?: string;
+}
+
+export interface RecordingService {
+  getStatus(options?: CallOptions): Promise<RecordingStatusDTO>;
+  list(limit?: number, options?: CallOptions): Promise<RecordingListDTO>;
+  start(params: RecordingStartParams, options?: CallOptions): Promise<RecordingStatusDTO>;
+  stop(options?: CallOptions): Promise<RecordingStatusDTO>;
+  /** Define e persiste o diretório base de gravação. */
+  setOutputDir(outputDir: string, options?: CallOptions): Promise<RecordingStatusDTO>;
+}
+
+// ============================================================
 // PresentationServices — agregador.
 // ============================================================
 
@@ -221,6 +243,7 @@ export interface PresentationServices {
   system: SystemService;
   info: InfoService;
   operator: OperatorService;
+  recording: RecordingService;
 }
 
 // ============================================================
@@ -362,6 +385,25 @@ export function createServices(client: Client): PresentationServices {
         o,
       ),
     },
+    recording: {
+      getStatus: (o) => call<RecordingStatusDTO>("recording.status", {}, o),
+      list: (limit, o) => call<RecordingListDTO>(
+        "recording.list",
+        { limit: limit ?? 20 },
+        o,
+      ),
+      start: (params, o) => call<RecordingStatusDTO>(
+        "recording.start",
+        params as unknown as Record<string, unknown>,
+        o,
+      ),
+      stop: (o) => call<RecordingStatusDTO>("recording.stop", {}, o),
+      setOutputDir: (outputDir, o) => call<RecordingStatusDTO>(
+        "recording.setOutputDir",
+        { output_dir: outputDir },
+        o,
+      ),
+    },
   };
 }
 
@@ -419,6 +461,13 @@ export function createStubServices(): PresentationServices {
       setVersion: reject,
       setAutoVersion: reject,
       semanticSearch: reject,
+    },
+    recording: {
+      getStatus: reject,
+      list: reject,
+      start: reject,
+      stop: reject,
+      setOutputDir: reject,
     },
   };
 }

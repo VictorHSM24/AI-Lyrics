@@ -96,5 +96,12 @@ export function createPresentationApi(): PresentationApi {
       setAutoVersion: notImplemented,
       semanticSearch: notImplemented,
     },
+    recording: {
+      getStatus: notImplemented,
+      list: notImplemented,
+      start: notImplemented,
+      stop: notImplemented,
+      setOutputDir: notImplemented,
+    },
   };
 }

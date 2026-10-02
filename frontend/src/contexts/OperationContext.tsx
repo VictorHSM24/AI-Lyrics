@@ -326,7 +326,7 @@ async function checkStartupStep(
         }
       }
       const health = stores.health.current?.data;
-      const stt = health?.components.find((c) => c.component === "stt");
+      const stt = health?.components.find((c) => c.component === "speech_recognition");
       if (!stt) {
         return { ok: false, message: "Componente STT não encontrado" };
       }

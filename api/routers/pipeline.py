@@ -98,10 +98,19 @@ async def start_pipeline(
         if root.speech_worker is not None and not root.speech_worker.is_running:
             root.speech_worker.start()
 
-        # 4. Atualizar estado lógico do pipeline + publicar PipelineStarted.
+        # 4. Iniciar Streaming STT — StreamingSTTService primeiro (marca
+        #    ativo para não perder a 1ª janela), depois SlidingWindow.
+        #    Ambos idempotentes; streaming_stt.start() reseta o estado de
+        #    LocalAgreement-2, por isso só se ainda não estiver ativo.
+        if root.streaming_stt is not None and not root.streaming_stt.is_active:
+            root.streaming_stt.start()
+        if root.sliding_window is not None:
+            root.sliding_window.start()
+
+        # 5. Atualizar estado lógico do pipeline + publicar PipelineStarted.
         svc.start()
 
-        # 5. Retornar status atualizado.
+        # 6. Retornar status atualizado.
         dto = svc.get_status()
         model = PipelineStatusModel.from_dto(dto)
         return versioned(model)
@@ -143,10 +152,18 @@ async def stop_pipeline(
             except Exception as e:
                 logger.warning("Audio capture stop failed: %s", e)
 
-        # 4. Atualizar estado lógico + publicar PipelineStopped.
+        # 4. Parar Streaming STT — SlidingWindow primeiro (cessa a
+        #    extração de janelas sobre o RingBuffer), depois o
+        #    StreamingSTTService (marca inativo).
+        if root.sliding_window is not None:
+            root.sliding_window.stop()
+        if root.streaming_stt is not None:
+            root.streaming_stt.stop()
+
+        # 5. Atualizar estado lógico + publicar PipelineStopped.
         svc.stop(reason="manual_stop")
 
-        # 5. Retornar status atualizado.
+        # 6. Retornar status atualizado.
         dto = svc.get_status()
         model = PipelineStatusModel.from_dto(dto)
         return versioned(model)

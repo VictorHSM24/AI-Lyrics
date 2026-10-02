@@ -17,6 +17,10 @@ data/frequentes.json
 
 # Logs (runtime)
 logs/*.jsonl
+*.log
+
+# Preferências de runtime da gravação de auditoria
+data/recording_prefs.json
 
 # Ambiente
 .env

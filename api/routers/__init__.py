@@ -9,6 +9,7 @@ from api.routers.info import router as info_router
 from api.routers.metrics import router as metrics_router
 from api.routers.operator import router as operator_router
 from api.routers.pipeline import router as pipeline_router
+from api.routers.recording import router as recording_router
 from api.routers.session import router as session_router
 from api.routers.system import router as system_router
 
@@ -24,6 +25,7 @@ ALL_ROUTERS = [
     diagnostics_router,
     events_router,
     operator_router,
+    recording_router,
 ]
 
 __all__ = ["ALL_ROUTERS"]

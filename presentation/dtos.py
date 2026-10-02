@@ -234,6 +234,9 @@ class MetricsDTO:
     processing_success_rate: float
     duration_s: float
     correlation_count: int
+    # Sprint 19+ — métricas do Streaming Pipeline (dict ou None se o
+    # coletor não estiver disponível).
+    streaming: dict | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -261,6 +264,7 @@ class MetricsDTO:
             "processing_success_rate": self.processing_success_rate,
             "duration_s": self.duration_s,
             "correlation_count": self.correlation_count,
+            "streaming": self.streaming,
         }
 
 

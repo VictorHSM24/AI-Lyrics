@@ -99,6 +99,12 @@ const METHOD_TO_ENDPOINT: Record<string, string> = {
   "operator.setAutoVersion": "/operator/version/auto",
   // Sprint 28 (Fase 9) — Busca Semântica com Ollama.
   "operator.semanticSearch": "/operator/semantic-search",
+  // Gravação de auditoria do pipeline (página Sessões).
+  "recording.status": "/recording/status",
+  "recording.list": "/recording/recordings",
+  "recording.start": "/recording/start",
+  "recording.stop": "/recording/stop",
+  "recording.setOutputDir": "/recording/output-dir",
 };
 
 /** Métodos que usam PUT (body JSON) em vez de GET (query params). */
@@ -123,6 +129,9 @@ const POST_METHODS: ReadonlySet<string> = new Set([
   "operator.setVersion",
   "operator.semanticSearch",
   "system.restart",
+  "recording.start",
+  "recording.stop",
+  "recording.setOutputDir",
 ]);
 
 // ============================================================

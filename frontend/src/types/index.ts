@@ -534,3 +534,54 @@ export interface AutoVersionResultDTO {
   message: string;
   auto_enabled: boolean;
 }
+
+// ============================================================
+// Gravação de auditoria do pipeline (página Sessões).
+// ============================================================
+
+export interface RecordingStatusDTO {
+  /** True se uma gravação está em andamento. */
+  recording: boolean;
+  /** Rótulo livre da gravação atual. */
+  label: string;
+  /** Diretório base efetivo (preferido ou default). */
+  output_dir: string;
+  /** Diretório padrão (~/Documents/AI-Lyrics/gravacoes). */
+  default_dir: string;
+  /** Diretório da gravação ativa (null quando parado). */
+  session_dir: string | null;
+  /** Timestamp epoch do início (null quando parado). */
+  started_at: number | null;
+  /** Segundos decorridos da gravação ativa. */
+  elapsed_s: number;
+  /** Eventos operacionais gravados. */
+  events_count: number;
+  /** Eventos de telemetria gravados. */
+  telemetry_count: number;
+  /** Erros capturados (eventos de erro + logs ERROR+). */
+  errors_count: number;
+  /** Último erro registrado ("" se nenhum). */
+  last_error: string;
+  /** Summary da última gravação concluída. */
+  last_summary: Record<string, unknown> | null;
+}
+
+export interface RecordingEntryDTO {
+  /** Nome do diretório (gravacao_YYYYMMDD_HHMMSS). */
+  name: string;
+  /** Caminho completo no disco. */
+  path: string;
+  /** Início (ISO) — de summary.json quando disponível. */
+  started_at: string;
+  duration_s: number;
+  events_count: number;
+  errors_count: number;
+  label: string;
+  /** True se summary.json existe (gravação finalizada). */
+  has_summary: boolean;
+}
+
+export interface RecordingListDTO {
+  recordings: RecordingEntryDTO[];
+  count: number;
+}

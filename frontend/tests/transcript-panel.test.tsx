@@ -61,7 +61,7 @@ describe("TranscriptPanel", () => {
 
   it("mostra mensagem de nenhuma transcrição ainda", () => {
     renderWithProviders(<TranscriptPanel />);
-    expect(screen.getByText("Nenhuma transcrição ainda.")).toBeTruthy();
+    expect(screen.getByText("Nenhuma transcrição confirmada ainda.")).toBeTruthy();
   });
 
   it("mostra badge Inativo no estado inicial", () => {

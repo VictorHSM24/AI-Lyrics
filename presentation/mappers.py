@@ -117,7 +117,20 @@ class MetricsMapper:
     """Mapeia PipelineMetrics → MetricsDTO."""
 
     @staticmethod
-    def to_dto(metrics: Any) -> MetricsDTO:
+    def to_dto(metrics: Any, streaming: Any = None) -> MetricsDTO:
+        """Mapeia PipelineMetrics + StreamingPipelineMetrics opcional.
+
+        Args:
+            metrics: PipelineMetrics legado.
+            streaming: StreamingPipelineMetrics (ou dict já serializado,
+                ou None). Incluído no DTO sob o campo `streaming`.
+        """
+        streaming_dict = None
+        if streaming is not None:
+            if hasattr(streaming, "to_dict"):
+                streaming_dict = streaming.to_dict()
+            elif isinstance(streaming, dict):
+                streaming_dict = streaming
         return MetricsDTO(
             segments_received=metrics.segments_received,
             segments_processed=metrics.segments_processed,
@@ -143,6 +156,7 @@ class MetricsMapper:
             processing_success_rate=metrics.processing_success_rate,
             duration_s=metrics.duration_s,
             correlation_count=metrics.correlation_count,
+            streaming=streaming_dict,
         )
 
 

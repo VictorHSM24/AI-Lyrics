@@ -90,6 +90,15 @@ async def start_capture(
             root.speech_pipeline.start()
         if root.speech_worker is not None and not root.speech_worker.is_running:
             root.speech_worker.start()
+        # Se o pipeline está ativo, o streaming acompanha a captura
+        # (ex.: captura reiniciada durante uma sessão). Fora de pipeline
+        # (teste de mic em Configurações), não transcreve.
+        pipeline_service = getattr(root, "pipeline_service", None)
+        if pipeline_service is not None and pipeline_service.is_running():
+            if root.streaming_stt is not None and not root.streaming_stt.is_active:
+                root.streaming_stt.start()
+            if root.sliding_window is not None:
+                root.sliding_window.start()
         # Emitir evento WebSocket audio.started.
         from api.websocket.audio_events import get_audio_event_publisher
         try:
@@ -147,6 +156,13 @@ async def stop_capture(
         if root.speech_worker is not None and root.speech_worker.is_running:
             root.speech_worker.stop()
         result = svc.stop_capture()
+        # Parar o streaming junto com a captura: SlidingWindow primeiro
+        # (cessa a extração sobre o RingBuffer), depois o STT service.
+        # Sem isto a thread continuava rodando sobre buffer morto.
+        if root.sliding_window is not None:
+            root.sliding_window.stop()
+        if root.streaming_stt is not None:
+            root.streaming_stt.stop()
         _publish_pipeline_stopped(root, reason="audio_stopped")
         # Emitir evento WebSocket audio.stopped.
         from api.websocket.audio_events import get_audio_event_publisher

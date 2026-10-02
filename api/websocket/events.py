@@ -94,6 +94,23 @@ class ConnectionManager:
     def connection_count(self) -> int:
         return len(self._connections)
 
+    async def close_all(self) -> None:
+        """Fecha todas as conexões ativas (usado no shutdown da app).
+
+        Sem isso, o graceful shutdown do uvicorn fica travado esperando
+        o endpoint WS retornar (receiver bloqueado em receive_text) —
+        observado em prática: --reload levou >2min com WS aberto.
+        """
+        async with self._lock:
+            conns = list(self._connections)
+        for ws in conns:
+            try:
+                await ws.close()
+            except Exception:
+                pass
+        if conns:
+            logger.info("WebSocket: %d conexão(ões) fechadas no shutdown.", len(conns))
+
     async def broadcast_event(self, event_dto: Any) -> None:
         """Enfileira evento para todas as conexões ativas.
 

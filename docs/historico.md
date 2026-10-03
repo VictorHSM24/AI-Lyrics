@@ -15,6 +15,31 @@ Entradas mais recentes no topo. Formato:
 
 ---
 
+## 2026-10-02 — Fix: LocalAgreement-2 re-commitava bloco reescrito (1 Crônicas 28 não apresentado)
+
+- Diagnóstico da gravação `gravacao_20261002_195356` (~00:15): o
+  pregador disse "1ª Crônica, capítulo 28, versículo 9" e nada foi
+  apresentado. Causa-raiz no STT, não no parser: o Whisper reescreveu
+  palavras já committed ("crônia" → "crônicas", removeu "versículo"),
+  quebrando o prefix-match exato de `_local_agreement` contra a cauda
+  do committed → `already_committed=0` → o bloco estável
+  "crônicas, capítulo 28, 9." foi re-emitido como novo **5×**. O parser
+  acumulou tokens duplicados ("...cronicas capitulo cronicas capitulo
+  28 9...") e a gramática não reconheceu a referência ("cronicas"
+  sozinho não é alias — exige prefixo numérico, por ambiguidade 1ª/2ª).
+- `microfone/streaming_stt_service.py`: novo helper
+  `_committed_prefix_consumed` alinha o prefixo estável com a cauda do
+  committed via `difflib.SequenceMatcher` — bloco que alcança o fim do
+  committed consome o prefixo; sem bloco no fim, blocos interiores ≥2
+  também consomem (reescrita na cauda). `_local_agreement` passa a
+  emitir só o sufixo realmente novo.
+- `tests/test_committed_diff.py`: 7 testes de regressão (reproduz o
+  cenário da gravação: reescrita no fim não re-commita; continuação
+  emite só o sufixo; fluxo normal intocado).
+- Verificado: replay exato dos deltas gravados reproduziu a falha e
+  passa com o fix; suíte completa 3583 verde.
+- Commit: `823eef1`
+
 ## 2026-10-02 — Follow retoma por voz após parada manual
 
 - Diagnóstico da gravação `gravacao_20261002_195356`: o pregador disse

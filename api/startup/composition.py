@@ -913,12 +913,17 @@ def create_composition_root() -> CompositionRoot:
                 getattr(ip_config, "carry_seconds", 10.0)
                 if ip_config is not None else 10.0
             )
+            ip_anchor_seconds = float(
+                getattr(ip_config, "anchor_seconds", 600.0)
+                if ip_config is not None else 600.0
+            )
             incremental_parser = IncrementalBiblicalParser(
                 books=parser_books_s19,
                 bus=bus,
                 session_id=session.session_id,
                 chapter_anticipation=ip_chapter_anticipation,
                 carry_seconds=ip_carry_seconds,
+                anchor_seconds=ip_anchor_seconds,
             )
             incremental_parser.start()
 

@@ -109,6 +109,10 @@ mode: "auto"
 incremental_parser:
   chapter_anticipation: false
   carry_seconds: 10
+  # Sprint 32 — âncora de contexto: "capítulo 5, versículo 10" ou
+  # "versículo 20" sem nome do livro continuam da última referência.
+  # Segundos de validade da âncora (0 = desativa).
+  anchor_seconds: 600
 
 # Sprint 32 — cadência da janela deslizante de STT.
 # Cada transcrição (janela de window_seconds) ocupa a GPU por ~250-300ms

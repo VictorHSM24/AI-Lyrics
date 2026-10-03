@@ -340,10 +340,14 @@ class IncrementalParserConfig:
             capítulo foi falado (default False — spec do benchmark).
         carry_seconds: janela para completar uma referência iniciada
             antes de uma pausa (default 10s).
+        anchor_seconds: validade da âncora livro/capítulo (Sprint 32) —
+            "capítulo 5, versículo 10" sem nome do livro continua da
+            última referência apresentada (default 600s; 0 desativa).
     """
 
     chapter_anticipation: bool = False
     carry_seconds: float = 10.0
+    anchor_seconds: float = 600.0
 
 
 @dataclass(frozen=True)

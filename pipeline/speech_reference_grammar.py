@@ -404,6 +404,7 @@ def parse_mention(tokens: list[str], m: BookMention, limit: int,
 def parse_continuation(tokens: list[str], start: int, limit: int,
                        book: Book, conf: float, chapter: int | None,
                        bounds: CanonBounds, *, lead: int | None,
+                       allow_bare_pair: bool = True,
                        final: bool = False) -> RefParse | None:
     """Continuação sem nome do livro (contexto já conhecido).
 
@@ -413,6 +414,10 @@ def parse_continuation(tokens: list[str], start: int, limit: int,
     [pausa] "capítulo 14, versículo 10") — ``lead=MAX_CARRY_LEAD``, só
     no início da fala. Só aceita marcadores explícitos ou o par
     compacto "N M" (ex.: "10:27"); nunca um número solto.
+
+    ``allow_bare_pair=False`` (âncora persistente, Sprint 32): exige
+    marcador explícito — o par compacto "14 10" no meio da fala NÃO
+    continua da âncora.
     """
     scan_end = limit if lead is None else min(limit, start + lead + 1)
     for j in range(start, scan_end):
@@ -425,8 +430,8 @@ def parse_continuation(tokens: list[str], start: int, limit: int,
         if tok in VERSE_MARKERS and chapter is not None and num is not None:
             return _finish(book, conf, bounds, tokens, limit, final, chapter, j,
                            num, j + 1, False, j + 2)
-        if (lead is not None and chapter is None and is_num(tok)
-                and j + 1 < limit and is_num(tokens[j + 1])):
+        if (allow_bare_pair and lead is not None and chapter is None
+                and is_num(tok) and j + 1 < limit and is_num(tokens[j + 1])):
             return _finish(book, conf, bounds, tokens, limit, final, int(tok), j,
                            int(tokens[j + 1]), j + 1, False, j + 2)
         if lead is not None and (is_num(tok) or tok in VERSE_MARKERS):

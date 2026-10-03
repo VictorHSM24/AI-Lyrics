@@ -304,7 +304,9 @@ def test_carry_across_pause_compact_pair(chunk):
 
 
 def test_carry_expires():
-    h = Harness(carry_seconds=10.0)
+    # Âncora desativada: o teste mede a expiração do CARRY (10s).
+    # Com âncora ligada (Sprint 32), a mesma fala resolve pela âncora.
+    h = Harness(carry_seconds=10.0, anchor_seconds=0)
     h.say("abra no livro de primeiro coríntios")
     h.clock.t += 11
     h.say("capítulo quatorze versículo dez")

@@ -50,6 +50,7 @@ from pipeline.events import (
     ReferenceDetected,
     SpeechCommittedWords,
     SpeechTranscribed,
+    VersePresented,
 )
 from pipeline.metadata import EventMetadata
 from pipeline.speech_reference_grammar import (
@@ -80,6 +81,15 @@ _DEFAULT_ANTICIPATION_THRESHOLD = 0.60
 
 # Janela para completar uma referência iniciada antes de uma pausa.
 _DEFAULT_CARRY_SECONDS = 10.0
+
+# Âncora persistente (Sprint 32): validade do contexto livro/capítulo
+# para continuações SEM nome do livro ("capítulo 5", "versículo 10",
+# "capítulo 5, versículo 10") ditas depois — exige marcador explícito.
+_DEFAULT_ANCHOR_SECONDS = 600.0
+
+# Quantos tokens podem preceder o marcador na continuação ancorada
+# ("agora, no capítulo cinco, versículo dez" → lead=4 cobre "agora no").
+_ANCHOR_LEAD = 4
 
 # Palavras por extenso que ainda podem continuar via "e" ("vinte e oito").
 _CONTINUABLE_NUMBERS = frozenset({
@@ -147,6 +157,7 @@ class IncrementalBiblicalParser:
         chapter_anticipation: bool = False,
         bounds: CanonBounds | None = None,
         carry_seconds: float = _DEFAULT_CARRY_SECONDS,
+        anchor_seconds: float = _DEFAULT_ANCHOR_SECONDS,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._books = books
@@ -161,6 +172,7 @@ class IncrementalBiblicalParser:
         self._anticipation_threshold = anticipation_threshold
         self._chapter_anticipation = chapter_anticipation
         self._carry_seconds = carry_seconds
+        self._anchor_seconds = anchor_seconds
         self._clock = clock
         self._subscribed = False
         self._lock = threading.RLock()
@@ -168,6 +180,10 @@ class IncrementalBiblicalParser:
         # Contexto cross-utterance (sobrevive ao reset): (book, conf,
         # chapter|None, deadline).
         self._carry: tuple[Any, float, int | None, float] | None = None
+        # Âncora persistente (Sprint 32): última posição referenciada/
+        # apresentada — (book, conf, chapter|None, deadline). Sobrevive
+        # a resets e a utterances completas; expira por TTL.
+        self._anchor: tuple[Any, float, int | None, float] | None = None
 
         self._total_partials_processed = 0
         self._total_candidates_published = 0
@@ -192,6 +208,7 @@ class IncrementalBiblicalParser:
             return
         self._bus.subscribe(SpeechCommittedWords, self._on_committed_words)
         self._bus.subscribe(SpeechTranscribed, self._on_transcribed)
+        self._bus.subscribe(VersePresented, self._on_verse_presented)
         self._bus.subscribe(PipelineStopped, self._on_pipeline_stopped)
         self._subscribed = True
         logger.info("IncrementalBiblicalParser started.")
@@ -202,6 +219,7 @@ class IncrementalBiblicalParser:
             return
         self._bus.unsubscribe(SpeechCommittedWords, self._on_committed_words)
         self._bus.unsubscribe(SpeechTranscribed, self._on_transcribed)
+        self._bus.unsubscribe(VersePresented, self._on_verse_presented)
         self._bus.unsubscribe(PipelineStopped, self._on_pipeline_stopped)
         self._subscribed = False
         logger.info("IncrementalBiblicalParser stopped.")
@@ -261,10 +279,21 @@ class IncrementalBiblicalParser:
                 self.reset()
         self._flush(outbox)
 
+    def _on_verse_presented(self, event: VersePresented) -> None:
+        """Versículo na tela (voz, painel ou follow) vira a nova âncora:
+        "capítulo X" / "versículo Y" seguintes continuam a partir dele."""
+        with self._lock:
+            try:
+                book = self._books.by_id(event.book_id)
+            except KeyError:
+                return
+            self._set_anchor(book, 1.0, event.chapter)
+
     def _on_pipeline_stopped(self, event: PipelineStopped) -> None:
         """Captura parada: descarta tudo, inclusive o contexto de pausa."""
         with self._lock:
             self._carry = None
+            self._anchor = None
             self.reset()
         logger.info("IncrementalBiblicalParser: pipeline stopped — state cleared.")
 
@@ -318,9 +347,16 @@ class IncrementalBiblicalParser:
                 r = parse_continuation(tokens, self._scan_start, first, book, conf,
                                        ch, self._bounds, lead=None, final=final)
                 kind = "correction"
-            elif self._carry_usable and self._scan_start == 0:
-                r = self._try_carry(tokens, first, mentions, final)
-                kind = "carry"
+            elif self._scan_start == 0 and (
+                    self._carry_usable or self._anchor is not None):
+                if self._carry_usable:
+                    r = self._try_carry(tokens, first, mentions, final)
+                    if r is not None:
+                        kind = "carry"
+                if r is None and self._anchor is not None:
+                    r = self._try_anchor(tokens, first, mentions, final)
+                    if r is not None:
+                        kind = "anchor"
 
             if r is None:
                 if not mentions:
@@ -360,6 +396,33 @@ class IncrementalBiblicalParser:
             self._carry_usable = False
         return None
 
+    def _try_anchor(self, tokens: list[str], first: int, mentions: list,
+                    final: bool) -> RefParse | None:
+        """Continuação ancorada (Sprint 32): "capítulo 5", "versículo 10",
+        "capítulo 5, versículo 10" — sem nome do livro, reusa a última
+        posição referenciada/apresentada. Só aceita marcadores
+        explícitos; uma menção de livro próxima (pregador mudou de
+        livro) desativa a tentativa nesta utterance."""
+        book, conf, ch, deadline = self._anchor  # type: ignore[misc]
+        if self._clock() > deadline:
+            self._anchor = None
+            return None
+        if mentions and first <= _ANCHOR_LEAD:
+            return None  # livro explícito no início — não continuar âncora
+        r = parse_continuation(tokens, 0, first, book, conf, ch,
+                               self._bounds, lead=_ANCHOR_LEAD,
+                               allow_bare_pair=False, final=final)
+        if r is not None and not r.open:
+            logger.info(
+                "IncrementalParser: anchored continuation — %s %s:%s.",
+                book.canonical, r.chapter, r.verse)
+        return r
+
+    def _set_anchor(self, book: Any, conf: float, chapter: int | None) -> None:
+        if self._anchor_seconds > 0:
+            self._anchor = (book, conf, chapter,
+                            self._clock() + self._anchor_seconds)
+
     def _handle(self, r: RefParse, kind: str, source: Any, outbox: list[Any]) -> bool:
         """Publica o que ``r`` justifica. True = avançou (reavaliar)."""
         if r.rejected:
@@ -369,6 +432,9 @@ class IncrementalBiblicalParser:
             )
             self._scan_start = max(r.end, self._scan_start + 1)
             return True
+        # Toda referência reconhecida vira a nova âncora (Sprint 32):
+        # book-only → âncora sem capítulo; chapter → âncora com capítulo.
+        self._set_anchor(r.book, r.confidence, r.chapter)
         if r.verse is not None:
             self._emit(r, "verse", source, outbox)
             self._context = (r.book, r.confidence, r.chapter)

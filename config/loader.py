@@ -475,6 +475,7 @@ def _build_incremental_parser(data: dict[str, Any]) -> IncrementalParserConfig:
     return IncrementalParserConfig(
         chapter_anticipation=bool(data.get("chapter_anticipation", False)),
         carry_seconds=float(data.get("carry_seconds", 10.0)),
+        anchor_seconds=float(data.get("anchor_seconds", 600.0)),
     )
 
 

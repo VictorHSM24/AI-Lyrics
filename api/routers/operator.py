@@ -154,6 +154,15 @@ class PresentVerseResult(BaseModel):
     latency_ms: int = 0
 
 
+class ClosePresentationResult(BaseModel):
+    """Resultado de POST /operator/close-presentation."""
+    model_config = ConfigDict(frozen=True)
+    ok: bool
+    message: str
+    reference: str = ""
+    latency_ms: int = 0
+
+
 class HistoryEntryModel(BaseModel):
     model_config = ConfigDict(frozen=True)
     reference: str
@@ -515,6 +524,90 @@ def _publish_failure(
         latency_ms=latency_ms,
     )
     root.bus.publish(failed)
+
+
+@router.post("/close-presentation")
+@router.post("/close-presentation/")
+async def close_presentation(
+    root: CompositionRoot = Depends(get_composition_root),
+) -> dict:
+    """Encerra a apresentação atual no Holyrics (equivalente ao ESC).
+
+    Chama HolyricsClient.close_presentation() — a mesma camada oficial
+    usada para apresentar — liberando o telão. Após confirmação,
+    publica VersePresentationClosed no EventBus para que o painel e
+    todos os componentes atualizem automaticamente (mesmo padrão de
+    VersePresented em POST /operator/present).
+    """
+    holyrics = _get_holyrics(root)
+
+    # Referência do último versículo apresentado (para o evento/log).
+    reference = ""
+    try:
+        from pipeline.events import VersePresented
+        events = root.store.by_event(VersePresented)
+        if events:
+            reference = events[-1].reference
+    except Exception:
+        pass
+
+    t0 = time.monotonic()
+    try:
+        resp = holyrics.close_presentation()
+    except Exception as e:
+        latency_ms = int((time.monotonic() - t0) * 1000)
+        logger.warning("operator: erro encerrando apresentação: %s", e)
+        return versioned(ClosePresentationResult(
+            ok=False,
+            message=f"Falha ao encerrar apresentação: {e}",
+            reference=reference,
+            latency_ms=latency_ms,
+        ).model_dump())
+
+    latency_ms = int((time.monotonic() - t0) * 1000)
+    _publish_closed(
+        root,
+        reference=reference,
+        holyrics_status=str(resp.get("status", "")),
+        latency_ms=latency_ms,
+    )
+    return versioned(ClosePresentationResult(
+        ok=True,
+        message="Apresentação encerrada — telão liberado.",
+        reference=reference,
+        latency_ms=latency_ms,
+    ).model_dump())
+
+
+def _publish_closed(
+    root: CompositionRoot,
+    reference: str,
+    holyrics_status: str,
+    latency_ms: int,
+) -> None:
+    """Publica VersePresentationClosed no EventBus (mesmo padrão do present)."""
+    from pipeline.events import VersePresentationClosed
+    from pipeline.metadata import EventMetadata
+
+    session_id = root.session.session_id
+    meta = EventMetadata.for_initial(
+        session_id=session_id,
+        origin="OperatorPanel",
+    )
+    closed = VersePresentationClosed(
+        meta=meta,
+        reference=reference,
+        closed_by="operator",
+        holyrics_status=holyrics_status,
+        latency_ms=latency_ms,
+    )
+    root.bus.publish(closed)
+    logger.info(
+        "OperatorPanel closed presentation %s (status=%s, latency=%dms)",
+        reference or "-",
+        holyrics_status,
+        latency_ms,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -406,6 +406,14 @@ export interface OperatorPresentResultDTO {
   latency_ms: number;
 }
 
+/** Resultado de POST /operator/close-presentation (ESC — libera o telão). */
+export interface OperatorClosePresentationDTO {
+  ok: boolean;
+  message: string;
+  reference: string;
+  latency_ms: number;
+}
+
 /** Sprint 25 — resultado de GET /operator/parse (validação híbrida). */
 export interface OperatorParseResultDTO {
   ok: boolean;

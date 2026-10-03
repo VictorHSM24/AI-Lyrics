@@ -30,6 +30,7 @@ import type {
   OperatorCurrentDTO,
   OperatorHistoryDTO,
   OperatorParseResultDTO,
+  OperatorClosePresentationDTO,
   OperatorPresentRequest,
   OperatorPresentResultDTO,
   OperatorVerseDTO,
@@ -187,6 +188,8 @@ export interface OperatorService {
   getVerses(bookId: number, chapter: number, version?: string, options?: CallOptions): Promise<OperatorVerseListDTO>;
   getVerse(bookId: number, chapter: number, verse: number, version?: string, options?: CallOptions): Promise<OperatorVerseDTO>;
   presentVerse(req: OperatorPresentRequest, options?: CallOptions): Promise<OperatorPresentResultDTO>;
+  /** Encerra a apresentação atual no Holyrics (ESC — libera o telão). */
+  closePresentation(options?: CallOptions): Promise<OperatorClosePresentationDTO>;
   getHistory(limit?: number, options?: CallOptions): Promise<OperatorHistoryDTO>;
   getCurrent(options?: CallOptions): Promise<OperatorCurrentDTO>;
   /** Sprint 25 — valida referência string no backend (parser híbrido). */
@@ -342,6 +345,11 @@ export function createServices(client: Client): PresentationServices {
         { book_id: bookId, chapter, verse, ...(version ? { version } : {}) },
         o,
       ),
+      closePresentation: (o) => call<OperatorClosePresentationDTO>(
+        "operator.closePresentation",
+        {},
+        o,
+      ),
       presentVerse: (req, o) => call<OperatorPresentResultDTO>(
         "operator.present",
         req as unknown as Record<string, unknown>,
@@ -455,6 +463,7 @@ export function createStubServices(): PresentationServices {
       getVerses: reject,
       getVerse: reject,
       presentVerse: reject,
+      closePresentation: reject,
       getHistory: reject,
       getCurrent: reject,
       parseReference: reject,

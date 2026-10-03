@@ -82,6 +82,7 @@ export function createPresentationApi(): PresentationApi {
       getVerses: notImplemented,
       getVerse: notImplemented,
       presentVerse: notImplemented,
+      closePresentation: notImplemented,
       getHistory: notImplemented,
       getCurrent: notImplemented,
       parseReference: notImplemented,

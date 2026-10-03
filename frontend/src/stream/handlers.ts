@@ -370,6 +370,7 @@ const VERSE_PRESENTATION_EVENTS = new Set([
   "VerseResolved",
   "VersePresented",
   "VersePresentationFailed",
+  "VersePresentationClosed",
 ]);
 
 // Sprint 20 — Semantic Understanding Engine
@@ -660,6 +661,19 @@ export function handleVersePresentationEvent(
   let updated: typeof baseEntry | null = null;
 
   switch (dto.event_type) {
+    case "VersePresentationClosed": {
+      // Encerramento manual (equivalente ao ESC no Holyrics) — limpa o
+      // card "Apresentado", preservando o histórico (entries).
+      devLog.bridge(
+        `VersePresentationClosed → ${str(dto.payload, "reference")} (telão liberado)`,
+      );
+      stores.versePresentation.set({
+        current: null,
+        entries: prevEntries,
+      });
+      return;
+    }
+
     case "VerseResolving": {
       updated = {
         ...baseEntry,

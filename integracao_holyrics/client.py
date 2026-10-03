@@ -240,6 +240,27 @@ class HolyricsClient:
         }
         return self._post("ShowVerse", payload)
 
+    def close_presentation(self) -> dict:
+        """Encerra a apresentação atual no Holyrics (equivalente ao ESC).
+
+        Usa ``CloseCurrentPresentation`` (v2.19.0+) — libera o telão.
+        Envia também ``CloseCurrentQuickPresentation`` em best-effort
+        antes, para cobrir apresentações quick (popup) que possam estar
+        abertas por cima.
+
+        Returns:
+            Resposta JSON do ``CloseCurrentPresentation``.
+
+        Raises:
+            HolyricsConnectionError, HolyricsTimeoutError, HolyricsAuthError, HolyricsAPIError.
+        """
+        try:
+            self._post("CloseCurrentQuickPresentation", {})
+        except HolyricsError:
+            # Sem quick ativa a chamada pode falhar — não é erro fatal.
+            pass
+        return self._post("CloseCurrentPresentation", {})
+
     def get_token_info(self) -> TokenInfo:
         """Obtém informações do token (``GetTokenInfo``, v2.25.0+).
 

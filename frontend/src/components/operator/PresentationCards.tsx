@@ -10,8 +10,9 @@
  * atualizado em tempo real via VersePresentationStore.
  */
 
-import { Loader2, CheckCircle2, Radio, XCircle } from "lucide-react";
-import { useVersePresentation } from "@/hooks";
+import { useState } from "react";
+import { Loader2, CheckCircle2, Radio, XCircle, MonitorX } from "lucide-react";
+import { useServices, useVersePresentation } from "@/hooks";
 import { cn, formatLatency, formatVersionKey } from "@/utils";
 import type { OperatorPresentResultDTO } from "@/types";
 
@@ -69,6 +70,25 @@ interface PresentedCardProps {
 }
 
 function PresentedCard({ entry }: PresentedCardProps) {
+  const services = useServices();
+  const [closing, setClosing] = useState(false);
+  const [closeError, setCloseError] = useState<string | null>(null);
+
+  // Encerrar apresentação no Holyrics — equivalente ao ESC, libera o
+  // telão. O card limpa sozinho via evento VersePresentationClosed.
+  const handleClose = async () => {
+    setClosing(true);
+    setCloseError(null);
+    try {
+      const res = await services.operator.closePresentation();
+      if (!res.ok) setCloseError(res.message);
+    } catch (e) {
+      setCloseError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setClosing(false);
+    }
+  };
+
   return (
     <div
       className="flex flex-col gap-2 rounded-lg border-2 border-status-success/40 bg-surface p-4"
@@ -78,9 +98,30 @@ function PresentedCard({ entry }: PresentedCardProps) {
         <CheckCircle2 className="h-4 w-4 text-status-success" />
         <h3 className="text-sm font-semibold text-text">Apresentado</h3>
         {entry && entry.status === "presented" && (
-          <span className="ml-auto flex items-center gap-1 text-[10px] text-status-success">
-            <Radio className="h-3 w-3 animate-pulse" />
-            ao vivo
+          <span className="ml-auto flex items-center gap-2">
+            <span className="flex items-center gap-1 text-[10px] text-status-success">
+              <Radio className="h-3 w-3 animate-pulse" />
+              ao vivo
+            </span>
+            <button
+              type="button"
+              onClick={handleClose}
+              disabled={closing}
+              title="Encerrar a apresentação no Holyrics (ESC) — libera o telão"
+              className={cn(
+                "flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-medium",
+                "border-status-error/40 text-status-error hover:bg-status-error/10",
+                "disabled:cursor-not-allowed disabled:opacity-50",
+              )}
+              data-testid="close-presentation-btn"
+            >
+              {closing ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <MonitorX className="h-3 w-3" />
+              )}
+              Encerrar
+            </button>
           </span>
         )}
         {entry && entry.status === "presenting" && (
@@ -90,6 +131,11 @@ function PresentedCard({ entry }: PresentedCardProps) {
           </span>
         )}
       </div>
+      {closeError && (
+        <p className="text-[10px] text-status-error" role="alert">
+          {closeError}
+        </p>
+      )}
 
       {entry ? (
         <div className="flex flex-col gap-1.5">

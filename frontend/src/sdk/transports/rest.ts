@@ -83,6 +83,7 @@ const METHOD_TO_ENDPOINT: Record<string, string> = {
   "operator.getVerses": "/operator/books/{book_id}/chapters/{chapter}/verses",
   "operator.getVerse": "/operator/verse",
   "operator.present": "/operator/present",
+  "operator.closePresentation": "/operator/close-presentation",
   "operator.getHistory": "/operator/history",
   "operator.getCurrent": "/operator/current",
   // Sprint 25 — validação híbrida de referências
@@ -123,6 +124,7 @@ const POST_METHODS: ReadonlySet<string> = new Set([
   "pipeline.start",
   "pipeline.stop",
   "operator.present",
+  "operator.closePresentation",
   "operator.followStart",
   "operator.followStop",
   "operator.followAdvance",

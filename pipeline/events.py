@@ -538,6 +538,22 @@ class VersePresentationFailed(OperationalEvent):
     latency_ms: int = 0
 
 
+@dataclass(frozen=True)
+class VersePresentationClosed(OperationalEvent):
+    """Apresentação encerrada no Holyrics (equivalente ao ESC).
+
+    Emitido quando o operador encerra a apresentação atual via
+    HolyricsClient.close_presentation() (CloseCurrentPresentation) —
+    libera o telão. Publicado após confirmação do Holyrics para que a
+    UI atualize o card "Apresentado" em tempo real.
+    """
+
+    reference: str = ""        # versículo que estava no telão (se conhecido)
+    closed_by: str = ""        # origem do encerramento (ex.: "operator")
+    holyrics_status: str = ""
+    latency_ms: int = 0
+
+
 # ---------------------------------------------------------------------------
 # Sprint 19 — Streaming Speech Pipeline
 # ---------------------------------------------------------------------------

@@ -39,7 +39,7 @@ Entradas mais recentes no topo. Formato:
 - Verificado: typecheck + 624 testes frontend; 224 testes backend
   (config/stream/loader); gravação usada como evidência (latência
   mediana de inferência 265ms a cada ~405ms).
-- Commit: (a commitar)
+- Commit: `1e3a2dc`
 
 ## 2026-10-02 — Fix: LocalAgreement-2 re-commitava bloco reescrito (1 Crônicas 28 não apresentado)
 

@@ -287,14 +287,19 @@ def test_incident_f_new_reference_during_follow_not_hijacked_by_goto():
     assert all(not (p.book == "João" and p.verse == 28) for p in rig.presented)
 
 
-def test_incident_f_stop_really_stops():
+def test_incident_f_stop_pauses_until_next_presentation():
+    """Sprint 32 — /follow/stop pausa a ancoragem, mas a próxima
+    apresentação (voz OU painel) retoma o acompanhamento."""
     rig = Rig()
     rig.say("joão três dezesseis")
     rig.follow.deactivate()
     assert not rig.state()["active"] and rig.state()["auto_follow_paused"]
-    rig.say("romanos oito vinte e oito")    # voz apresenta, follow NÃO ancora
-    assert rig.screen() == "Romanos 8:28" and not rig.state()["active"]
-    rig.operator_present("João", 3, 16)     # operador reativa
+    rig.say("romanos oito vinte e oito")    # voz apresenta → retoma o follow
+    assert rig.screen() == "Romanos 8:28" and rig.state()["active"]
+    assert not rig.state()["auto_follow_paused"]
+    rig.follow.deactivate()                 # para de novo
+    assert rig.state()["auto_follow_paused"]
+    rig.operator_present("João", 3, 16)     # painel também reativa
     assert rig.state()["active"] and not rig.state()["auto_follow_paused"]
 
 

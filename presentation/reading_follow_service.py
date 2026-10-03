@@ -567,9 +567,9 @@ class ReadingFollowService:
     def deactivate(self) -> bool:
         """Desativa o modo de acompanhamento manualmente (painel).
 
-        Sprint 31 — "parar" desativa DE FATO: a ancoragem automática em
-        versículos apresentados por voz fica pausada até o operador
-        apresentar um versículo pelo painel ou reativar (/follow/start).
+        Sprint 31/32 — "parar" desativa DE FATO, mas a pausa é liberada
+        pela próxima apresentação (painel OU voz) ou por /follow/start:
+        o pregador retoma o acompanhamento falando uma nova referência.
 
         Returns:
             True se desativado, False se já inativo.
@@ -669,7 +669,9 @@ class ReadingFollowService:
         if event.book_id <= 0 or event.chapter <= 0 or event.verse_start <= 0:
             return
         if self._auto_follow_paused:
-            return  # operador parou o follow — voz não reativa
+            # Referência sem apresentação não retoma o follow pausado —
+            # quem libera a pausa é o versículo apresentado (voz ou painel).
+            return
 
         verse_end = event.verse_end if event.verse_end > event.verse_start else 0
 
@@ -705,17 +707,19 @@ class ReadingFollowService:
     def _on_verse_presented(self, event: VersePresented) -> None:
         """Ancora o follow no versículo apresentado.
 
-        Regras (Sprint 31 — operador tem prioridade):
+        Regras:
           - Apresentação do próprio follow é ignorada (sem loop).
-          - Apresentação pelo painel (OperatorPanel) sempre re-ancora e
-            libera a ancoragem automática pausada por /follow/stop.
-          - Apresentação automática (voz) re-ancora, exceto se o operador
-            pausou o follow.
+          - Apresentação pelo painel (OperatorPanel) OU por voz
+            (VersePresentationService*) sempre re-ancora e libera a
+            pausa de /follow/stop — o pregador retoma o acompanhamento
+            falando, sem exigir intervenção do operador.
           - O versículo já está na tela: ancorar NÃO reapresenta.
         """
         if event.origin == "ReadingFollowService":
             return
-        if event.origin == "OperatorPanel":
+        if event.origin == "OperatorPanel" or (
+            event.origin or ""
+        ).startswith("VersePresentationService"):
             self._auto_follow_paused = False
         if not self._auto_follow or self._auto_follow_paused:
             return

@@ -15,6 +15,52 @@ Entradas mais recentes no topo. Formato:
 
 ---
 
+## 2026-10-02 — Follow retoma por voz após parada manual
+
+- Diagnóstico da gravação `gravacao_20261002_195356`: o pregador disse
+  "apocalipse 2", o versículo foi apresentado (Ap 2:2, origem
+  `VersePresentationService`) e o follow não iniciou — porque o
+  operador havia parado o follow às 00:14:48 (`manual_stop`), e a regra
+  da Sprint 31 só liberava `_auto_follow_paused` via painel
+  (`OperatorPanel`). A ancoragem só aconteceu 51s depois, quando o
+  operador apresentou Ap 2:3 manualmente.
+- Comportamento alterado a pedido do usuário: `/follow/stop` continua
+  pausando a ancoragem, mas a **próxima apresentação por voz**
+  (`VersePresentationService*`) também limpa `_auto_follow_paused` e
+  re-ancora — o pregador retoma o acompanhamento falando uma nova
+  referência, sem exigir intervenção do operador. Painel continua
+  liberando; origem `ReadingFollowService` continua ignorada (sem
+  loop); referência detectada sem apresentação não retoma.
+- `presentation/reading_follow_service.py`: `_on_verse_presented` —
+  condição de liberação ampliada para `OperatorPanel` ou
+  `origin.startswith("VersePresentationService")` (cobre o sufixo
+  `.navigation`); docstrings de `deactivate`, `_on_reference_detected`
+  e `_on_verse_presented` atualizados.
+- `tests/test_sprint31_follow_incidents.py`: incidente (f) reescrito
+  — `test_incident_f_stop_pauses_until_next_presentation` valida
+  retomada por voz E por painel após `deactivate()`.
+- Verificado: 84 testes de follow/voz verdes; backend reiniciado com o
+  código novo.
+- Commit: `78765db`
+
+## 2026-10-02 — Botão "Encerrar apresentação" (ESC) no painel do operador
+
+- Novo `POST /operator/close-presentation`: chama a action
+  `CloseCurrentPresentation` da API REST do Holyrics (equivalente ao
+  ESC — libera o telão) e publica o novo evento operacional
+  `VersePresentationClosed`.
+- `integracao_holyrics/client.py`: método `close_presentation()`;
+  `pipeline/events.py` + `__init__.py`: `VersePresentationClosed`.
+- Frontend: botão "Encerrar" no card "Apresentado"
+  (`PresentationCards.tsx`), `operator.closePresentation` no
+  SDK/transport/service, `VersePresentationClosedDTO` em types; o
+  handler do stream limpa o card ao receber o evento (event-driven,
+  como `VersePresented`).
+- Verificado: typecheck OK; endpoint respondeu contra o Holyrics real
+  (HTTP 401 na action — token configurado sem permissão; o problema
+  é de config do Holyrics, não do endpoint — ver backlog).
+- Commit: `5120637`
+
 ## 2026-10-02 — Seletor nativo de pastas do Windows (página Sessões)
 
 - O campo de texto "Personalizar pasta" foi substituído por um botão

@@ -26,6 +26,13 @@ Prioridades: `P0` bloqueante/urgente · `P1` importante · `P2` melhoria · `P3`
 
 ## Pendente
 
+- [ ] (P1) **Token do Holyrics sem permissão para actions** —
+  `POST /operator/close-presentation` (e possivelmente `show_verse`)
+  recebe HTTP 401 da API do Holyrics (`http://127.0.0.1:8091/api`).
+  Há tokens divergentes entre `config.yaml` e `config.overrides.json` —
+  um deles responde info da API mas falha nas actions. Revalidar o token
+  no Holyrics (Configurações → API) e alinhar os arquivos. — origem:
+  teste do botão "Encerrar" (`5120637`), 2026-10-02
 - [ ] (P1) **Testar pipeline no microfone do pastor** — commit `c941b61`
   ("Falta testar de novo no microfone do pastor") indica validação de campo
   pendente com o dispositivo real (CODEC USB). — origem: git log

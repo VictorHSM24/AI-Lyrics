@@ -43,6 +43,10 @@ const NO_FILTERS: Filters = {
   severities: new Set(ALL_SEVERITIES),
 };
 
+// Máximo de cards renderizados — sem limite, milhares de nós DOM eram
+// reconciliados a cada evento e a navegação travava por segundos.
+const VISIBLE_LIMIT = 300;
+
 function matchesFilters(
   event: { event_type: string; payload: Record<string, unknown>; meta: { correlation_id: string } },
   filters: Filters,
@@ -75,15 +79,16 @@ export function TimelinePanel() {
 
   // Eventos "congelados" quando pausado.
   const [frozenEvents, setFrozenEvents] = useState<typeof events | null>(null);
-  // Offset de eventos limpos (clear). Eventos antes do offset são ocultados.
-  const [clearedCount, setClearedCount] = useState(0);
+  // Clear por timestamp: robusto ao trim do EventStore (cap).
+  const [clearedBefore, setClearedBefore] = useState(0);
 
   const displayEvents = paused
     ? (frozenEvents ?? [])
-    : events.slice(clearedCount);
+    : events.filter((e) => e.meta.timestamp > clearedBefore);
 
   const filteredEvents = useMemo(() => {
-    return displayEvents.filter((e) => matchesFilters(e, filters));
+    const matched = displayEvents.filter((e) => matchesFilters(e, filters));
+    return matched.slice(-VISIBLE_LIMIT);
   }, [displayEvents, filters]);
 
   // Auto-scroll.
@@ -98,8 +103,8 @@ export function TimelinePanel() {
   function togglePause() {
     setPaused((prev) => {
       if (!prev) {
-        // Pausa: congela os eventos atuais (considerando offset de clear).
-        setFrozenEvents(events.slice(clearedCount));
+        // Pausa: congela os eventos atuais (considerando o clear).
+        setFrozenEvents(events.filter((e) => e.meta.timestamp > clearedBefore));
       } else {
         // Retoma: descarta eventos congelados.
         setFrozenEvents(null);
@@ -109,9 +114,10 @@ export function TimelinePanel() {
   }
 
   function clearEvents() {
-    // Marca todos os eventos atuais como "limpos" via offset.
+    // Marca todos os eventos atuais como "limpos" via timestamp.
     // O EventStore não é modificado — apenas a visualização.
-    setClearedCount(events.length);
+    const last = events[events.length - 1];
+    setClearedBefore(last ? last.meta.timestamp : Date.now());
     setFrozenEvents([]);
   }
 
@@ -285,9 +291,17 @@ export function TimelinePanel() {
             description={events.length === 0 ? "Os eventos aparecerão aqui quando o pipeline iniciar." : "Ajuste os filtros para ver mais eventos."}
           />
         ) : (
-          filteredEvents.map((event, i) => (
-            <EventCard key={`${event.meta.event_id}-${i}`} event={event} />
-          ))
+          <>
+            {displayEvents.length > VISIBLE_LIMIT && (
+              <div className="rounded-md bg-surface px-3 py-1.5 text-xs text-text-subtle">
+                Mostrando os {VISIBLE_LIMIT} eventos mais recentes de{" "}
+                {displayEvents.length}.
+              </div>
+            )}
+            {filteredEvents.map((event, i) => (
+              <EventCard key={`${event.meta.event_id}-${i}`} event={event} />
+            ))}
+          </>
         )}
       </div>
 

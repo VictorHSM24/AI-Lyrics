@@ -347,6 +347,23 @@ class IncrementalParserConfig:
 
 
 @dataclass(frozen=True)
+class StreamingConfig:
+    """Sprint 32 — cadência da janela deslizante de STT.
+
+    Campos:
+        window_seconds: duração da janela de áudio transcrita (default
+            6.0s — comportamento histórico).
+        update_interval_ms: intervalo entre transcrições (default
+            700ms). Cada transcrição ocupa a GPU por ~250-300ms em
+            hardware RTX — 400ms deixava a GPU >80% o tempo todo e
+            faminto o compositor do browser/desktop (UI travando).
+    """
+
+    window_seconds: float = 6.0
+    update_interval_ms: int = 700
+
+
+@dataclass(frozen=True)
 class Config:
     """Configuração raiz do sistema. Imutável após carregamento."""
 
@@ -370,3 +387,5 @@ class Config:
     reading_follow: "ReadingFollowConfig | None" = None
     # Sprint 31 — parser incremental (opcional).
     incremental_parser: "IncrementalParserConfig | None" = None
+    # Sprint 32 — cadência do streaming STT (opcional).
+    streaming: "StreamingConfig | None" = None

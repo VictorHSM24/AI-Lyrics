@@ -110,6 +110,15 @@ incremental_parser:
   chapter_anticipation: false
   carry_seconds: 10
 
+# Sprint 32 — cadência da janela deslizante de STT.
+# Cada transcrição (janela de window_seconds) ocupa a GPU por ~250-300ms
+# em RTX. Com intervalo 400ms a GPU ficava >80% o tempo todo e o
+# compositor do browser/desktop ficava faminto (UI travando). 700ms
+# deixa a GPU ~35-40% sem comprometer a detecção de referências.
+streaming:
+  window_seconds: 6.0
+  update_interval_ms: 700
+
 audio:
   input_device: "CODEC USB"
   sample_rate: 16000

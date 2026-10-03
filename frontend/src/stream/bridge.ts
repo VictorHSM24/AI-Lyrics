@@ -26,6 +26,11 @@ import type { StoreRegistry } from "@/stores";
 import type { EventDTO } from "@/types";
 import { devLog } from "@/utils";
 
+// Máximo de eventos operacionais retidos no EventStore (Timeline).
+// Sem cap, o array crescia sem limite e cada evento fazia uma cópia
+// O(n) — degradando a página progressivamente (minutos → segundos de lag).
+const MAX_STORED_EVENTS = 2000;
+
 // ============================================================
 // EventStreamBridge
 // ============================================================
@@ -108,7 +113,10 @@ export class EventStreamBridge {
     const isTelemetry = dto.category === "telemetry";
     if (!isTelemetry) {
       const currentEvents = this.stores.events.current?.data ?? [];
-      this.stores.events.set([...currentEvents, dto]);
+      const next = [...currentEvents, dto];
+      this.stores.events.set(
+        next.length > MAX_STORED_EVENTS ? next.slice(-MAX_STORED_EVENTS) : next,
+      );
     }
 
     // Despacha para handlers de domínio — sempre, independente da categoria.

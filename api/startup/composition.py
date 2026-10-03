@@ -881,12 +881,17 @@ def create_composition_root() -> CompositionRoot:
                 min_rms=0.001,
             )
 
-            # SlidingWindow — extrai 6s a cada 400ms, independente do VAD.
-            # Também não é iniciada aqui — ver comentário acima.
+            # SlidingWindow — extrai janela a cada update_interval_ms,
+            # independente do VAD. Sprint 32: cadência configurável via
+            # config.streaming — 400ms saturava a GPU (>80% contínuo) e
+            # travava a UI (browser/desktop compartilham a mesma GPU).
+            st_cfg = getattr(config, "streaming", None)
             sliding_window = SlidingWindow(
                 ring_buffer=ring_buffer,
-                window_seconds=6.0,
-                update_interval_ms=400,
+                window_seconds=float(
+                    getattr(st_cfg, "window_seconds", 6.0) or 6.0),
+                update_interval_ms=int(
+                    getattr(st_cfg, "update_interval_ms", 700) or 700),
                 on_window=streaming_stt.on_window,
             )
 

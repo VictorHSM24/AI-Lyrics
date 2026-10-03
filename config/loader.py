@@ -33,6 +33,7 @@ from config.models import (
     SermonContextPolicyConfig,
     StateConfig,
     STTConfig,
+    StreamingConfig,
     TelemetryConfig,
     VadConfig,
 )
@@ -477,6 +478,16 @@ def _build_incremental_parser(data: dict[str, Any]) -> IncrementalParserConfig:
     )
 
 
+def _build_streaming(data: dict[str, Any]) -> StreamingConfig:
+    """Sprint 32 — Constrói StreamingConfig (opcional)."""
+    if not isinstance(data, dict):
+        return StreamingConfig()
+    return StreamingConfig(
+        window_seconds=float(data.get("window_seconds", 6.0)),
+        update_interval_ms=int(data.get("update_interval_ms", 700)),
+    )
+
+
 def _build_config(data: dict[str, Any]) -> Config:
     """Constrói ``Config`` imutável a partir de dict parseado do YAML."""
     holyrics = _build_holyrics(_require(data, "holyrics", "root"))
@@ -516,6 +527,10 @@ def _build_config(data: dict[str, Any]) -> Config:
     incremental_parser: IncrementalParserConfig | None = None
     if "incremental_parser" in data:
         incremental_parser = _build_incremental_parser(data["incremental_parser"])
+    # Sprint 32 — streaming é opcional (backward-compatible).
+    streaming: StreamingConfig | None = None
+    if "streaming" in data:
+        streaming = _build_streaming(data["streaming"])
     return Config(
         holyrics=holyrics,
         stt=stt,
@@ -532,6 +547,7 @@ def _build_config(data: dict[str, Any]) -> Config:
         knowledge=knowledge,
         reading_follow=reading_follow,
         incremental_parser=incremental_parser,
+        streaming=streaming,
     )
 
 

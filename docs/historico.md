@@ -15,6 +15,32 @@ Entradas mais recentes no topo. Formato:
 
 ---
 
+## 2026-10-02 — Fix: UI travava após poucos minutos de pipeline (GPU + EventStore sem cap)
+
+- Sintoma: página do software extremamente lenta após poucos minutos
+  (~3s para trocar de tela), GPU >80% constante, CPU baixo.
+- **Causa 1 — GPU saturada**: a SlidingWindow disparava uma transcrição
+  Whisper (janela de 6s, large-v3-turbo) a cada **400ms**; mediana de
+  inferência ~265ms → duty ~65-80% contínuo na única GPU do sistema →
+  compositor do Chrome/Electron faminto → jank em toda a UI.
+  - `config.yaml`: nova seção `streaming:` (`window_seconds`,
+    `update_interval_ms`) — default agora **700ms** (~35-40% GPU).
+  - `config/models.py` + `loader.py`: `StreamingConfig` (opcional,
+    backward-compatible); `composition.py` lê da config.
+- **Causa 2 — EventStore sem cap** (`stream/bridge.ts`): cada evento
+  operacional era appendado via `[...events, dto]` — cópia O(n) por
+  evento (~3/s), array crescia sem limite (8k eventos em 42min) →
+  trabalho O(n²) + pressão de GC. Cap: últimos 2000 eventos.
+- **Causa 3 — TimelinePanel renderizava todos os eventos**: milhares de
+  `EventCard` reconciliados a cada evento na página Console; desmontar
+  a lista travava a navegação. Cap de renderização: últimos 300 cards
+  (com aviso "mostrando os 300 mais recentes"); `clearEvents` migrado
+  de offset para timestamp (robusto ao trim do store).
+- Verificado: typecheck + 624 testes frontend; 224 testes backend
+  (config/stream/loader); gravação usada como evidência (latência
+  mediana de inferência 265ms a cada ~405ms).
+- Commit: (a commitar)
+
 ## 2026-10-02 — Fix: LocalAgreement-2 re-commitava bloco reescrito (1 Crônicas 28 não apresentado)
 
 - Diagnóstico da gravação `gravacao_20261002_195356` (~00:15): o

@@ -36,6 +36,7 @@ Thread Safety:
 
 from __future__ import annotations
 
+import difflib
 import logging
 import time
 from typing import Any
@@ -52,6 +53,38 @@ from telemetry import hooks as telemetry_hooks
 logger = logging.getLogger(__name__)
 
 __all__ = ["StreamingSTTService"]
+
+# Janela de cauda do committed usada no alinhamento do LocalAgreement —
+# palavras mais antigas não podem estar na fronteira de commit.
+_COMMIT_ALIGN_WINDOW = 80
+
+
+def _committed_prefix_consumed(committed: list[str], stable: list[str]) -> int:
+    """Quantas palavras do prefixo estável já estão no stream committed.
+
+    O LocalAgreement-2 assume stream monotônico: o prefixo estável da
+    transcrição atual continua o fim do committed. O Whisper, porém,
+    REESCREVE palavras já committed ("crônia" → "crônicas") e insere ou
+    remove tokens ("versículo"), o que quebra o prefix-match exato —
+    antes, isso re-emitia o bloco estável inteiro como novo a cada ciclo
+    e os deltas duplicados corrompiam parser e transcript (Sprint 32).
+
+    Alinha ``stable`` com a cauda do committed (SequenceMatcher):
+
+    - Bloco que alcança o FIM do committed → tudo até ele é antigo.
+    - Sem bloco no fim: palavras cobertas por blocos significativos
+      (≥2) dentro do committed também são antigas (reescrita na cauda).
+    - Caso contrário, nada está committed → o prefixo inteiro é novo.
+    """
+    if not committed or not stable:
+        return 0
+    tail = committed[-_COMMIT_ALIGN_WINDOW:]
+    blocks = [b for b in difflib.SequenceMatcher(
+        None, tail, stable, autojunk=False).get_matching_blocks() if b.size]
+    for blk in blocks:
+        if blk.a + blk.size >= len(tail):
+            return blk.b + blk.size
+    return max((blk.b + blk.size for blk in blocks if blk.size >= 2), default=0)
 
 
 class StreamingSTTService:
@@ -507,17 +540,7 @@ class StreamingSTTService:
             self._committed_word_count = len(new_committed)
             return new_committed
 
-        already_committed = 0
-        max_c_search = min(len(committed_list), 50)
-        for c_start in range(max_c_search):
-            match = 0
-            for i in range(min(len(committed_list) - c_start, len(stable_text))):
-                if committed_list[c_start + i] == stable_text[i]:
-                    match += 1
-                else:
-                    break
-            if match > already_committed:
-                already_committed = match
+        already_committed = _committed_prefix_consumed(committed_list, stable_text)
 
         # Novas palavras committed = stable_words além das já committed.
         if best_common > already_committed:

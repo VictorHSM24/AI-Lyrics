@@ -15,6 +15,63 @@ Entradas mais recentes no topo. Formato:
 
 ---
 
+## 2026-10-02 — Painel do operador: botão Retroceder no follow + versão bíblica global persistente
+
+- **Retroceder**: `ReadingFollowService.back()` espelha `advance()` —
+  clamp em `verse_start`, reseta cursor/buffer/debounce, re-apresenta no
+  Holyrics e publica `ReadingFollowAdvanced(reason="manual_back")`.
+  Endpoint `POST /operator/follow/back`; frontend: `followBack` no
+  transport/services/hook + botão "Retroceder" (ChevronLeft) ao lado de
+  "Avançar" no `ReadingFollowPanel`.
+- **Versão global**: `POST /operator/version` agora normaliza a key
+  (`normalize_version_key`), propaga via `VersionChanged` e **persiste**
+  `state.default_version` via `ConfigurationPresentationService`.
+  `VersePresentationService` passa a assinar `VersionChanged` —
+  apresentações por voz, painel e follow usam todas a versão escolhida.
+- Fix `_default_version()`: lia a seção `verse` (inexistente) e sempre
+  caía em "ACF"; agora prefere a versão viva do follow service e faz
+  fallback a `state.default_version`.
+- **Fix grave em `ConfigurationPresentationService`**: `_overrides`
+  iniciava vazio sem carregar o arquivo — qualquer
+  `update_configuration()` sobrescrevia `config.overrides.json` inteiro
+  e apagava seções persistidas (holyrics/stt). Agora carrega
+  `load_overrides()` no init; detectado no smoke test.
+- Testes: `tests/test_operator_version_back.py` (11 casos: back delega/
+  estado/falha, normalização, persistência, VersionChanged, fallback
+  _default_version), `back()` em `test_reading_follow.py` (3 casos),
+  `VersionChanged` no VPS em `test_verse_presentation_service.py`
+  (2 casos). Suíte: 3606 backend + 624 frontend verdes; E2E validado
+  (follow/start já ativa na versão global ARA, back clampa no início).
+- Commit: `30b96d3`
+
+---
+
+## 2026-10-02 — Âncora de contexto: "capítulo X, versículo Y" sem nome do livro
+
+- Pedido do usuário: pregador diz "João capítulo 3 versículo 16", prega
+  um pouco e depois pede isoladamente "capítulo 5, versículo 10" ou
+  "versículo 20" — o sistema deve manter o livro (e capítulo) da última
+  referência. **Condição obrigatória: marcador explícito**
+  ("capítulo"/"versículo"); número solto nunca continua.
+- `pipeline/incremental_parser.py`: novo `_anchor` (book, conf,
+  chapter, deadline) — sobrevive a resets e utterances completas, TTL
+  configurável. Atualizado a cada referência reconhecida E a cada
+  `VersePresented` (voz, painel ou follow — a âncora é o que está na
+  tela). Limpo em `PipelineStopped`.
+- `_evaluate` tenta `parse_continuation` contra a âncora no início da
+  utterance (após carry); menção de livro próxima ao início desativa a
+  tentativa (livro explícito sempre vence).
+- `parse_continuation`: novo `allow_bare_pair=False` na âncora — o par
+  compacto "14 10" no meio da fala NÃO resolve (carry mantém True).
+- `incremental_parser.anchor_seconds` (default 600s, 0 desativa) no
+  yaml/models/loader/composition.
+- `tests/test_anchor_continuation.py`: 7 casos (capítulo+versículo,
+  versículo isolado, troca de livro, número solto, par sem marcador,
+  TTL, livro explícito). `test_carry_expires` isola carry com
+  `anchor_seconds=0`.
+- Verificado: 229 testes sprint31/âncora + 908 relacionados verdes.
+- Commit: `06f9bec`
+
 ## 2026-10-02 — Fix: UI travava após poucos minutos de pipeline (GPU + EventStore sem cap)
 
 - Sintoma: página do software extremamente lenta após poucos minutos

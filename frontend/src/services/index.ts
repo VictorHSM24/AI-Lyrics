@@ -198,6 +198,7 @@ export interface OperatorService {
   followStart(req: FollowStartRequestDTO, options?: CallOptions): Promise<FollowResultDTO>;
   followStop(options?: CallOptions): Promise<FollowResultDTO>;
   followAdvance(options?: CallOptions): Promise<FollowResultDTO>;
+  followBack(options?: CallOptions): Promise<FollowResultDTO>;
   followState(options?: CallOptions): Promise<FollowStateDTO>;
   /** Sprint 30 — versão da Bíblia que o pastor lê (comparação). */
   setMatchVersion(version: string, options?: CallOptions): Promise<FollowResultDTO>;
@@ -374,6 +375,7 @@ export function createServices(client: Client): PresentationServices {
       ),
       followStop: (o?) => call<FollowResultDTO>("operator.followStop", {}, o),
       followAdvance: (o?) => call<FollowResultDTO>("operator.followAdvance", {}, o),
+      followBack: (o?) => call<FollowResultDTO>("operator.followBack", {}, o),
       followState: (o?) => call<FollowStateDTO>("operator.followState", {}, o),
       setMatchVersion: (version: string, o?) => call<FollowResultDTO>(
         "operator.setMatchVersion",
@@ -470,6 +472,7 @@ export function createStubServices(): PresentationServices {
       followStart: reject,
       followStop: reject,
       followAdvance: reject,
+      followBack: reject,
       followState: reject,
       setMatchVersion: reject,
       getVersions: reject,

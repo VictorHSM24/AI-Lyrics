@@ -1015,6 +1015,7 @@ export interface UseReadingFollowResult {
   start: (req: FollowStartRequestDTO) => Promise<FollowResultDTO>;
   stop: () => Promise<FollowResultDTO>;
   advance: () => Promise<FollowResultDTO>;
+  back: () => Promise<FollowResultDTO>;
   refreshState: () => Promise<void>;
   loadVersions: () => Promise<void>;
   setVersion: (version: string) => Promise<void>;
@@ -1098,14 +1099,28 @@ export function useReadingFollow(): UseReadingFollowResult {
     }
   };
 
+  const back = async (): Promise<FollowResultDTO> => {
+    setError(null);
+    try {
+      const res = await services.operator.followBack();
+      setState(res.state);
+      return res;
+    } catch (e) {
+      const msg = `Erro ao retroceder: ${e instanceof Error ? e.message : String(e)}`;
+      setError(msg);
+      throw e;
+    }
+  };
+
   const setVersion = async (version: string) => {
     setError(null);
     try {
       const res = await services.operator.setVersion(version);
       if (res.ok) {
-        setCurrentVersion(version);
+        const applied = res.version ?? version;
+        setCurrentVersion(applied);
         if (state) {
-          setState({ ...state, version });
+          setState({ ...state, version: applied });
         }
       }
     } catch (e) {
@@ -1147,6 +1162,7 @@ export function useReadingFollow(): UseReadingFollowResult {
     start,
     stop,
     advance,
+    back,
     refreshState,
     loadVersions,
     setVersion,

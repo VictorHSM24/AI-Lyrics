@@ -21,7 +21,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
-from api.dependencies import get_composition_root
+from api.dependencies import (
+    get_composition_root,
+    get_configuration_service,
+)
 from api.schemas import versioned
 from api.startup import CompositionRoot
 
@@ -66,11 +69,25 @@ def _local_version(version: str) -> str:
 
 
 def _default_version(root: CompositionRoot) -> str:
-    """Versão bíblica padrão da config."""
+    """Versão bíblica global ativa (painel/voz) com fallback à config.
+
+    Prefere a versão atual do ReadingFollowService — reflete a última
+    seleção do operador (POST /operator/version) sem esperar restart.
+    Fallback: ``state.default_version`` da config (antes lia-se a
+    seção ``verse``, inexistente — retornava sempre "ACF").
+    """
+    svc = getattr(root, "reading_follow_service", None)
+    if svc is not None:
+        try:
+            current = svc.get_state().get("version", "")
+            if current:
+                return current
+        except Exception:
+            pass
     cfg = root.config
-    verse_cfg = getattr(cfg, "verse", None)
-    if verse_cfg is not None:
-        return getattr(verse_cfg, "default_version", "ACF") or "ACF"
+    state_cfg = getattr(cfg, "state", None)
+    if state_cfg is not None:
+        return getattr(state_cfg, "default_version", "ACF") or "ACF"
     return "ACF"
 
 
@@ -808,6 +825,19 @@ async def follow_advance(
     return versioned(result)
 
 
+@router.post("/follow/back")
+@router.post("/follow/back/")
+async def follow_back(
+    root: CompositionRoot = Depends(get_composition_root),
+) -> dict:
+    """Retrocede manualmente para o versículo anterior no follow."""
+    svc = _get_follow_service(root)
+    ok = svc.back()
+    msg = "Retrocedido para o versículo anterior." if ok else "Não foi possível retroceder."
+    result = FollowStartResult(ok=ok, message=msg, state=svc.get_state())
+    return versioned(result)
+
+
 @router.get("/follow/state")
 @router.get("/follow/state/")
 async def follow_state(
@@ -888,27 +918,44 @@ async def get_version(
 async def set_version(
     req: VersionRequest,
     root: CompositionRoot = Depends(get_composition_root),
+    cfg_svc: Any = Depends(get_configuration_service),
 ) -> dict:
-    """Muda a versão bíblica ativa manualmente."""
+    """Muda a versão bíblica global (todas as apresentações).
+
+    A seleção vale para voz, painel e acompanhamento: ``VersionChanged``
+    alinha VersePresentationService e ReadingFollowService; o detector
+    de comandos de voz é re-ancorado e a versão é persistida como
+    ``state.default_version`` para sobreviver a restart.
+    """
     from pipeline.events import VersionChanged
     from pipeline.metadata import EventMetadata
+    from presentation.version_map import normalize_version_key
     svc = _get_follow_service(root)
     detector = _get_version_detector(root)
     old = _default_version(root)
-    ok = svc.set_version(req.version)
+    version = normalize_version_key(req.version)
+    ok = svc.set_version(version)
     if ok:
-        detector.set_current_version(req.version)
+        detector.set_current_version(version)
         root.bus.publish(VersionChanged(
             meta=EventMetadata.for_session_event(
                 session_id="",
                 origin="operator_api",
             ),
             old_version=old,
-            new_version=req.version,
+            new_version=version,
             source="manual",
         ))
-    msg = f"Versão alterada para {req.version}." if ok else "Falha ao alterar versão."
-    return versioned({"ok": ok, "message": msg, "version": req.version})
+        try:
+            cfg_svc.update_configuration(
+                {"state": {"default_version": version}}
+            )
+        except Exception as e:
+            logger.warning(
+                "operator: falha ao persistir default_version: %s", e
+            )
+    msg = f"Versão alterada para {version}." if ok else "Falha ao alterar versão."
+    return versioned({"ok": ok, "message": msg, "version": version})
 
 
 @router.put("/version/auto")

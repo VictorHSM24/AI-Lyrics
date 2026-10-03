@@ -181,6 +181,44 @@ class TestReadingFollowService:
         service.advance()  # 2 -> end
         assert not service._state.active
 
+    def test_back(self, service, mock_bus, mock_holyrics):
+        service.activate(
+            book_id=40,
+            book_name="Mateus",
+            chapter=7,
+            verse_start=1,
+            verse_end=3,
+        )
+        service.advance()  # 1 -> 2
+        assert service.back()
+        assert service._state.current_verse == 1
+        # Holyrics recebe a apresentação do versículo anterior.
+        last_call = mock_holyrics.show_verse.call_args
+        assert last_call.kwargs["verse"] == 1
+        # Evento publicado com reason manual_back.
+        events = [c.args[0] for c in mock_bus.publish.call_args_list]
+        advanced = [
+            e for e in events
+            if type(e).__name__ == "ReadingFollowAdvanced"
+        ]
+        assert advanced[-1].reason == "manual_back"
+        assert advanced[-1].current_verse == 1
+
+    def test_back_at_start_returns_false(self, service):
+        service.activate(
+            book_id=40,
+            book_name="Mateus",
+            chapter=7,
+            verse_start=1,
+            verse_end=3,
+        )
+        assert service._state.current_verse == 1
+        assert not service.back()
+        assert service._state.current_verse == 1
+
+    def test_back_inactive_returns_false(self, service):
+        assert not service.back()
+
     def test_set_version(self, service, mock_searcher):
         service.activate(
             book_id=40,

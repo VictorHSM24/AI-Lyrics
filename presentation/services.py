@@ -295,7 +295,12 @@ class ConfigurationPresentationService:
         self._config = config
         self._pipeline_policy = pipeline_policy
         self._overrides_path = overrides_path
-        self._overrides: dict = {}
+        # Carrega overrides persistidos — sem isto, update_configuration()
+        # sobrescreve o arquivo inteiro e apaga chaves de outras seções
+        # (ex.: holyrics, stt) salvas anteriormente.
+        from config.persistence import load_overrides
+
+        self._overrides: dict = load_overrides(overrides_path)
 
     def get_configuration(self) -> ConfigurationDTO:
         """Retorna DTO da configuração."""

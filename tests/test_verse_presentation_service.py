@@ -726,5 +726,55 @@ class TestEventStorePersistence(unittest.TestCase):
         self.assertIn("VersePresentationFailed", types)
 
 
+class TestGlobalVersionFollowsVersionChanged(unittest.TestCase):
+    """Sprint 32 — VersionChanged alinha a versão das apresentações
+    automáticas à versão global escolhida no painel ou por voz."""
+
+    def setUp(self):
+        self.store = MagicMock()
+        self.bus = PipelineEventBus(store=self.store)
+        self.searcher = FakeSearcher()
+        self.holyrics = FakeHolyricsClient()
+        self.service = VersePresentationService(
+            searcher=self.searcher,
+            holyrics=self.holyrics,
+            bus=self.bus,
+            session_id="test-session",
+            version="ACF",
+            quick_presentation=False,
+        )
+        self.service.start()
+
+    def tearDown(self):
+        self.service.stop()
+
+    def _publish_version_changed(self, new_version: str) -> None:
+        from pipeline.events import VersionChanged
+
+        self.bus.publish(VersionChanged(
+            meta=EventMetadata.for_session_event(
+                session_id="test-session",
+                origin="operator_api",
+            ),
+            old_version="ACF",
+            new_version=new_version,
+            source="manual",
+        ))
+
+    def test_version_changed_updates_presentations(self):
+        self._publish_version_changed("pt_ara")
+
+        ref = _make_reference_detected(event_id="evt-ara")
+        self.bus.publish(ref)
+
+        self.assertEqual(self.service._version, "pt_ara")
+        self.assertEqual(self.searcher.calls[0]["version"], "pt_ara")
+        self.assertEqual(self.holyrics.calls[0]["version"], "pt_ara")
+
+    def test_empty_version_ignored(self):
+        self._publish_version_changed("")
+        self.assertEqual(self.service._version, "ACF")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -78,6 +78,7 @@ from pipeline.events import (
     VersePresented,
     VerseResolved,
     VerseResolving,
+    VersionChanged,
 )
 from pipeline.metadata import EventMetadata
 # Sprint 21.9 — Telemetria de observabilidade (não altera comportamento).
@@ -241,6 +242,9 @@ class VersePresentationService:
         self._bus.subscribe(VersePresented, self._on_external_presented)
         self._bus.subscribe(ReadingFollowStarted, self._on_follow_started)
         self._bus.subscribe(ReadingFollowEnded, self._on_follow_ended)
+        # Sprint 32 — a versão global (painel ou voz) vale para todas as
+        # apresentações, inclusive as automáticas.
+        self._bus.subscribe(VersionChanged, self._on_version_changed)
         self._subscribed = True
         logger.info(
             "VersePresentationService started — subscribed to "
@@ -263,6 +267,10 @@ class VersePresentationService:
         self._bus.unsubscribe(VersePresented, self._on_external_presented)
         self._bus.unsubscribe(ReadingFollowStarted, self._on_follow_started)
         self._bus.unsubscribe(ReadingFollowEnded, self._on_follow_ended)
+        try:
+            self._bus.unsubscribe(VersionChanged, self._on_version_changed)
+        except Exception:
+            pass
         self._subscribed = False
         logger.info("VersePresentationService stopped.")
 
@@ -291,6 +299,11 @@ class VersePresentationService:
 
     def _on_follow_ended(self, event: Any) -> None:
         self._follow_active = False
+
+    def _on_version_changed(self, event: VersionChanged) -> None:
+        """Alinha a versão de apresentação à versão global selecionada."""
+        if event.new_version:
+            self._version = event.new_version
 
     def _on_navigation_command(self, event: NavigationCommandDetected) -> None:
         """Avança/recua o último versículo apresentado via comando de voz.

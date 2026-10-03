@@ -14,6 +14,7 @@ import {
   BookOpen,
   Play,
   Square,
+  ChevronLeft,
   ChevronRight,
   Loader2,
   AlertCircle,
@@ -100,6 +101,10 @@ export function ReadingFollowPanel({ className }: ReadingFollowPanelProps) {
     follow.advance();
   };
 
+  const handleBack = () => {
+    follow.back();
+  };
+
   const handleVersionChange = (version: string) => {
     follow.setVersion(version);
   };
@@ -179,6 +184,14 @@ export function ReadingFollowPanel({ className }: ReadingFollowPanelProps) {
           </div>
           {/* Controls */}
           <div className="flex gap-2 mt-1">
+            <button
+              onClick={handleBack}
+              disabled={follow.loading}
+              className="flex items-center gap-1 rounded-md border border-border-default bg-bg-surface px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-50"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              Retroceder
+            </button>
             <button
               onClick={handleAdvance}
               disabled={follow.loading}
@@ -284,8 +297,11 @@ export function ReadingFollowPanel({ className }: ReadingFollowPanelProps) {
       {/* Version management */}
       <div className="border-t border-border-subtle pt-3">
         <div className="flex items-center justify-between gap-2">
-          <label className="text-xs font-medium text-text-secondary">
-            Versão apresentada:
+          <label
+            className="text-xs font-medium text-text-secondary"
+            title="Versão padrão usada em todas as exibições de versículos (voz, painel e acompanhamento)"
+          >
+            Versão padrão:
           </label>
           <select
             value={follow.currentVersion}

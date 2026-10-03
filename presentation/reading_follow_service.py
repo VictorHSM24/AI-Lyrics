@@ -610,6 +610,37 @@ class ReadingFollowService:
         return True
 
     @_locked
+    def back(self) -> bool:
+        """Retrocede manualmente para o versículo anterior.
+
+        Returns:
+            True se retrocedeu, False se inativo ou já no versículo
+            inicial do intervalo.
+        """
+        if not self._state.active:
+            return False
+        prev = self._state.current_verse
+        new_verse = max(self._state.verse_start, prev - 1)
+        if new_verse == prev:
+            return False
+        self._state = replace(
+            self._state, current_verse=new_verse, verse_progress=0.0,
+        )
+        self._reset_cursor()
+        with self._buffer_lock:
+            self._reading_buffer = ""
+            if self._debounce_timer is not None:
+                self._debounce_timer.cancel()
+                self._debounce_timer = None
+        self._present_verse(new_verse)
+        self._publish_advanced(prev, new_verse, 1.0, reason="manual_back")
+        logger.info(
+            "ReadingFollowService: manual back to %s %d:%d",
+            self._state.book, self._state.chapter, new_verse,
+        )
+        return True
+
+    @_locked
     def set_version(self, version: str) -> bool:
         """Muda a versão ativa e recarrega os textos dos versículos.
 

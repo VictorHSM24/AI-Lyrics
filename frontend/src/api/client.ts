@@ -89,6 +89,7 @@ export function createPresentationApi(): PresentationApi {
       followStart: notImplemented,
       followStop: notImplemented,
       followAdvance: notImplemented,
+      followBack: notImplemented,
       followState: notImplemented,
       setMatchVersion: notImplemented,
       getVersions: notImplemented,

@@ -92,6 +92,7 @@ const METHOD_TO_ENDPOINT: Record<string, string> = {
   "operator.followStart": "/operator/follow/start",
   "operator.followStop": "/operator/follow/stop",
   "operator.followAdvance": "/operator/follow/advance",
+  "operator.followBack": "/operator/follow/back",
   "operator.followState": "/operator/follow/state",
   "operator.setMatchVersion": "/operator/follow/match-version",
   "operator.getVersions": "/operator/versions",

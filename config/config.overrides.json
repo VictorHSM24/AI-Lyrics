@@ -3,6 +3,9 @@
     "base_url": "http://127.0.0.1:8091/api",
     "token": "b7zdCL2Rhu83Vqpn"
   },
+  "state": {
+    "default_version": "pt_ra"
+  },
   "stt": {
     "cpu_threads": 4
   }

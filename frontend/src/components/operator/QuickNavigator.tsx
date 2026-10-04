@@ -19,7 +19,7 @@ import { ChevronLeft, ChevronRight, BookOpen, FileText, Hash, Languages, Loader2
 import { useCallback, useEffect, useState } from "react";
 import { useServices, useWorkspaceSnapshot, useOperatorNavigation } from "@/hooks";
 import type { OperatorVerseDTO } from "@/types";
-import { cn, formatVersionKey } from "@/utils";
+import { cn, formatVersionKey, toLocalVersion } from "@/utils";
 import {
   NextVerseCommand,
   PreviousVerseCommand,
@@ -30,30 +30,9 @@ import {
   type WorkspaceContext,
 } from "./WorkspaceCommands";
 
-// Mapa key Holyrics (pt_*) → versão presente na base FTS5 local.
-// Versões fora deste mapa não têm texto local para preview — o
-// Holyrics resolve o texto na apresentação.
-const LOCAL_VERSION_MAP: Record<string, string> = {
-  pt_acf: "ACF",
-  pt_ra: "ARA",
-  pt_arc: "ARC",
-  pt_a21: "AS21",
-  pt_jfaa: "JFAA",
-  pt_naa: "NAA",
-  pt_nbv: "NBV",
-  pt_ntlh: "NTLH",
-  pt_nvi: "NVI",
-  pt_nvt: "NVT",
-};
-const LOCAL_VERSION_SET = new Set(Object.values(LOCAL_VERSION_MAP));
-
-function toLocalVersion(version: string): string | undefined {
-  if (!version) return undefined;
-  if (LOCAL_VERSION_MAP[version]) return LOCAL_VERSION_MAP[version];
-  const upper = version.toUpperCase();
-  if (LOCAL_VERSION_SET.has(upper)) return upper;
-  return undefined;
-}
+// Mapa key Holyrics (pt_*) → versão local FTS5 vem de @/utils
+// (toLocalVersion) — versões fora do mapa não têm texto local para
+// preview; o Holyrics resolve na apresentação.
 
 interface QuickNavigatorProps {
   /** Contexto do workspace (construído via useWorkspaceContext). */

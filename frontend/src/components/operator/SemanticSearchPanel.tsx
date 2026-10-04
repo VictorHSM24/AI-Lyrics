@@ -34,8 +34,8 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
-import { useSemanticSearch, useOperator, useStores } from "@/hooks";
-import { cn, formatVersionKey } from "@/utils";
+import { useSemanticSearch, useOperator, useStores, useServices } from "@/hooks";
+import { cn, formatVersionKey, toLocalVersion } from "@/utils";
 import type { SemanticSearchResultDTO, OperatorPresentResultDTO } from "@/types";
 
 interface SemanticSearchPanelProps {
@@ -45,6 +45,7 @@ interface SemanticSearchPanelProps {
 export function SemanticSearchPanel({ className }: SemanticSearchPanelProps) {
   const sem = useSemanticSearch();
   const op = useOperator();
+  const services = useServices();
   const workspaceStore = useStores().workspace;
   const inputRef = useRef<HTMLInputElement>(null);
   const [presentingId, setPresentingId] = useState<string | null>(null);
@@ -54,6 +55,42 @@ export function SemanticSearchPanel({ className }: SemanticSearchPanelProps) {
   // Persiste entre re-renders e permite que Enter apresente com a versão
   // escolhida no dropdown do candidato selecionado.
   const [versionOverrides, setVersionOverrides] = useState<Record<string, string>>({});
+  // Sprint 32 — versão padrão global (painel do operador), já mapeada
+  // para a versão local FTS5. Pré-seleciona o dropdown de cada
+  // candidato quando presente em result.versions.
+  const [defaultVersion, setDefaultVersion] = useState<string | null>(null);
+
+  // Carrega/atualiza a versão padrão global a cada nova busca.
+  useEffect(() => {
+    let cancelled = false;
+    void services.operator.getVersion()
+      .then((res) => {
+        if (!cancelled) {
+          setDefaultVersion(toLocalVersion(res.version) ?? res.version);
+        }
+      })
+      .catch(() => {
+        // Backend indisponível — cai no best_version de cada candidato.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [services, sem.lastSearchedQuery]);
+
+  // Versão preferida de um candidato: a padrão global se disponível
+  // nas versões do resultado, senão a melhor versão ranqueada.
+  const preferredVersion = useCallback(
+    (result: SemanticSearchResultDTO): string => {
+      if (
+        defaultVersion &&
+        result.versions.some((v) => v.version === defaultVersion)
+      ) {
+        return defaultVersion;
+      }
+      return result.best_version;
+    },
+    [defaultVersion],
+  );
 
   // Expandir automaticamente quando há resultados ou query.
   useEffect(() => {
@@ -109,7 +146,7 @@ export function SemanticSearchPanel({ className }: SemanticSearchPanelProps) {
             // Query não mudou desde a última busca: Enter apresenta o selecionado
             // com a versão escolhida no dropdown (ou best_version se não trocou).
             const sel = sem.selectedResult;
-            const ver = versionOverrides[sel.reference] ?? sel.best_version;
+            const ver = versionOverrides[sel.reference] ?? preferredVersion(sel);
             void presentCandidate(sel, ver);
           } else {
             // Query mudou ou não há resultados: Enter dispara busca.
@@ -135,7 +172,7 @@ export function SemanticSearchPanel({ className }: SemanticSearchPanelProps) {
           break;
       }
     },
-    [sem, presentCandidate],
+    [sem, presentCandidate, preferredVersion, versionOverrides],
   );
 
   const hasQuery = sem.query.trim().length > 0;
@@ -316,7 +353,7 @@ export function SemanticSearchPanel({ className }: SemanticSearchPanelProps) {
               result={result}
               index={index}
               selected={index === sem.selectedIndex}
-              selectedVersion={versionOverrides[result.reference] ?? result.best_version}
+              selectedVersion={versionOverrides[result.reference] ?? preferredVersion(result)}
               onVersionChange={(v) =>
                 setVersionOverrides((prev) => ({ ...prev, [result.reference]: v }))
               }

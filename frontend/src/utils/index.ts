@@ -136,6 +136,38 @@ export {
 // ============================================================
 
 /**
+ * Mapa key Holyrics (pt_*) → versão presente na base FTS5 local.
+ * Versões fora deste mapa não têm texto local — o Holyrics resolve
+ * o texto na apresentação.
+ */
+export const LOCAL_VERSION_MAP: Record<string, string> = {
+  pt_acf: "ACF",
+  pt_ra: "ARA",
+  pt_arc: "ARC",
+  pt_a21: "AS21",
+  pt_jfaa: "JFAA",
+  pt_naa: "NAA",
+  pt_nbv: "NBV",
+  pt_ntlh: "NTLH",
+  pt_nvi: "NVI",
+  pt_nvt: "NVT",
+};
+const LOCAL_VERSION_SET = new Set(Object.values(LOCAL_VERSION_MAP));
+
+/**
+ * Mapeia uma versão (key Holyrics ou nome local) para a versão da
+ * base FTS5 local. Retorna undefined quando não há equivalente.
+ * "pt_ra" → "ARA", "ara"/"ARA" → "ARA", "en_kjv" → undefined
+ */
+export function toLocalVersion(version: string): string | undefined {
+  if (!version) return undefined;
+  if (LOCAL_VERSION_MAP[version]) return LOCAL_VERSION_MAP[version];
+  const upper = version.toUpperCase();
+  if (LOCAL_VERSION_SET.has(upper)) return upper;
+  return undefined;
+}
+
+/**
  * Formata chave de versão bíblica para exibição curta.
  * "pt_acf" → "ACF", "pt_ra" → "ARA", "en_kjv" → "KJV"
  */

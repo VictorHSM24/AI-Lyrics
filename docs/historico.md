@@ -15,6 +15,36 @@ Entradas mais recentes no topo. Formato:
 
 ---
 
+## 2026-10-04 — Fix: transcrição lenta/alucinada — cadência 400ms + diff de commit estrito
+
+- Reporte do usuário: transcrição e apresentação mais lentas que nos
+  commits de 01/10 + Whisper "alucinando" mais.
+- Causa 1 — cadência: `streaming.update_interval_ms` estava 700ms
+  (commit `1e3a2dc`, feito para aliviar GPU). Volta a **400ms**
+  (yaml/models/loader) — a proteção da UI já está no frontend
+  (EventStore cap 2000 + TimelinePanel cap 300), então a GPU voltará a
+  ~80% sem degradar a página.
+- Causa 2 — diff fuzzy: `_committed_prefix_consumed` aceitava qualquer
+  bloco ≥2 dentro do committed para consumir o prefixo estável; match
+  coincidental distante da fronteira podia "comer" palavras novas
+  (perda) — lido como alucinação no transcript. Agora: bloco que chega
+  ao fim do committed vale sempre; bloco interior só vale se terminar
+  perto do fim (último quarto, mín. 8 palavras).
+- Causa 3 — TimelinePanel removida do Console (pedido do usuário):
+  milhares de EventCards renderizando degradavam a página. O Console
+  agora abre direto no streaming (TranscriptPanel roxa); o componente
+  continua disponível e o auditor JSONL segue registrando tudo.
+- Busca semântica: dropdown de versão de cada candidato agora
+  pré-seleciona a **versão padrão global** (`GET /operator/version`
+  mapeada via `toLocalVersion` para a base FTS5) em vez de
+  `best_version`; fallback ao best_version quando a padrão não está
+  entre as versões do candidato. `toLocalVersion`/`LOCAL_VERSION_MAP`
+  movidos de `QuickNavigator.tsx` para `utils` (reuso).
+- `tests/test_committed_diff.py`: suíte 258 testes verde após ajuste;
+  frontend 624 testes + typecheck verdes (testes de página atualizados).
+
+---
+
 ## 2026-10-02 — Painel do operador: botão Retroceder no follow + versão bíblica global persistente
 
 - **Retroceder**: `ReadingFollowService.back()` espelha `advance()` —

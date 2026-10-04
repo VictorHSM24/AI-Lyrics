@@ -613,8 +613,9 @@ class TestConfiguredVersion(unittest.TestCase):
         ref = _make_reference_detected()
         bus.publish(ref)
 
-        # Searcher e Holyrics devem ter sido chamados com version="pt_acf".
-        self.assertEqual(searcher.calls[0]["version"], "pt_acf")
+        # Searcher recebe a versão local FTS5 (pt_acf→ACF); Holyrics
+        # recebe a key original para apresentação.
+        self.assertEqual(searcher.calls[0]["version"], "ACF")
         self.assertEqual(holyrics.calls[0]["version"], "pt_acf")
         self.assertTrue(holyrics.calls[0]["quick"])
 

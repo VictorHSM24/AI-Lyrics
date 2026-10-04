@@ -233,7 +233,7 @@ async def list_chapters(
     if book_id < 1 or book_id > 66:
         raise HTTPException(400, f"book_id inválido: {book_id} (1..66)")
     searcher = _get_searcher(root)
-    ver = version or _default_version(root)
+    ver = _local_version(version or _default_version(root))
     try:
         chapters = searcher.get_chapters(book_id, version=ver)
     except Exception as e:
@@ -257,7 +257,7 @@ async def list_verses(
     if chapter < 1:
         raise HTTPException(400, f"chapter inválido: {chapter}")
     searcher = _get_searcher(root)
-    ver = version or _default_version(root)
+    ver = _local_version(version or _default_version(root))
     try:
         verses = searcher.get_verse_numbers(book_id, chapter, version=ver)
     except Exception as e:
@@ -290,7 +290,7 @@ async def parse_reference(
     from busca.bible_reference import parse_bible_reference
 
     searcher = _get_searcher(root)
-    ver = version or _default_version(root)
+    ver = _local_version(version or _default_version(root))
 
     ref = parse_bible_reference(q)
     if ref is None:

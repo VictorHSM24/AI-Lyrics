@@ -67,6 +67,7 @@ from integracao_holyrics.exceptions import (
     HolyricsTimeoutError,
 )
 from busca.exceptions import SearchError
+from presentation.version_map import local_version
 from pipeline.bus import PipelineEventBus
 from pipeline.events import (
     NavigationCommandDetected,
@@ -356,7 +357,7 @@ class VersePresentationService:
                 book_name=self._last_book_name,
                 chapter=self._last_chapter,
                 verse=new_verse,
-                version=self._version,
+                version=local_version(self._version),
             )
         except Exception as e:
             logger.warning(
@@ -711,7 +712,7 @@ class VersePresentationService:
                 book_name=event.book,
                 chapter=event.chapter,
                 verse=event.verse_start if event.verse_start > 0 else None,
-                version=self._version,
+                version=local_version(self._version),
             )
         except SearchError as e:
             latency_ms = int((time.monotonic() - t_search_start) * 1000)

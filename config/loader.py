@@ -485,7 +485,7 @@ def _build_streaming(data: dict[str, Any]) -> StreamingConfig:
         return StreamingConfig()
     return StreamingConfig(
         window_seconds=float(data.get("window_seconds", 6.0)),
-        update_interval_ms=int(data.get("update_interval_ms", 700)),
+        update_interval_ms=int(data.get("update_interval_ms", 400)),
     )
 
 

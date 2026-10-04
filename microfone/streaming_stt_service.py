@@ -72,8 +72,10 @@ def _committed_prefix_consumed(committed: list[str], stable: list[str]) -> int:
     Alinha ``stable`` com a cauda do committed (SequenceMatcher):
 
     - Bloco que alcança o FIM do committed → tudo até ele é antigo.
-    - Sem bloco no fim: palavras cobertas por blocos significativos
-      (≥2) dentro do committed também são antigas (reescrita na cauda).
+    - Sem bloco no fim: só blocos significativos (≥2) QUE TERMINAM
+      PERTO do fim do committed contam — um match coincidental distante
+      da fronteira faria pular palavras novas (perda) ou re-emitir
+      (duplicação) sem evidência.
     - Caso contrário, nada está committed → o prefixo inteiro é novo.
     """
     if not committed or not stable:
@@ -81,10 +83,22 @@ def _committed_prefix_consumed(committed: list[str], stable: list[str]) -> int:
     tail = committed[-_COMMIT_ALIGN_WINDOW:]
     blocks = [b for b in difflib.SequenceMatcher(
         None, tail, stable, autojunk=False).get_matching_blocks() if b.size]
-    for blk in blocks:
-        if blk.a + blk.size >= len(tail):
+    if not blocks:
+        return 0
+    # O bloco que alcança o fim do committed marca a fronteira real:
+    # stable[:k] coincide com a cauda emitida — só o sufixo é novo.
+    last = blocks[-1]
+    if last.a + last.size == len(tail):
+        return last.b + last.size
+    # O committed termina em palavras ausentes de stable (Whisper
+    # reescreveu/removeu a cauda). A fronteira é o último bloco
+    # significativo próximo do fim — blocos antigos demais não podem
+    # representar a fronteira de commit.
+    near_end = len(tail) - max(8, len(tail) // 4)
+    for blk in reversed(blocks):
+        if blk.size >= 2 and blk.a + blk.size >= near_end:
             return blk.b + blk.size
-    return max((blk.b + blk.size for blk in blocks if blk.size >= 2), default=0)
+    return 0
 
 
 class StreamingSTTService:

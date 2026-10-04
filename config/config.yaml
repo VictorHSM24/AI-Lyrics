@@ -116,12 +116,13 @@ incremental_parser:
 
 # Sprint 32 — cadência da janela deslizante de STT.
 # Cada transcrição (janela de window_seconds) ocupa a GPU por ~250-300ms
-# em RTX. Com intervalo 400ms a GPU ficava >80% o tempo todo e o
-# compositor do browser/desktop ficava faminto (UI travando). 700ms
-# deixa a GPU ~35-40% sem comprometer a detecção de referências.
+# em RTX. Com intervalo 400ms a GPU fica >80% — o custo de UI foi
+# endereçado no frontend (EventStore/TimelinePanel com cap), então a
+# cadência volta a 400ms para restaurar a responsividade da
+# transcrição e da apresentação de versículos.
 streaming:
   window_seconds: 6.0
-  update_interval_ms: 700
+  update_interval_ms: 400
 
 audio:
   input_device: "CODEC USB"

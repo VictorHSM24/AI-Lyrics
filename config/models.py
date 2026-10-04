@@ -358,13 +358,12 @@ class StreamingConfig:
         window_seconds: duração da janela de áudio transcrita (default
             6.0s — comportamento histórico).
         update_interval_ms: intervalo entre transcrições (default
-            700ms). Cada transcrição ocupa a GPU por ~250-300ms em
-            hardware RTX — 400ms deixava a GPU >80% o tempo todo e
-            faminto o compositor do browser/desktop (UI travando).
+            400ms — cadência histórica; o custo de GPU>80% é mitigado
+            no frontend via caps de EventStore/TimelinePanel).
     """
 
     window_seconds: float = 6.0
-    update_interval_ms: int = 700
+    update_interval_ms: int = 400
 
 
 @dataclass(frozen=True)

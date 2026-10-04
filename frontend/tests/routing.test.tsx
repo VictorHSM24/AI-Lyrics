@@ -164,7 +164,9 @@ describe("Padrão visual das páginas", () => {
     expect(screen.getByTestId("page-content")).toBeInTheDocument();
     // Componentes do Console
     expect(screen.getByTestId("console-header")).toBeInTheDocument();
-    expect(screen.getByTestId("timeline-panel")).toBeInTheDocument();
+    // Sprint 32 — timeline removida do Console (custo de renderização);
+    // a transcrição streaming é o painel principal.
+    expect(screen.getByTestId("transcript-panel")).toBeInTheDocument();
     expect(screen.getByTestId("pipeline-panel")).toBeInTheDocument();
     unmount();
   });

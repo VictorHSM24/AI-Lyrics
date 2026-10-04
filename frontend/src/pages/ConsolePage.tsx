@@ -5,10 +5,15 @@
  *
  * Layout (5 regiões):
  *   1. Cabeçalho       — ConsoleHeader
- *   2. Linha do Tempo  — TimelinePanel (central, principal)
+ *   2. Transcrição     — TranscriptPanel (streaming, principal)
  *   3. Pipeline        — PipelinePanel
  *   4. Reconhecimento  — RecognitionPanel
  *   5. Resultado       — ResultPanel
+ *
+ * Sprint 32 — a linha do tempo (TimelinePanel) foi removida do
+ * Console: renderizar milhares de EventCards degradava a página
+ * inteira. O componente continua disponível para outras telas; o
+ * stream de eventos segue alimentando o auditor (arquivo JSONL).
  *
  * Toda atualização ocorre via EventStream → Stores → Hooks.
  * Nenhum polling. Nenhum acesso direto a WebSocket/Transport.
@@ -17,7 +22,6 @@
 import { PageLayout } from "@/app/layout";
 import {
   ConsoleHeader,
-  TimelinePanel,
   PipelinePanel,
   PipelineControl,
   RecognitionPanel,
@@ -43,11 +47,10 @@ export function ConsolePage() {
       {/* Sprint 17.1 — Controle do Pipeline (Iniciar/Parar) */}
       <PipelineControl />
 
-      {/* Grid: timeline (principal) + painéis laterais */}
+      {/* Grid: transcrição (principal) + painéis laterais */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {/* 2. Linha do Tempo (principal, ocupa 2 colunas) */}
+        {/* 2. Streaming de transcrição (principal, ocupa 2 colunas) */}
         <div className="lg:col-span-2 flex flex-col gap-4">
-          <TimelinePanel />
           {/* Sprint 16 — Transcrição em tempo real */}
           <TranscriptPanel />
           {/* Sprint 17 — Referência bíblica detectada */}

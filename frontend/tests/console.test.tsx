@@ -625,16 +625,18 @@ describe("ConsolePage", () => {
     const { ConsolePage } = await import("@/pages/ConsolePage");
     render(wrapWithProviders(<ConsolePage />, makeProviders()));
     expect(screen.getByTestId("console-header")).toBeInTheDocument();
-    expect(screen.getByTestId("timeline-panel")).toBeInTheDocument();
+    // Sprint 32 — TimelinePanel removida do Console (milhares de
+    // EventCards degradavam a página); o streaming continua.
+    expect(screen.getByTestId("transcript-panel")).toBeInTheDocument();
     expect(screen.getByTestId("pipeline-panel")).toBeInTheDocument();
     expect(screen.getByTestId("recognition-panel")).toBeInTheDocument();
     expect(screen.getByTestId("result-panel")).toBeInTheDocument();
   });
 
-  it("mostra empty state na timeline quando sem eventos", async () => {
+  it("não renderiza a linha do tempo", async () => {
     const { ConsolePage } = await import("@/pages/ConsolePage");
     render(wrapWithProviders(<ConsolePage />, makeProviders()));
-    expect(screen.getByText("Aguardando início do pipeline...")).toBeInTheDocument();
+    expect(screen.queryByTestId("timeline-panel")).not.toBeInTheDocument();
   });
 
   it("atualiza quando eventos chegam via EventStream", async () => {
@@ -644,8 +646,6 @@ describe("ConsolePage", () => {
       makeEvent("SpeechRecognized", { text: "João 3:16", confidence: 0.95, latency_ms: 200 }),
     ]);
     render(wrapWithProviders(<ConsolePage />, infra));
-    // Timeline deve ter 2 eventos
-    expect(screen.getAllByTestId("event-card")).toHaveLength(2);
     // Recognition deve mostrar a fala
     expect(screen.getByTestId("recognition-text")).toBeInTheDocument();
   });

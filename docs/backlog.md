@@ -26,6 +26,28 @@ Prioridades: `P0` bloqueante/urgente · `P1` importante · `P2` melhoria · `P3`
 
 ## Pendente
 
+- [ ] (P1) **Referência ambígua em livro de capítulo único** — "2 joão 1"
+  emite 1:1 imediatamente (livro + 1 número = completo); se o pregador
+  continuar ",11" vira 1:11, mas o verso 1:1 chega a ser apresentado por
+  ~4s. Corrigir segurando emissão quando o número solto puder ser
+  capítulo-implícito. — origem: gravação 04/10, incidente 2Jo 1:11
+- [ ] (P1) **Continuação `open` bloqueia menção completa posterior** —
+  quando uma referência fica `open` no fim do stream, o scan para antes
+  de alcançar menções completas posteriores no mesmo buffer. Mitigado
+  pelo dedup de fronteira, mas o mecanismo segue. — origem: análise do
+  incidente 2Ts 2:9 (04/10)
+- [ ] (P1) **Palavras intercaladas quebram referência** — "provérbios ...
+  outra ... 29, 2" e "2 coríntios importante. 6,14" não resolveram:
+  tokens de fala/ruído entre livro-capítulo-versículo abortam a
+  gramática. Avaliar tolerância a N palavras não-numéricas no gap.
+  — origem: gravação 04/10 (Pv 29:2, 2Co 6:14)
+- [ ] (P2) **Follow não ancora no último versículo do capítulo** —
+  `verse_end <= verse` impede re-anchor quando o versículo apresentado
+  é o último (ex.: Rm 1:32). — origem: gravação 04/10
+- [ ] (P2) **Verificar Holyrics `status=ok` sem atualizar tela** — Rm
+  1:32 foi enviado com `ok` mas operador não viu na hora; investigar se
+  foi race com apresentação manual. — origem: gravação 04/10
+
 - [ ] (P1) **Token do Holyrics sem permissão para actions** —
   `POST /operator/close-presentation` (e possivelmente `show_verse`)
   recebe HTTP 401 da API do Holyrics (`http://127.0.0.1:8091/api`).

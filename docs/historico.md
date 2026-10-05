@@ -15,6 +15,42 @@ Entradas mais recentes no topo. Formato:
 
 ---
 
+## 2026-10-04 — Fix: parser — dedup de número na fronteira de chunk + aliases singulares
+
+Análise das gravações reais `gravacao_20261004_181352`/`_185211` contra
+anotações do operador identificou duas causas certeiras; corrigidas:
+
+- **Versículo fantasma por número re-emitido na fronteira de chunk** —
+  o LocalAgreement-2 re-emite a última palavra do chunk anterior como
+  primeira do próximo ("jeremias 29." + "29, 7."). Quando a palavra é
+  número, virava versículo fantasma: Jr 29:**29** (corrigiu só após
+  repetição), 2Ts 2:**2** (nunca corrigiu — a continuação órfã ficava
+  `open` e bloqueava o scan da menção completa seguinte), 2Jo 1:**1**.
+  `IncrementalBiblicalParser._dedup_boundary_numeric()` remove 1 token
+  numérico inicial que repita exatamente o último token normalizado do
+  chunk anterior; a cauda (`_committed_tail`) acompanha só o ingerido
+  e reseta por utterance. Reprodução dos 3 incidentes passa a detectar
+  o versículo certo na **primeira emissão**.
+- **Demônimos singulares não resolviam livro** — pregador disse
+  "segunda tessalonicense 3, 14" e nada foi emitido: aliases singulares
+  não existiam e, mesmo adicionados ao `books.json`, eram descartados
+  por `SpeechBookMatcher._eligible` (token fora do vocab canônico).
+  Adicionados em `_SPEECH_EXTRA_ALIASES` (`1/2 tessalonicense`,
+  `1/2 corintio`, `1/2 cronica`) — forma ordinal resolve via `_numbered`.
+  Aliases equivalentes também mantidos em `books.json` (busca digitada).
+  "Reis" singular foi **omitido de propósito** ("segundo rei" é fala
+  comum sobre monarcas — risco de falso positivo).
+- **Teste ambiental corrigido** — `test_present_with_quick_flag` assumia
+  default `ACF`, mas `config.overrides.json` (commitado) persiste
+  `pt_ra`. Agora fixa `root.config.state.default_version` em memória.
+- Testes novos em `tests/test_incremental_parser_committed.py`
+  (`TestBoundaryNumericDedup` 3 casos, `TestSingularAliases` 3 casos).
+- Arquivos: `pipeline/incremental_parser.py`,
+  `pipeline/speech_reference_grammar.py`, `config/books.json`,
+  `tests/test_incremental_parser_committed.py`,
+  `tests/test_sprint24_operator_panel.py`.
+- Commit(s): pendente.
+
 ## 2026-10-04 — Fix: transcrição lenta/alucinada — cadência 400ms + diff de commit estrito
 
 - Reporte do usuário: transcrição e apresentação mais lentas que nos

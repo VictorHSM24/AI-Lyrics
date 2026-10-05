@@ -244,6 +244,11 @@ class TestOperatorPresent:
     def test_present_with_quick_flag(self, client):
         from api.startup import get_root
         root = get_root()
+        # Versão global fixada em memória (independe do overrides.json).
+        try:
+            object.__setattr__(root.config.state, "default_version", "ACF")
+        except Exception:
+            pass
         r = client.post("/operator/present", json={
             "book_id": 43, "chapter": 3, "verse": 16, "quick": True,
         })

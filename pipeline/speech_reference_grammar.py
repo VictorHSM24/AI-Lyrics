@@ -94,6 +94,13 @@ _SPEECH_EXTRA_ALIASES: dict[str, int] = {
     # Placeholder produzido por SpeechBookMatcher.preprocess_raw para
     # "Jó" (sem acento colide com "jo" → João).
     "jo_livro": 18,
+    # Demônimos singulares falados ("segunda tessalonicense 3, 14",
+    # "primeira crônica", "segundo coríntio"): o token singular não
+    # consta do nome canônico, então _eligible o descartaria —
+    # entram como extras (a forma ordinal resolve via _numbered).
+    "1 tessalonicense": 52, "2 tessalonicense": 53,
+    "1 corintio": 46, "2 corintio": 47,
+    "1 cronica": 13, "2 cronica": 14,
 }
 
 # Aliases que também são vocabulário comum de pregação.

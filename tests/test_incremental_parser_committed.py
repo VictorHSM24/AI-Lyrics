@@ -368,3 +368,112 @@ class TestChapterAnticipationFlag:
         ))
         assert len(anticipated) == 1
         assert anticipated[0].chapter == 12
+
+
+class TestBoundaryNumericDedup:
+    """Regressão dos incidentes da gravação 04/10: o LocalAgreement
+    re-emite o último número do chunk anterior como primeiro do próximo
+    ("jeremias 29." + "29, 7."), criando versículo fantasma (29:29)."""
+
+    @staticmethod
+    def _detected(bus):
+        detected = []
+        bus.subscribe(ReferenceDetected, lambda e: detected.append(e))
+        return detected
+
+    def test_jeremias_no_phantom_29_29(self, parser):
+        """"jeremias 29." + "29, 7." → 29:7 direto, nunca 29:29."""
+        p, bus = parser
+        detected = self._detected(bus)
+
+        bus.publish(_make_committed("jeremias 29.", "jeremias 29."))
+        bus.publish(_make_committed("29, 7.", "jeremias 29, 7."))
+
+        assert len(detected) == 1
+        assert detected[0].chapter == 29
+        assert detected[0].verse_start == 7
+
+    def test_segunda_tessalonicenses_no_phantom_2_2(self, parser):
+        """"tessalonicenses 2." + "2, 9." → 2:9, nunca 2:2; e a menção
+        completa seguinte não é bloqueada nem re-emite."""
+        p, bus = parser
+        detected = self._detected(bus)
+
+        bus.publish(_make_committed("segundo a", "segundo a"))
+        bus.publish(_make_committed("tessalonicenses 2.", "segundo a tessalonicenses 2."))
+        bus.publish(_make_committed("2, 9.", "segundo a tessalonicenses 2, 9."))
+        bus.publish(_make_committed(
+            "2 tessalonicenses 2, 9",
+            "segundo a tessalonicenses 2, 9. 2 tessalonicenses 2, 9"))
+        bus.publish(_make_committed(
+            "9.", "segundo a tessalonicenses 2, 9. 2 tessalonicenses 2, 9."))
+
+        verses = [(e.chapter, e.verse_start) for e in detected]
+        assert verses == [(2, 9)]
+
+    def test_romanos_legit_repeat_preserved(self, parser):
+        """"romanos 1" + "1, 32." → 1:32 — colapsar o '1' repetido na
+        fronteira deixa "romanos 1, 32", que resolve o versículo 32
+        corretamente (o número repetido era o capítulo reafirmado)."""
+        p, bus = parser
+        detected = self._detected(bus)
+
+        bus.publish(_make_committed("romanos 1", "romanos 1"))
+        bus.publish(_make_committed("1, 32.", "romanos 1, 32."))
+
+        assert (1, 32) in [(e.chapter, e.verse_start) for e in detected]
+        # E nunca emitiu o fantasma 1:1.
+        assert (1, 1) not in [(e.chapter, e.verse_start) for e in detected]
+
+
+class TestSingularAliases:
+    """Demônimos singulares falados ('segunda tessalonicense')."""
+
+    def test_segunda_tessalonicense(self, parser):
+        p, bus = parser
+        detected = []
+        bus.subscribe(ReferenceDetected, lambda e: detected.append(e))
+
+        bus.publish(_make_committed(
+            "segundo a tessalonicense",
+            "segundo a tessalonicense",
+        ))
+        bus.publish(_make_committed(
+            "segunda tessalonicense 3, 14.",
+            "segundo a tessalonicense segunda tessalonicense 3, 14.",
+        ))
+
+        assert any(
+            e.book == "2 Tessalonicenses" and e.chapter == 3 and e.verse_start == 14
+            for e in detected
+        )
+
+    def test_primeira_cronica_singular(self, parser):
+        p, bus = parser
+        detected = []
+        bus.subscribe(ReferenceDetected, lambda e: detected.append(e))
+
+        bus.publish(_make_committed(
+            "primeira cronica 28, 9",
+            "primeira cronica 28, 9",
+        ))
+
+        assert any(
+            e.book == "1 Crônicas" and e.chapter == 28 and e.verse_start == 9
+            for e in detected
+        )
+
+    def test_segundo_corintio_singular(self, parser):
+        p, bus = parser
+        detected = []
+        bus.subscribe(ReferenceDetected, lambda e: detected.append(e))
+
+        bus.publish(_make_committed(
+            "segundo corintio 6, 14",
+            "segundo corintio 6, 14",
+        ))
+
+        assert any(
+            e.book == "2 Coríntios" and e.chapter == 6 and e.verse_start == 14
+            for e in detected
+        )

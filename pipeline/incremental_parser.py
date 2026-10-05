@@ -236,6 +236,7 @@ class IncrementalBiblicalParser:
             self._correlation_id: str | None = None
             self._causation_id: str | None = None
             self._last_candidate_key: tuple | None = None
+            self._committed_tail: list[str] = []
             self._detected_keys: set[tuple[int, int, int]] = set()
             self._detected_published = False
             self._anticipation_published = False
@@ -264,10 +265,38 @@ class IncrementalBiblicalParser:
             text = event.committed_text or ""
             if text.strip():
                 t0 = time.perf_counter()
-                self._total_partials_processed += 1
-                self._ingest(text, event, outbox, final=False)
+                text = self._dedup_boundary_numeric(text)
+                if text.strip():
+                    self._total_partials_processed += 1
+                    self._ingest(text, event, outbox, final=False)
                 self._total_latency_ms += int((time.perf_counter() - t0) * 1000)
         self._flush(outbox)
+
+    def _dedup_boundary_numeric(self, text: str) -> str:
+        """Remove número re-emitido pelo LocalAgreement na fronteira do chunk.
+
+        O diff estável re-emite a última palavra do chunk anterior como
+        primeira do próximo ("jeremias 29." + "29, 7."). Quando essa
+        palavra é um número, vira versículo fantasma (29:29 em vez de
+        29:7). Só deduplicamos tokens numéricos — um número repetido na
+        fronteira é artefato do stream; palavras comuns podem ser fala
+        legítima. A cauda é atualizada com o que foi realmente ingerido.
+        """
+        words = text.split()
+        w0 = self._norm.normalize(words[0]).strip() if words else ""
+        if w0.isdigit() and self._committed_tail and w0 == self._committed_tail[-1]:
+            words = words[1:]
+            logger.debug(
+                "IncrementalParser: boundary dedup — removed repeated %r "
+                "(tail=%r).", w0, self._committed_tail[-4:],
+            )
+        out = " ".join(words)
+        for w in words:
+            nw = self._norm.normalize(w).strip()
+            if nw:
+                self._committed_tail.extend(nw.split())
+        del self._committed_tail[:-12]
+        return out
 
     def _on_transcribed(self, event: SpeechTranscribed) -> None:
         """Fim de segmento: fecha a utterance (preservando contexto de pausa)."""

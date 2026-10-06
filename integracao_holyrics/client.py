@@ -339,6 +339,13 @@ class HolyricsClient:
                     duration_ms,
                 )
                 return self._handle_response(resp, action)
+            except HolyricsAuthError:
+                # Token válido mas sem permissão para a action (ou token
+                # inválido): disparar CheckPermissions para que o Holyrics
+                # crie uma notificação pendente de solicitação de permissão
+                # na interface — aprovada uma vez, a action passa a funcionar.
+                self._request_action_permission(action)
+                raise
             except requests.exceptions.Timeout as e:
                 duration_ms = (time.monotonic() - t0) * 1000
                 logger.warning(
@@ -367,6 +374,25 @@ class HolyricsClient:
         assert last_error is not None
         raise last_error
 
+    def _request_action_permission(self, action: str) -> None:
+        """Dispara ``CheckPermissions`` para ``action`` (fire-and-forget).
+
+        O Holyrics responde HTTP 401 quando o token não tem permissão
+        para uma action. Chamar ``CheckPermissions`` (v2.25.0+) cria uma
+        notificação pendente na interface do programa pedindo a permissão
+        ao usuário — aprovada uma vez, a action passa a funcionar para o
+        token. Falhas são engolidas (token inválido, action desconhecida
+        em versões antigas, etc.).
+        """
+        if action == "CheckPermissions":
+            return
+        try:
+            self._post("CheckPermissions", {"actions": action}, timeout_s=1.0)
+        except HolyricsError:
+            # 401 é esperado enquanto a solicitação está pendente/negada —
+            # a notificação já foi criada no Holyrics.
+            pass
+
     @staticmethod
     def _handle_response(resp: requests.Response, action: str) -> dict[str, Any]:
         """Processa a resposta HTTP, validando status e corpo JSON.
@@ -375,10 +401,22 @@ class HolyricsClient:
             HolyricsAuthError: HTTP 401/403.
             HolyricsAPIError: HTTP 4xx/5xx ou status=error no JSON.
         """
-        # HTTP 401/403 -> erro de autenticação.
+        # HTTP 401/403 -> erro de autenticação. O corpo JSON costuma trazer
+        # o motivo real ("invalid token", "unauthorized action") — extrair
+        # para distinguir token inválido de permissão ausente.
         if resp.status_code in (401, 403):
+            detail = ""
+            try:
+                body = resp.json()
+            except ValueError:
+                body = None
+            if isinstance(body, dict):
+                err = body.get("error")
+                if isinstance(err, str) and err:
+                    detail = err
+            suffix = f" - {detail}" if detail else ""
             raise HolyricsAuthError(
-                f"{action}: authentication failed (HTTP {resp.status_code})",
+                f"{action}: authentication failed{suffix} (HTTP {resp.status_code})",
                 status_code=resp.status_code,
             )
 

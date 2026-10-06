@@ -370,3 +370,64 @@ class TestUrlBuilding:
         call_args = mock_post.call_args
         params = call_args[1]["params"]
         assert params["token"] == "my-secret"
+
+
+# ---------------------------------------------------------------------------
+# close_presentation + CheckPermissions (solicitação automática de permissão)
+# ---------------------------------------------------------------------------
+
+class TestClosePresentation:
+    @patch("integracao_holyrics.client.requests.Session.post")
+    def test_success(self, mock_post: MagicMock) -> None:
+        mock_post.return_value = _mock_response(200, {"status": "ok"})
+        client = _make_client()
+        resp = client.close_presentation()
+        assert resp["status"] == "ok"
+        urls = [c[0][0] for c in mock_post.call_args_list]
+        # Quick primeiro (best-effort), depois a apresentação principal.
+        assert urls[0].endswith("/CloseCurrentQuickPresentation")
+        assert urls[1].endswith("/CloseCurrentPresentation")
+
+    @patch("integracao_holyrics.client.requests.Session.post")
+    def test_quick_close_failure_ignored(self, mock_post: MagicMock) -> None:
+        """Falha no CloseCurrentQuickPresentation não impede o close principal."""
+        mock_post.side_effect = [
+            _mock_response(500, text="Internal Server Error"),
+            _mock_response(200, {"status": "ok"}),
+        ]
+        client = _make_client()
+        resp = client.close_presentation()
+        assert resp["status"] == "ok"
+        assert mock_post.call_count == 2
+
+    @patch("integracao_holyrics.client.requests.Session.post")
+    def test_unauthorized_fires_check_permissions(self, mock_post: MagicMock) -> None:
+        """401 numa action dispara CheckPermissions — cria notificação
+        pendente no Holyrics pedindo a permissão ao usuário."""
+        mock_post.side_effect = [
+            _mock_response(200, {"status": "ok"}),  # quick ok
+            _mock_response(401, {"status": "error", "error": "unauthorized action"}),  # close 401
+            _mock_response(401, {"status": "error", "error": {"unauthorized_actions": "x"}}),  # CheckPermissions
+        ]
+        client = _make_client()
+        with pytest.raises(HolyricsAuthError, match="unauthorized action"):
+            client.close_presentation()
+        urls = [c[0][0] for c in mock_post.call_args_list]
+        assert urls[2].endswith("/CheckPermissions")
+        payload = mock_post.call_args_list[2][1]["json"]
+        assert payload["actions"] == "CloseCurrentPresentation"
+
+    @patch("integracao_holyrics.client.requests.Session.post")
+    def test_check_permissions_failure_keeps_original_error(self, mock_post: MagicMock) -> None:
+        """Se CheckPermissions também falha (ex.: token inválido), o erro
+        original é propagado — a solicitação extra nunca mascara a causa."""
+        mock_post.return_value = _mock_response(
+            401, {"status": "error", "error": "invalid token"}
+        )
+        client = _make_client()
+        with pytest.raises(HolyricsAuthError, match="invalid token"):
+            client.get_token_info()
+        # GetTokenInfo (1º) + CheckPermissions fire-and-forget (2º).
+        urls = [c[0][0] for c in mock_post.call_args_list]
+        assert urls[0].endswith("/GetTokenInfo")
+        assert urls[1].endswith("/CheckPermissions")

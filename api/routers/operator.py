@@ -574,9 +574,21 @@ async def close_presentation(
     except Exception as e:
         latency_ms = int((time.monotonic() - t0) * 1000)
         logger.warning("operator: erro encerrando apresentação: %s", e)
+        from integracao_holyrics.exceptions import HolyricsAuthError
+        if isinstance(e, HolyricsAuthError):
+            # Token sem permissão na action — o client já disparou
+            # CheckPermissions (notificação pendente no Holyrics).
+            message = (
+                "Sem permissão no Holyrics para encerrar a apresentação. "
+                "Uma solicitação foi enviada — aprove a notificação no "
+                "Holyrics (ou habilite a action no token em "
+                "Configurações → API Server → gerenciar permissões)."
+            )
+        else:
+            message = f"Falha ao encerrar apresentação: {e}"
         return versioned(ClosePresentationResult(
             ok=False,
-            message=f"Falha ao encerrar apresentação: {e}",
+            message=message,
             reference=reference,
             latency_ms=latency_ms,
         ).model_dump())

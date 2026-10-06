@@ -15,7 +15,32 @@ Entradas mais recentes no topo. Formato:
 
 ---
 
-## 2026-10-04 — Fix: parser — dedup de número na fronteira de chunk + aliases singulares
+## 2026-10-06 — Botão "Encerrar apresentação" funcional (permissão Holyrics + self-healing)
+
+O botão implementado em 2026-10-02 (`5120637`) falhava com HTTP 401 —
+o token válido (`config.overrides.json`) não tinha permissão para as
+actions `CloseCurrentPresentation`/`CloseCurrentQuickPresentation` no
+Holyrics, e `config.yaml` ainda tinha um token inválido.
+
+- **Permissão concedida**: `CheckPermissions` disparado manualmente
+  criou a notificação pendente na interface do Holyrics; aprovada, o
+  token passou a listar as duas actions. `POST /operator/close-presentation`
+  responde `ok:true` contra o Holyrics real (v2.30.0).
+- **Self-healing no client** (`integracao_holyrics/client.py`): qualquer
+  `HolyricsAuthError` em `_post` agora dispara `CheckPermissions`
+  fire-and-forget para a action que falhou — novas actions passam a
+  solicitar permissão automaticamente em vez de falhar em silêncio.
+  `_handle_response` extrai o motivo real do corpo JSON em 401/403
+  ("invalid token" vs "unauthorized action").
+- **Mensagem clara no painel**: `POST /operator/close-presentation`
+  retorna orientação em pt-BR quando a causa é permissão ("aprove a
+  notificação no Holyrics / gerenciar permissões").
+- **`config.yaml` alinhado**: token `JCpH5Wn4Q4zi7og0` (inválido)
+  substituído pelo válido `b7zdCL2Rhu83Vqpn`.
+- Item P1 do backlog (token sem permissão) resolvido e removido.
+- Verificado: `tests/test_holyrics.py` 34 verdes (4 novos cobrindo
+  close_presentation + CheckPermissions); endpoint ok contra Holyrics real.
+
 
 Análise das gravações reais `gravacao_20261004_181352`/`_185211` contra
 anotações do operador identificou duas causas certeiras; corrigidas:
